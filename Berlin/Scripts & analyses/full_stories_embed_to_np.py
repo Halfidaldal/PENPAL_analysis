@@ -38,6 +38,8 @@ INPUT_CSV = os.path.join(
 
 OUTPUT_DIR = "data"
 OUTPUT_NPY = os.path.join(OUTPUT_DIR, "story_embeddings_jina_field.npy")
+OUTPUT_USER_NPY = os.path.join(OUTPUT_DIR, "story_user_embeddings_jina_field.npy")
+OUTPUT_AI_NPY = os.path.join(OUTPUT_DIR, "story_ai_embeddings_jina_field.npy")
 OUTPUT_PARQUET = os.path.join(
     OUTPUT_DIR, "story_text_field_w_embeddings_jina.parquet"
 )
@@ -84,6 +86,8 @@ def build_full_story_df(df: pd.DataFrame) -> pd.DataFrame:
         language = g["language"].iloc[0] if "language" in g.columns else None
 
         turn_texts = []
+        ai_turns = []
+        user_turns = []
         for _, row in g.iterrows():
             user_text = (row.get("user_corrected") or "").strip()
             ai_text = (row.get("ai") or "").strip()
@@ -91,13 +95,17 @@ def build_full_story_df(df: pd.DataFrame) -> pd.DataFrame:
             parts = []
             if user_text:
                 parts.append(f"USER: {user_text}")
+                user_turns.append(user_text)
             if ai_text:
                 parts.append(f"AI: {ai_text}")
+                ai_turns.append(ai_text)
 
             if parts:
                 turn_texts.append("\n".join(parts))
 
         full_story = "\n\n".join(turn_texts)
+        full_user = "\n".join(user_turns)
+        full_ai = "\n".join(ai_turns)
 
         # Skip if somehow we ended up with empty text
         if not full_story.strip():
@@ -110,6 +118,8 @@ def build_full_story_df(df: pd.DataFrame) -> pd.DataFrame:
                 "workshop_id": workshop_id,
                 "language": language,
                 "full_story": full_story,
+                "full_user": full_user,
+                "full_ai": full_ai,
             }
         )
 
@@ -136,6 +146,8 @@ def main():
     )
 
     corpus = full_df["full_story"].tolist()
+    corpus_user = full_df["full_user"].tolist()
+    corpus_ai = full_df["full_ai"].tolist()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
@@ -162,17 +174,35 @@ def main():
     embeddings = np.asarray(embeddings)
     print(f"Embeddings shape: {embeddings.shape}")  # (n_stories, dim)
 
+    print("Encoding user turns with Jina embeddings …")
+    user_embeddings = model.encode(corpus_user, **encode_kwargs)
+    user_embeddings = np.asarray(user_embeddings)
+    print(f"User embeddings shape: {user_embeddings.shape}")  # (n_stories, dim)
+
+    print("Encoding AI turns with Jina embeddings …")
+    ai_embeddings = model.encode(corpus_ai, **encode_kwargs)
+    ai_embeddings = np.asarray(ai_embeddings)
+    print(f"AI embeddings shape: {ai_embeddings.shape}")  # (n_stories, dim)
+
+
     print(f"Saving NumPy array to: {OUTPUT_NPY}")
     np.save(OUTPUT_NPY, embeddings)
+    np.save(OUTPUT_USER_NPY, user_embeddings)
+    np.save(OUTPUT_AI_NPY, ai_embeddings)
 
     # Optional but very handy: store text + meta + embedding in a parquet
     full_df = full_df.copy()
     full_df["embedding_jina"] = list(embeddings)
+    full_df["user_embedding_jina"] = list(user_embeddings)
+    full_df["ai_embedding_jina"] = list(ai_embeddings)
+    
     print(f"Saving story text + embeddings to: {OUTPUT_PARQUET}")
     full_df.to_parquet(OUTPUT_PARQUET, index=False)
 
     print("\nDone, Bossman.")
     print(f'In your notebook you can now do:\n  embeddings_field = np.load("{OUTPUT_NPY}")')
+    print(f'  user_embeddings_field = np.load("{OUTPUT_USER_NPY}")')
+    print(f'  ai_embeddings_field = np.load("{OUTPUT_AI_NPY}")')
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ from Levenshtein import distance as levenshtein_distance
 from tqdm import tqdm
 
 # Load the CSV file
-file_path = "data/finished_stories.csv"  # Change if needed
+file_path = "../Data/finished_stories.csv"  # Change if needed
 df = pd.read_csv(file_path)
 
 # OpenAI API Key (Replace with your actual API key)
