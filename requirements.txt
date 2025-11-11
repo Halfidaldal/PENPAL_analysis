@@ -5,3 +5,7 @@ seaborn
 scikit-learn
 ipykernel
 textdescriptives  
+fastparquet
+transformers
+tqdm
+torch
