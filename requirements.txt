@@ -9,3 +9,4 @@ fastparquet
 transformers
 tqdm
 torch
+clean-text[gpl]
