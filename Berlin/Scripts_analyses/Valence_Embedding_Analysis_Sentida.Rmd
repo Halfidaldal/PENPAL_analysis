@@ -1,0 +1,1494 @@
+---
+title: "Analysis_NES"
+output:
+  pdf_document: default
+  html_document: default
+date: "2025-03-25"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, lme4, ggplot2, dplyr, lmerTest, arrow, stringi, lubridate, zoo, patchwork)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+```{r}
+setwd("/Users/halfidaldal/Documents/NES_paper")
+
+data <- read_csv("data/utterance_surprise_raw.csv")
+data_2 <- read_csv("data/utterance_surprise_scores.csv")
+
+
+
+data_survey <- read_delim("data/data_survey.csv", delim = ";")
+
+```
+
+
+## Including Plots
+
+
+You can also embed plots, for example:
+
+```{r}
+
+
+
+```
+
+
+
+```{r}
+df_sentida <- read_parquet("data/valence_scores_e5_instruct_extended.parquet")
+df_sentida <- read_parquet("data/with_sentida_valence.parquet")
+df_sentida_humanlike <- read_parquet("data/with_sentida_valence_humanlike.parquet")
+# Find columns that are only in df_sentida (not in data_2)
+new_columns <- setdiff(names(df_sentida), names(data_2))
+
+# Always include 'id' for joining
+columns_to_add <- union("id", new_columns)
+
+df_sentida_humanlike <- df_sentida_humanlike %>%
+  rename(
+    ai_valence_score = ai_valence_sentida,
+    user_valence_score = user_valence_sentida
+  )
+
+df_sentida <- df_sentida %>%
+  rename(
+    ai_valence_score = ai_valence_sentida,
+    user_valence_score = user_valence_sentida
+  ) %>%
+  mutate(
+    user_token_count = stri_count_words(user_corrected),
+    ai_token_count = stri_count_words(ai)
+  ) %>%
+  filter(
+    user_token_count <= 70,
+    edit_distance <= 100,
+    sandbox == FALSE,
+    workshop_id != "2"
+  )
+
+# 1. Mean token lengths
+mean_tokens_user <- mean(df_sentida$user_token_count, na.rm = TRUE)
+mean_tokens_ai   <- mean(df_sentida$ai_token_count, na.rm = TRUE)
+
+cat("Mean user token length:", mean_tokens_user, "\n")
+cat("Mean AI token length:", mean_tokens_ai, "\n")
+
+ggplot(df_sentida, aes(x = ai_token_count, y = cosine_similarity)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(
+    title = "Cos Sim based on AI token count",
+    x = "AI token count",
+    y = "Cosine Similarity"
+  )
+
+ggplot(df_sentida, aes(x = user_token_count, y = cosine_similarity)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(
+    title = "Cos Sim based on user token count",
+    x = "User token count",
+    y = "Cosine Similarity"
+  )
+
+
+df_sentida <- df_sentida %>%
+  mutate(token_ratio = if_else(ai_token_count == 0, NA_real_, user_token_count / ai_token_count))  
+
+
+ggplot(df_sentida, aes(x = token_ratio, y = cosine_similarity)) +
+  geom_point(alpha = 0.5, size = 1) +
+  geom_smooth(method = "loess", se = TRUE, color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Cos Sim based on User/AI Token Ratio",
+    x = "Token Ratio (User / AI)",
+    y = "Cosine Similarity"
+  ) +
+  xlim(0, 1.5)  # optional: cut off extreme outliers
+
+
+cosine_sim <- function(x, y) {
+  if (is.null(x) || is.null(y) || any(is.na(x)) || any(is.na(y))) {
+    return(NA_real_)
+  }
+  return(sum(x * y) / (sqrt(sum(x^2)) * sqrt(sum(y^2))))
+}
+
+df_sentida <- df_sentida %>%
+  group_by(workshop_id, client_id) %>%
+  arrange(.by_group = TRUE) %>%
+  mutate(previous_ai_embedding = lag(ai_embedding)) %>%
+  mutate(previous_ai_valence = lag(ai_valence_score)) %>%
+  rowwise() %>%
+  mutate(cosine_sim_prev_ai = cosine_sim(user_corrected_embedding, previous_ai_embedding)) %>%
+  ungroup()
+
+ggplot(df_sentida, aes(x = ai_token_count, y = cosine_sim_prev_ai)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(
+    title = "Cos Sim prev_ai based on user token count",
+    x = "User token count",
+    y = "Cosine Similarity"
+  )
+
+ggplot(df_sentida, aes(x = user_token_count, y = cosine_sim_prev_ai)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(
+    title = "Cos Sim prev_ai based on user token count",
+    x = "User token count",
+    y = "Cosine Similarity"
+  )
+
+ggplot(df_sentida, aes(x = token_ratio, y = cosine_sim_prev_ai)) +
+  geom_point(alpha = 0.5, size = 1) +
+  geom_smooth(method = "loess", color = "blue") +
+  labs(title = "Cosine Similarity (User vs. Previous AI)",
+       x = "User/AI Token Ratio", y = "Cosine Similarity to Previous AI") +
+  xlim(0, 1.5) +
+  theme_minimal()
+
+# Make both data frames compatible
+df_sentida <- df_sentida["cosine_similarity"]
+df_sentida$source <- "Field"
+
+df_sentida_humanlike <- df_sentida_humanlike["cosine_similarity"]
+df_sentida_humanlike$source <- "Simulated"
+
+df_long <- rbind(df_sentida, df_sentida_humanlike)
+
+# Plot
+ggplot(df_long, aes(x = cosine_similarity, fill = source)) +
+  geom_density(alpha = 0.4, color = NA) +
+  scale_fill_brewer(
+    palette = "Set1",
+    name = "Source",
+    labels = c("Field", "Simulated")
+  ) +
+  labs(
+    title = "Distribution of Cosine Similarity: Field vs Simulated",
+    x = "Cosine Similarity",
+    y = "Density"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_text(face = "bold"),
+    panel.grid.major.x = element_blank()
+  )
+ggsave("distribution_cosine_sim_combined.png", dpi = 300, width = 8, height = 6, units = "in")
+
+
+ggplot(df_lag, aes(x = d12, y = d23)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(alpha = 0.6) +
+  geom_smooth(
+    method = "lm", se = FALSE, size = 1
+  ) +
+  scale_color_brewer(palette = "Set1", name = "Story Length") +
+  labs(
+    title = "Field Rubber-Band Lagged/Shifted",
+    x     = expression(Delta[12]~"(Middle−Early)"),
+    y     = expression(Delta[23]~"(Late−Middle)")
+  ) +
+  theme_minimal(base_size = 14)
+
+
+
+```
+
+
+```{r}
+
+df_valence_class_2 <- read_parquet("data/cosine_sim_embeddings_e5_with_sentiment_2.parquet")
+df_cosine_sim_both_datasets <- bind_rows(
+  df_sentida  %>% select(cosine_similarity) %>% mutate(source = "field"),
+  df_sentida_humanlike %>% select(cosine_similarity) %>% mutate(source = "simulated")
+)
+
+ggplot(df_cosine_sim_both_datasets, aes(x = cosine_similarity, fill = source)) +
+  geom_density(alpha = 0.5)
+```
+
+
+
+```{r}
+ggplot(df_sentida, aes(x = user_valence_score)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  labs(title = "Density Plot: User Valence Score", x = "User Valence Score", y = "Density")
+
+ggplot(df_sentida, aes(x = ai_valence_score)) +
+  geom_density(fill = "red", alpha = 0.5) +
+  labs(title = "Density Plot: AI Valence Score", x = "AI Valence Score", y = "Density")
+
+df_long_2 <- df_sentida %>%
+  pivot_longer(cols = c(user_valence_score, ai_valence_score),
+               names_to = "source", values_to = "valence_score")
+
+ggplot(df_long_2, aes(x = valence_score, fill = source)) +
+  geom_density(alpha = 0.4, color = NA) +
+  scale_fill_brewer(palette = "Set1", name = "Source", labels = c("AI", "User")) +
+  labs(
+    title = "Distribution of Valence Scores: User vs AI",
+    x = "Valence Score",
+    y = "Density"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_text(face = "bold"),
+    panel.grid.major.x = element_blank()
+  )
+
+ggsave("distribution_valence.png", dpi = 300, width = 8, height = 6, units = "in")
+
+```
+
+
+
+```{r}
+df_sentida <- df_sentida %>%
+  filter(!(client_id %in% c("steno_5", "steno_4")))
+
+# Choose one client/workshop
+chosen_client <- "steno_3"
+chosen_workshop <- "11"
+
+df_sentida %>%
+  mutate(time = ymd_hms(timestamp)) %>%
+  filter(client_id == chosen_client, workshop_id == chosen_workshop) %>%
+  arrange(time) %>%
+  group_by(workshop_id, client_id) %>%
+  mutate(turn_index = row_number()) %>%
+  pivot_longer(
+    cols = c(user_valence_score, ai_valence_score),
+    names_to = "source",
+    values_to = "valence"
+  ) %>%
+  ggplot(aes(x = turn_index, y = valence, color = source)) +
+  geom_smooth(se = FALSE, span = 0.5, size = 1.2) +
+  scale_color_brewer(palette = "Set1", labels = c("AI", "User")) +
+  labs(
+    title = paste("Smoothed Valence Gap for a single story"),
+    subtitle = "Human-AI Model",
+    x = "Turn Index",
+    y = "Valence Score",
+    color = "Source"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    legend.position = "top",
+    panel.grid.major.x = element_blank()
+  )
+ggsave("valence_smoothed.jpg", dpi = 300, width = 8, height = 6, units = "in")
+
+
+
+df_sentida %>%
+  mutate(time = ymd_hms(timestamp)) %>%
+  group_by(workshop_id, client_id) %>%
+  arrange(time, .by_group = TRUE) %>%
+  mutate(turn_index = row_number()) %>%
+  filter(n() >= 4) %>%
+  pivot_longer(cols = c(user_valence_score, ai_valence_score),
+               names_to = "source", values_to = "valence") %>%
+  group_by(workshop_id, client_id, source) %>%
+  mutate(valence_smoothed = rollmean(valence, k = 8, fill = NA, align = "center")) %>%
+  ggplot(aes(x = turn_index, y = valence_smoothed, color = source)) +
+  geom_line() +
+  facet_wrap(~client_id + workshop_id, scales = "free_x") +
+  labs(
+    title = "Rolling Average of Valence (k = 8) Human-AI",
+    x = "Turn Index",
+    y = "Smoothed Valence Score",
+    color = "Source"
+  ) +
+  theme_minimal()
+
+valence_alignment_human_ai_mean <- df_sentida %>%
+  mutate(valence_gap = abs(user_valence_score - ai_valence_score)) %>%
+  group_by(workshop_id, client_id) %>%
+  summarise(
+    mean_valence_gap = mean(valence_gap, na.rm = TRUE)
+  )
+
+valence_alignment_human_ai_mean_prev <- df_sentida %>%
+  mutate(valence_gap = abs(user_valence_score - previous_ai_valence)) %>%
+  group_by(workshop_id, client_id) %>%
+  summarise(
+    mean_valence_gap = mean(valence_gap, na.rm = TRUE)
+  )
+
+valence_alignment_human_ai_pearsons <- df_sentida %>%
+  group_by(workshop_id, client_id) %>%
+  summarise(
+    cor_valence = cor(user_valence_score, ai_valence_score, use = "complete.obs"),
+    n_turns = n()
+  )
+
+ggsave("grid_view.png", dpi = 300, width = 16, height = 7)
+
+```
+
+```{r}
+
+# 1. Prepare df with turn indices
+df_part <- df_sentida %>%
+  arrange(id, timestamp) %>%         # ensure chronological within each id
+  group_by(id) %>%
+  mutate(
+    turn_idx = row_number(),         # turn index per participant
+    n_turns  = n()                   # total turns per participant
+  ) %>%
+  ungroup() %>%
+  filter(n_turns >= 3)               # need at least 3 turns to form 3 quantiles
+
+# 2. 3-quantile binning per participant
+df_part_q <- df_part %>%
+  group_by(id) %>%
+  mutate(q3 = ntile(turn_idx, 3)) %>%  # assign each turn to early/middle/late
+  ungroup() %>%
+  group_by(id, q3) %>%
+  summarise(
+    mean_user = mean(user_valence_score, na.rm = TRUE),
+    mean_ai   = mean(ai_valence_score,   na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# 3. Plot mean user valence across the three stages
+ggplot(df_part_q, aes(x = factor(q3), y = mean_user, group = id)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.3) +
+  labs(
+    title = "3-Quantile Binned Mean User Valence by Participant",
+    x     = "Stage (Early / Middle / Late)",
+    y     = "Mean User Valence"
+  ) +
+  theme_minimal()
+
+# 4. Compute per-participant linear trends (slopes)
+slopes <- df_part %>%
+  group_by(id) %>%
+  summarise(
+    user_slope = coef(lm(user_valence_score ~ turn_idx, data = cur_data()))[2],
+    ai_slope   = coef(lm(ai_valence_score   ~ turn_idx, data = cur_data()))[2],
+    .groups = "drop"
+  )
+
+# 5. Plot distribution of slopes
+slopes_long <- slopes %>%
+  pivot_longer(c(user_slope, ai_slope), names_to = "role", values_to = "slope")
+
+ggplot(slopes_long, aes(x = role, y = slope)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.6) +
+  labs(
+    title = "Participant-Level Valence Trends (Human–AI)",
+    x     = "Role",
+    y     = "Slope of Valence over Turns"
+  ) +
+  theme_minimal()
+
+#    and assign a row-index within each story.
+fire <- read_csv("data/firestore_data.csv") %>%
+  filter(sandbox == FALSE) %>%           # same sandbox filter
+  arrange(client_id, workshop_id, timestamp) %>%
+  group_by(client_id, workshop_id) %>%
+  mutate(row_idx = row_number()) %>%     # 1,2,3… within each group
+  ungroup() %>%
+  select(client_id, workshop_id, row_idx, id)
+
+
+# 2) Read your AI–AI valence data and give it exactly the same row-index
+hai <- read_parquet("data/valence_scores_e5_instruct_humanlike.parquet") %>%
+  arrange(client_id, workshop_id) %>%    # preserves the simulation order
+  group_by(client_id, workshop_id) %>%
+  mutate(row_idx = row_number()) %>%     # 1,2,3… matching the raw data
+  ungroup()
+
+
+# 3) Join on (client_id, workshop_id, row_idx) to pull in the real `id`
+hai_labeled <- hai %>%
+  left_join(fire, by = c("client_id","workshop_id","row_idx")) %>%
+  filter(!is.na(id))   # sanity-check: drop any mismatches
+
+# now hai_labeled$id is exactly the participant id for each turn
+
+
+# ------ then you can re-run your 3-quantile & slope code on hai_labeled ------
+
+# e.g. 3-quantile mean user valence by participant:
+df_aa_q <- hai_labeled %>%
+  group_by(id) %>%
+  filter(n() >= 3) %>%                    # need ≥3 turns
+  arrange(row_idx) %>%
+  mutate(stage = ntile(row_idx, 3)) %>%
+  group_by(id, stage) %>%
+  summarise(
+    mean_user = mean(user_valence_score, na.rm=TRUE),
+    mean_ai   = mean(ai_valence_score,   na.rm=TRUE),
+    .groups="drop"
+  )
+
+ggplot(df_aa_q, aes(factor(stage), mean_user, group = id)) +
+  geom_line(alpha = .3) +
+  geom_point(alpha = .3) +
+  labs(
+    title = "3-Quantile Mean User Valence by Participant (AI–AI)",
+    x = "Stage (Early/Mid/Late)",
+    y = "Mean User Valence"
+  ) +
+  theme_minimal()
+
+# e.g. per-participant slopes
+slopes_aa <- hai_labeled %>%
+  group_by(id) %>%
+  filter(n() >= 2) %>%
+  summarise(
+    user_slope = coef(lm(user_valence_score ~ row_idx, data = cur_data()))[2],
+    ai_slope   = coef(lm(ai_valence_score   ~ row_idx, data = cur_data()))[2],
+    .groups = "drop"
+  )
+
+slopes_long_aa <- slopes_aa %>%
+  pivot_longer(c(user_slope, ai_slope), names_to="role", values_to="slope")
+
+ggplot(slopes_long_aa, aes(role, slope)) +
+  geom_boxplot(fill="lightgreen", alpha=.7) +
+  labs(
+    title = "Participant-Level Valence Trends (AI–AI)",
+    x = "Role",
+    y = "Slope"
+  ) +
+  theme_minimal()
+```
+
+
+## AI-AI
+
+```{r}
+
+df_sentida_humanlike <- df_sentida_humanlike %>%
+  mutate(
+    ai1_token_count = stri_count_words(ai1),
+    ai2_token_count = stri_count_words(ai2)
+  ) %>%
+  filter(workshop_id != "2")
+
+ggplot(df_sentida_humanlike, aes(x = ai1_token_count, y = cosine_similarity)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(
+    title = "Cos Sim based on AI1 token count",
+    x = "AI token count",
+    y = "Cosine Similarity"
+  )
+
+ggplot(df_sentida_humanlike, aes(x = ai2_token_count, y = cosine_similarity)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(
+    title = "Cos Sim based on AI2 token count",
+    x = "AI token count",
+    y = "Cosine Similarity"
+  )
+
+
+df_sentida_humanlike <- df_sentida_humanlike %>%
+  mutate(token_ratio = if_else(ai2_token_count == 0, NA_real_, ai1_token_count / ai2_token_count))  
+
+
+ggplot(df_sentida_humanlike, aes(x = token_ratio, y = cosine_similarity)) +
+  geom_point(alpha = 0.5, size = 1) +
+  geom_smooth(method = "loess", se = TRUE, color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Cos Sim based on User/AI Token Ratio",
+    x = "Token Ratio (User / AI)",
+    y = "Cosine Similarity"
+  ) +
+  xlim(0.5, 1.5)  # 
+```
+
+
+```{r}
+ggplot(df_sentida_humanlike, aes(x = user_valence_score)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  labs(title = "Density Plot: User Valence Score", x = "User Valence Score", y = "Density")
+
+ggplot(df_sentida_humanlike, aes(x = ai_valence_score)) +
+  geom_density(fill = "red", alpha = 0.5) +
+  labs(title = "Density Plot: AI Valence Score", x = "AI Valence Score", y = "Density")
+
+df_long <- df_sentida_humanlike %>%
+  pivot_longer(cols = c(user_valence_score, ai_valence_score),
+               names_to = "source", values_to = "valence_score")
+
+ggplot(df_long, aes(x = valence_score, fill = source)) +
+  geom_density(alpha = 0.4, color = NA) +
+  scale_fill_brewer(palette = "Set1", labels = c("AI", "User")) +
+  labs(
+    title = "Distribution of Valence Scores: User vs AI",
+    x = "Valence Score",
+    y = "Density"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_text(face = "bold"),
+    panel.grid.major.x = element_blank()
+  )
+
+ggsave("distribution_valence_humanlike.png", dpi = 300, width = 8, height = 6, units = "in")
+
+library(ggplot2)
+library(patchwork)
+
+means_df <- df_long %>%
+  group_by(source) %>%
+  summarise(mean_val = mean(valence_score, na.rm = TRUE), .groups = "drop")
+
+base_plot <- ggplot(df_long, aes(x = valence_score, fill = source)) +
+  geom_density(alpha = 0.4, color = NA) +
+  geom_vline(data = means_df,
+             aes(xintercept = mean_val, color = source),
+             linetype = "dashed", size = 0.3, show.legend = FALSE) +
+  scale_fill_brewer(palette = "Set2", name = "", labels = c("AI", "User")) +
+  theme_minimal(base_size = 18) +
+  theme(
+    legend.position = "top",
+    legend.title = element_text(face = "bold", size = 24),
+    panel.grid.major.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+means_df_2 <- df_long_2 %>%
+  group_by(source) %>%
+  summarise(mean_val = mean(valence_score, na.rm = TRUE), .groups = "drop")
+
+base_plot_2 <- ggplot(df_long_2, aes(x = valence_score, fill = source)) +
+  geom_density(alpha = 0.4, color = NA) +
+  geom_vline(data = means_df_2,
+             aes(xintercept = mean_val, color = source),
+             linetype = "dashed", size = 0.3, show.legend = FALSE) +
+  scale_fill_brewer(palette = "Set1", name = "", labels = c("AI", "User")) +
+  scale_color_manual(values = c("user_valence_score" = "blue", "ai_valence_score" = "red")) +  # optional
+  theme_minimal(base_size = 18) +
+  theme(
+    legend.position = "top",
+    legend.title = element_text(face = "bold", size = 24),
+    panel.grid.major.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+# Create individual plots with just subtitles
+p1 <- base_plot + ggtitle("Simulated Data")
+p2 <- base_plot_2 + ggtitle("Field Data")
+
+# Combine and annotate with global title and axis labels
+combined_plot <- (p2 | p1) +
+  plot_annotation(
+    title = "Distribution of Valence Scores: User vs AI",
+    caption = NULL,
+    theme = theme(
+      plot.title = element_text(face = "bold", hjust = 0.5, size = 24),
+      plot.subtitle = element_text(hjust = 0.5, size = 14)
+    )
+  ) &
+  theme(legend.position = "top")
+
+# Add global x and y labels using patchwork::inset_element if necessary,
+# but the most hack-free and clean way is using cowplot::ggdraw() like this:
+library(cowplot)
+
+final_plot <- ggdraw() +
+  draw_plot(combined_plot, 0, 0, 1, 1) +
+  draw_label("Valence Score", x = 0.5, y = 0, vjust = -0.1, size = 18) +
+  draw_label("Density", x = 0, y = 0.5, angle = 90, vjust = 1.2, size = 18)
+final_plot
+ggsave("combined_valence_distributions_clean.png", final_plot, dpi = 300, width = 16, height = 7)
+
+
+```
+
+```{r, echo=FALSE}
+
+
+# Choose one client/workshop to visualize
+chosen_client <- "steno_3"
+chosen_workshop <- "12"
+
+df_sentida_humanlike %>%
+  filter(client_id == chosen_client, workshop_id == chosen_workshop) %>%
+  arrange(workshop_id, client_id) %>%
+  group_by(workshop_id, client_id) %>%
+  mutate(turn_index = row_number()) %>%
+  pivot_longer(
+    cols = c(user_valence_score, ai_valence_score),
+    names_to = "source",
+    values_to = "valence"
+  ) %>%
+  ggplot(aes(x = turn_index, y = valence, color = source)) +
+  geom_smooth(se = FALSE, span = 0.5, size = 1.2) +
+  scale_color_brewer(palette = "Set2", labels = c("AI 1", "AI 2")) +
+  labs(
+    title = paste("Smoothed Valence Gap"),
+    subtitle = "AI–AI Model",
+    x = "Turn Index",
+    y = "Valence Score",
+    color = "Source"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    legend.position = "top",
+    panel.grid.major.x = element_blank()
+  )
+ggsave("valence_gap_humanlike.png", dpi = 300, width = 8, height = 6, units = "in")
+
+
+
+df_sentida_humanlike %>%
+  group_by(workshop_id, client_id) %>%
+  arrange(.by_group = TRUE) %>%
+  mutate(turn_index = row_number()) %>%
+  filter(n() >= 4) %>%
+  pivot_longer(cols = c(user_valence_score, ai_valence_score),
+               names_to = "source", values_to = "valence") %>%
+  group_by(workshop_id, client_id, source) %>%
+  mutate(valence_smoothed = rollmean(valence, k = 8, fill = NA, align = "center")) %>%
+  ggplot(aes(x = turn_index, y = valence_smoothed, color = source)) +
+  geom_line() +
+  facet_wrap(~client_id + workshop_id, scales = "free_x") +
+  labs(
+    title = "Rolling Average of Valence (k = 8) AI-AI",
+    x = "Turn Index",
+    y = "Smoothed Valence Score",
+    color = "Source"
+  ) +
+  theme_minimal()
+
+valence_alignment_ai_ai_mean <- df_sentida_humanlike %>%
+  mutate(valence_gap = abs(user_valence_score - ai_valence_score)) %>%
+  group_by(workshop_id, client_id) %>%
+  summarise(
+    mean_valence_gap = mean(valence_gap, na.rm = TRUE)
+  )
+
+valence_alignment_ai_ai_pearsons <- df_sentida_humanlike %>%
+  group_by(workshop_id, client_id) %>%
+  summarise(
+    cor_valence = cor(user_valence_score, ai_valence_score, use = "complete.obs"),
+    n_turns = n()
+  )
+
+```
+## Comparison
+
+```{r}
+
+
+# ——————————————————————————————————————————————
+# 1) Human–AI (prev)
+human_prev <- df_sentida %>%
+  group_by(workshop_id, client_id) %>%
+  # need to have previous_ai_valence already computed
+  filter(!is.na(previous_ai_valence)) %>%
+  summarise(
+    cor_human_prev   = cor(user_valence_score, previous_ai_valence, use="complete.obs"),
+    n_prev_human     = n(),
+    .groups="drop"
+  )
+
+# 2) Human–AI (same)
+human_same <- df_sentida %>%
+  group_by(workshop_id, client_id) %>%
+  summarise(
+    cor_human_same   = cor(user_valence_score, ai_valence_score, use="complete.obs"),
+    n_same_human     = n(),
+    .groups="drop"
+  )
+
+# ——————————————————————————————————————————————
+# we now do the same on the AI–AI data
+# first compute previous_ai_valence in the AI–AI df:
+hai <- df_sentida_humanlike %>%
+  group_by(workshop_id, client_id) %>%
+  arrange(workshop_id, client_id) %>%
+  mutate(previous_ai_valence = lag(user_valence_score)) %>%
+  ungroup()
+
+# 3) AI–AI (prev)
+ai_prev <- hai %>%
+  group_by(workshop_id, client_id) %>%
+  filter(!is.na(previous_ai_valence)) %>%
+  summarise(
+    cor_ai_prev      = cor(ai_valence_score, previous_ai_valence, use="complete.obs"),
+    n_prev_ai        = n(),
+    .groups="drop"
+  )
+
+# 4) AI–AI (same)
+ai_same <- df_sentida_humanlike %>%
+  group_by(workshop_id, client_id) %>%
+  summarise(
+    cor_ai_same      = cor(user_valence_score, ai_valence_score, # or user_valence_score if your columns differ
+                          use="complete.obs"),
+    n_same_ai        = n(),
+    .groups="drop"
+  )
+
+# ——————————————————————————————————————————————
+# 5) join all four into one table
+all_corrs <- human_prev %>%
+  inner_join(human_same, by=c("workshop_id","client_id")) %>%
+  inner_join(ai_prev,    by=c("workshop_id","client_id")) %>%
+  inner_join(ai_same,    by=c("workshop_id","client_id")) %>%
+  # keep only stories with ≥3 in every condition
+  filter(
+    n_prev_human >= 3,
+    n_same_human >= 3,
+    n_prev_ai    >= 3,
+    n_same_ai    >= 3
+  )
+
+# 6) pivot to long form for plotting
+corrs_long <- all_corrs %>%
+  select(workshop_id, client_id,
+         cor_human_prev, cor_human_same,
+         cor_ai_prev,    cor_ai_same) %>%
+  pivot_longer(
+    cols      = starts_with("cor_"),
+    names_to  = "condition",
+    values_to = "rho"
+  ) %>%
+  mutate(
+    condition = recode(condition,
+      cor_human_prev = "AI–>User (prev turn)",
+      cor_human_same = "User–>AI (same turn)",
+      cor_ai_prev    = "AI->User (prev turn)",
+      cor_ai_same    = "User->AI (same turn)"
+    )
+  )
+
+# 7) draw the 4 boxplots
+boxplot <- ggplot(corrs_long, aes(x=condition, y=rho, fill=condition)) +
+    scale_x_discrete(limits = c(
+    "User–>AI (same turn)",
+    "AI–>User (prev turn)",
+    "User->AI (same turn)",
+    "AI->User (prev turn)"
+
+  )) +
+  geom_boxplot(width=0.6, outlier.shape=NA, alpha=0.8) +
+  geom_jitter(width=0.15, alpha=0.4, size=1) +
+  scale_fill_brewer(palette="Set2") +
+  labs(
+    title = "Per-Story Valence Alignment: Field Data vs Simulated Data\n(prev & same-turn)",
+    x     = NULL,
+    y     = expression(Pearson~rho~"(valence pairs)")
+  ) +
+  theme_minimal(base_size=14) +
+  theme(
+    legend.position    = "none",
+    axis.text.x        = element_text(angle=10, hjust=0.5),
+    panel.grid.major.x = element_blank(),
+    plot.title         = element_text(face="bold", hjust=0.5)
+  )
+
+boxplot
+ggsave("combined_valence_distributions_clean.png", boxplot,  dpi = 900, width = 16, height = 7)
+
+
+
+library(dplyr)
+library(tidyr)
+
+library(dplyr)
+library(tidyr)
+library(afex)
+
+# 1) Start from your wide table:
+#    all_corrs has columns: cor_human_prev, cor_human_same, cor_ai_prev, cor_ai_same
+
+# 2) Pivot longer with a regex that splits your names into Partner & Turn directly:
+dat_z <- all_corrs %>%
+  pivot_longer(
+    cols        = starts_with("cor_"),
+    names_to    = c("Partner","Turn"),
+    names_pattern = "cor_(.*)_(.*)",
+    values_to   = "rho"
+  ) %>%
+  # 3) Fisher’s z-transform
+  mutate(
+    rho_z   = atanh(rho),
+    # 4) Make them proper factors
+    Partner = factor(Partner, levels = c("human","ai"),
+                     labels = c("Human","Sim")),
+    Turn    = factor(Turn, levels = c("prev","same"),
+                     labels = c("Prev","Same"))
+  )
+
+# Quick check — you should see both Prev & Same:
+table(dat_z$Turn)
+#    Prev   Same 
+#    100    100   ← something like this
+# Basic ANOVA (no repeated measures)
+anova_model <- aov(rho_z ~ Partner * Turn, data = dat_z)
+summary(anova_model)
+
+
+# filter for each condition and test
+tests <- dat_z %>%
+  group_by(Partner,Turn) %>%
+  summarise(
+    # one‐sample t‐test on z transformed r against mu=0
+    t     = t.test(rho_z, mu=0)$statistic,
+    p     = t.test(rho_z, mu=0)$p.value,
+    meanZ = mean(rho_z),
+    n     = n()
+  )
+tests
+
+
+
+```
+
+
+```{r}
+ggplot(plot_df, aes(x = Partner, y = rho, group = client_id)) +
+  # connecting lines
+  geom_line(
+    position = position_dodge(width = 0.6),
+    color    = "grey70",
+    alpha    = 0.3
+  ) +
+  # boxplots
+  geom_boxplot(
+    aes(fill = Partner),
+    width      = 0.6,
+    outlier.shape = NA,
+    alpha      = 0.8,
+    position   = position_dodge(width = 0.6)
+  ) +
+  # jitter with dodge
+  geom_jitter(
+    aes(color = Partner),
+    position = position_jitterdodge(
+      dodge.width  = 0.6,
+      jitter.width = 0.15
+    ),
+    size      = 1.5,
+    alpha     = 0.6
+  ) +
+  stat_summary(
+    fun      = mean,
+    geom     = "point",
+    shape    = 23,
+    size     = 3,
+    fill     = "white",
+    position = position_dodge(width = 0.6)
+  ) +
+  facet_wrap(~ Turn, nrow = 1) +
+  scale_fill_brewer(palette = "Set2") +
+  scale_color_brewer(palette = "Set2") +
+  labs(
+    title = "Valence Alignment: Field (Human) vs Simulated (AI) by Turn",
+    x     = NULL,
+    y     = expression(Pearson~rho~"(per story)")
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position    = "none",
+    strip.text         = element_text(face = "bold"),
+    axis.text.x        = element_text(size = 12),
+    plot.title         = element_text(face = "bold", hjust = 0.5)
+  )
+```
+
+
+```{r}
+
+
+# 0) your existing per‐turn df
+df_part_gap <- df_sentida %>%
+  arrange(id, ymd_hms(timestamp)) %>%
+  group_by(id) %>%
+  mutate(
+    turn_idx    = row_number(),
+    n_turns     = n(),
+    valence_gap = abs(user_valence_score - ai_valence_score),
+  ) %>%
+  ungroup() %>%
+  filter(n_turns >= 3)   # need ≥3 turns
+
+# 1) per‐participant turn counts and median cutoff
+turn_counts_hh <- df_part_gap %>%
+  distinct(id, n_turns) 
+med_hh <- median(turn_counts_hh$n_turns)
+
+# 2) 3‐quantile mean_gap with high/low tag
+df_part_gap_q2 <- df_part_gap %>%
+  group_by(id) %>%
+  mutate(stage = ntile(turn_idx, 3)) %>%
+  ungroup() %>%
+  group_by(id, stage) %>%
+  summarise(
+    mean_gap  = mean(valence_gap, na.rm=TRUE),
+    n_turns   = first(n_turns),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    volume = if_else(n_turns >= med_hh, "High ≥ median", "Low < median")
+  )
+
+# 3) Plot, colored by volume
+ggplot(df_part_gap_q2, aes(factor(stage), mean_gap, group = id, color = volume)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.3) +
+  stat_summary(fun = mean, geom = "line", aes(group = volume),
+               size = 1.2, position = position_dodge(width=0.2)) +
+  stat_summary(fun = mean, geom = "point",
+               size = 3, position = position_dodge(width=0.2)) +
+  scale_color_brewer(palette = "Set1") +
+  scale_x_discrete(labels = c("1"="Early","2"="Middle","3"="Late")) +
+  labs(
+    title = "Mean Valence Gap by Turn Stage (Human–AI)",
+    x     = "Turn Stage",
+    y     = "Mean |v_user − v_AI|",
+    color = "Story Length"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title=element_text(hjust=0.5))
+ggsave("stage_valence_humanlike_lagged_stage_random.png", dpi = 900, width = 8, height = 6, units = "in")
+
+# 1) Pull in the id mapping from firestore_data.csv
+fire <- read_csv("data/firestore_data.csv") %>%
+  filter(sandbox == FALSE) %>%
+  arrange(client_id, workshop_id, timestamp) %>%
+  group_by(client_id, workshop_id) %>%
+  mutate(row_idx = row_number()) %>%
+  ungroup() %>%
+  select(client_id, workshop_id, row_idx, id)
+
+# 2) Read AI–AI valence data & align row_idx
+hai_labeled <- read_parquet("data/valence_scores_e5_instruct_humanlike.parquet") %>%
+  arrange(client_id, workshop_id) %>%
+  group_by(client_id, workshop_id) %>%
+  mutate(row_idx = row_number()) %>%
+  ungroup() %>%
+  left_join(fire, by = c("client_id","workshop_id","row_idx")) %>%
+  filter(!is.na(id))
+
+# (re‐label your hai_labeled if needed)
+df_aa <- hai_labeled %>%
+  mutate(valence_gap = abs(user_valence_score - ai_valence_score)) %>%
+  group_by(id) %>%
+  mutate(
+    turn_idx = row_number(),
+    n_turns  = n()
+  ) %>%
+  ungroup() %>%
+  filter(n_turns >= 3)
+
+turn_counts_aa <- df_aa %>%
+  distinct(id, n_turns)
+med_aa <- median(turn_counts_aa$n_turns)
+
+df_aa_gap_q2 <- df_aa %>%
+  group_by(id) %>%
+  mutate(stage = ntile(turn_idx, 3)) %>%
+  ungroup() %>%
+  group_by(id, stage) %>%
+  summarise(
+    mean_gap = mean(valence_gap, na.rm=TRUE),
+    n_turns  = first(n_turns),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    volume = if_else(n_turns >= med_aa, "High ≥ median", "Low < median")
+  )
+
+ggplot(df_aa_gap_q2, aes(factor(stage), mean_gap, group = id, color = volume)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.3) +
+  stat_summary(fun = mean, geom = "line", aes(group = volume),
+               size = 1.2, position = position_dodge(width=0.2)) +
+  stat_summary(fun = mean, geom = "point",
+               size = 3, position = position_dodge(width=0.2)) +
+  scale_color_brewer(palette = "Set2") +
+  scale_x_discrete(labels = c("1"="Early","2"="Middle","3"="Late")) +
+  labs(
+    title = "Mean Valence Gap by Turn Stage (AI–AI)",
+    x     = "Turn Stage",
+    y     = "Mean |v₁ − v₂|",
+    color = "Story Length"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title=element_text(hjust=0.5))
+ggsave("stage_valence_humanlike.png", dpi = 900, width = 8, height = 6, units = "in")
+
+```
+
+
+
+```{r}
+
+# build wide2 for Human–AI, including volume:
+wide_hh <- df_part_gap_q2 %>%
+  filter(stage %in% 1:3) %>%
+  pivot_wider(
+    id_cols   = c(id, volume),
+    names_from = stage,
+    values_from = mean_gap,
+    names_prefix = "g"
+  ) %>%
+  filter(!is.na(g1) & !is.na(g2) & !is.na(g3)) %>%
+  mutate(
+    d12 = g2 - g1,
+    d23 = g3 - g2
+  )
+
+# scatter + regression per‐group:
+ggplot(wide_hh, aes(x = d12, y = d23, color = volume)) +
+  geom_hline(yintercept = 0, lty = 2, color = "grey60") +
+  geom_vline(xintercept = 0, lty = 2, color = "grey60") +
+  geom_point(alpha = 0.6) +
+  geom_smooth(
+    method = "lm",
+    aes(linetype = volume),
+    se = FALSE
+  ) +
+  labs(
+    x     = expression(Delta[12]~"(Stage2–Stage1)"),
+    y     = expression(Delta[23]~"(Stage3–Stage2)"),
+    title = "Rubber-band Dynamics by Story Length"
+  ) +
+  scale_color_brewer(palette = "Set1") +
+  theme_minimal()
+ggsave("stage_valence_lm_unlagged.png", dpi = 900, width = 8, height = 6, units = "in")
+
+# Fit interaction model:
+lm_hh_int <- lm(d23 ~ d12 * volume, data = wide_hh)
+summary(lm_hh_int)
+
+# assume df_aa_gap_q has columns (id, stage, mean_gap)
+# ——— AI–AI Rubber-Band by Story Length ———
+
+# 0) you already have df_aa_gap_q2 with columns (id, stage, mean_gap, n_turns, volume)
+
+# 1) Pivot wide so we get g1,g2,g3 and keep `volume`
+wide_aa <- df_aa_gap_q2 %>%
+  filter(stage %in% 1:3) %>%
+  pivot_wider(
+    id_cols     = c(id, volume),
+    names_from  = stage,
+    values_from = mean_gap,
+    names_prefix= "g"
+  ) %>%
+  filter(!is.na(g1) & !is.na(g2) & !is.na(g3)) %>%
+  mutate(
+    d12 = g2 - g1,    # change from Early→Middle
+    d23 = g3 - g2     # change from Middle→Late
+  )
+
+# 2) Scatter + separate regression lines by volume
+ggplot(wide_aa, aes(x = d12, y = d23, color = volume)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(alpha = 0.6) +
+  geom_smooth(
+    aes(linetype = volume),
+    method = "lm", se = FALSE, size = 1
+  ) +
+  scale_color_brewer(palette = "Set2") +
+  labs(
+    title = "AI–AI Valence-Gap Rubber-Band by Story Length",
+    x     = expression(Delta[12]~"(Middle−Early)"),
+    y     = expression(Delta[23]~"(Late−Middle)"),
+    color = "Story Length",
+    linetype = "Story Length"
+  ) +
+  theme_minimal()
+ggsave("stage_valence_lm_humanlike.png", dpi = 900, width = 8, height = 6, units = "in")
+
+# 3) Fit an interaction model
+lm_aa_int <- lm(d23 ~ d12 * volume, data = wide_aa)
+summary(lm_aa_int)
+```
+```{r}
+library(dplyr)
+# ───────────────────────────────────────────────────────────────────
+# DROP-IN: Permutation, Global-Shuffle & Lag Tests for Rubber-Band Slope
+#
+# Assumes you have already created:
+#   df_part_gap_q2   # per-id, per-stage summary with columns id, stage, mean_gap, volume
+#   df_part_gap      # per-turn data with id, turn_idx, valence_gap
+#   wide_hh          # wide version with d12, d23 (you can ignore it here)
+#
+library(dplyr)
+
+# 0) Observed rubber-band slope across all IDs
+obs_slope <- coef(lm(d23 ~ d12, data = wide_hh))[2]
+cat("Observed rubber-band slope =", round(obs_slope, 3), "\n\n")
+
+# ─────────────── 1) WITHIN-ID PERMUTATION TEST ───────────────
+set.seed(2025)
+n_sims <- 1000
+perm_slopes <- replicate(n_sims, {
+  df_perm <- df_part_gap_q2 %>%
+    group_by(id) %>%
+    mutate(stage_p = sample(stage)) %>%    # shuffle within each id
+    ungroup() %>%
+    filter(stage_p %in% 1:3) %>%
+    pivot_wider(
+      id_cols     = id,
+      names_from  = stage_p,
+      values_from = mean_gap,
+      names_prefix= "g",
+      values_fn   = mean,      # collapse duplicates if any
+      values_fill = NA
+    ) %>%
+    filter(!is.na(g1) & !is.na(g2) & !is.na(g3)) %>%
+    transmute(
+      d12 = g2 - g1,
+      d23 = g3 - g2
+    )
+  coef(lm(d23 ~ d12, data = df_perm))[2]
+})
+
+p_perm <- mean(abs(perm_slopes) >= abs(obs_slope))
+cat("Permutation test (n =", n_sims, "):\n",
+    "  mean(null slopes) =", round(mean(perm_slopes), 3), "\n",
+    "  sd(null slopes)   =", round(sd(perm_slopes), 3), "\n",
+    "  p-value           =", signif(p_perm, 3), "\n\n", sep="")
+
+# ─────────────── 2) GLOBAL-SHUFFLE TEST ───────────────
+set.seed(2025)
+df_global <- df_part_gap_q2 %>%
+  mutate(stage_g = sample(stage)) %>%      # shuffle across all IDs
+  group_by(id, stage_g) %>%
+  summarise(mean_gap = mean(mean_gap), .groups = "drop") %>%  # collapse any duplicates
+  pivot_wider(
+    id_cols     = id,
+    names_from  = stage_g,
+    values_from = mean_gap,
+    names_prefix= "g",
+    values_fn   = mean,
+    values_fill = NA
+  ) %>%
+  filter(!is.na(g1) & !is.na(g2) & !is.na(g3)) %>%
+  transmute(
+    d12 = g2 - g1,
+    d23 = g3 - g2
+  )
+
+slope_global <- coef(lm(d23 ~ d12, data = df_global))[2]
+cat("Global-shuffle slope =", round(slope_global, 3), "\n\n")
+
+# ─────────────── 3) LAGGED-STAGE TEST ───────────────
+df_lag <- df_part_gap %>%                  # back to per-turn data
+  group_by(id) %>%
+  mutate(
+    stage_real = ntile(turn_idx, 3),
+    stage_lag  = lag(stage_real)
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(stage_lag)) %>%
+  group_by(id, stage_lag) %>%
+  summarise(mean_gap = mean(valence_gap, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    id_cols     = id,
+    names_from  = stage_lag,
+    values_from = mean_gap,
+    names_prefix= "g",
+    values_fn   = mean,
+    values_fill = NA
+  ) %>%
+  filter(!is.na(g1) & !is.na(g2) & !is.na(g3)) %>%
+  transmute(
+    d12 = g2 - g1,
+    d23 = g3 - g2
+  )
+
+ggplot(df_lag, aes(x = d12, y = d23)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_smooth(
+    method = "lm", se = FALSE, size = 1, color = "blue"
+  ) +
+  labs(
+    title = "Field Rubber-Band Lagged/Shifted",
+    x     = expression(Delta[12]~"(Middle−Early)"),
+    y     = expression(Delta[23]~"(Late−Middle)")
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.major.x = element_blank()
+  )
+
+ggsave("Field_rubber_band_lagged.png", path = "graphs", dpi = 900,
+       width = 8, height = 6, units = "in")
+ggsave("Field_rubber_band_lagged.png", path = "graphs", dpi = 900, width = 8, height = 6, units = "in")
+
+slope_lag <- coef(lm(d23 ~ d12, data = df_lag))[2]
+cat("Lagged-stage slope  =", round(slope_lag, 3), "\n")
+# ───────────────────────────────────────────────────────────────────
+```
+
+```{r}
+flips <- wide2 %>%
+  mutate(
+    sign12 = sign(d12),   # +1 if gap rose, −1 if fell
+    sign23 = sign(d23),
+    reversal = sign12 * sign23 < 0  # TRUE when they differ
+  )
+
+# what proportion of participants “flip”?
+flip_rate <- mean(flips$reversal, na.rm=TRUE)
+flip_rate
+# test against 50% null using a binomial
+binom.test(sum(flips$reversal), nrow(flips), p=0.5, alternative="greater")
+
+library(dplyr)
+
+# one row per participant with their total #turns and mean valence
+df_participant_valence <- df_sentida %>%
+  group_by(id) %>%
+  summarise(
+    n_turns    = n(),
+    mean_user  = mean(user_valence_score, na.rm=TRUE),
+    mean_ai    = mean(ai_valence_score,   na.rm=TRUE)
+  ) %>%
+  filter(n_turns >= 3)
+
+# scatter + loess
+library(ggplot2)
+ggplot(df_participant_valence, aes(x = n_turns, y = mean_user)) +
+  geom_point(alpha=.5) +
+  geom_smooth(method="lm", se=TRUE) +
+  labs(title="Mean User Valence vs. #Turns",
+       x="Number of Turns", y="Mean User Valence") +
+  theme_minimal()
+
+# Pearson
+with(df_participant_valence, cor.test(n_turns, mean_user))
+
+```
+```{r}
+wide2 <- wide %>%
+  mutate(
+    d12 = g2 - g1,
+    d23 = g3 - g2,
+    abs_d12 = abs(d12),
+    abs_d23 = abs(d23),
+    # total two‐step oscillation:
+    amp2 = abs_d12 + abs_d23,
+    # or net displacement from start to end:
+    amp1 = abs(g3 - g1)
+  )
+
+# boxplots of total swing size:
+ggplot(wide2, aes(x = condition, y = amp2)) +
+  geom_boxplot() +
+  labs(title="Total Valence‐Gap Oscillation (Stage1→2 + Stage2→3)",
+       x="Human–AI vs AI–AI", y="Amplitude (abs_d12 + abs_d23)")
+
+# or test statistically:
+t.test(amp2 ~ condition, data=wide2)
+```
+
+
+```{r}
+library(ggplot2)
+library(patchwork)
+library(cowplot)
+library(ggplot2)
+library(patchwork)
+library(cowplot)
+
+# HUMAN–AI plot
+p_hai <- ggplot(df_part_gap_q2, aes(factor(stage), mean_gap, group = id, color = volume)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.3) +
+  stat_summary(fun = mean, geom = "line", aes(group = volume),
+               size = 1.2, position = position_dodge(width = 0.2)) +
+  stat_summary(fun = mean, geom = "point",
+               size = 3, position = position_dodge(width = 0.2)) +
+  scale_color_brewer(palette = "Set1") +
+  scale_x_discrete(labels = c("1" = "Early", "2" = "Middle", "3" = "Late")) +
+  labs(
+    title = "Field Data",
+    x     = NULL,
+    y     = NULL,
+    color = "Story Length"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 14),
+    axis.text.y = element_text(face = "bold"),
+    legend.position = "top"
+  )
+
+# AI–AI plot
+p_aiai <- ggplot(df_aa_gap_q2, aes(factor(stage), mean_gap, group = id, color = volume)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.3) +
+  stat_summary(fun = mean, geom = "line", aes(group = volume),
+               size = 1.2, position = position_dodge(width = 0.2)) +
+  stat_summary(fun = mean, geom = "point",
+               size = 3, position = position_dodge(width = 0.2)) +
+  scale_color_brewer(palette = "Set2") +
+  scale_x_discrete(labels = c("1" = "Early", "2" = "Middle", "3" = "Late")) +
+  labs(
+    title = "Simulated Data",
+    x     = NULL,
+    y     = NULL,
+    color = "Story Length"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 14),
+    legend.position = "top"
+  )
+
+# Combine with patchwork and shared main title
+combo <- (p_hai | p_aiai) +
+  plot_annotation(
+    title = "Mean Valence Gap by Turn Stage",
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, size = 24, face = "bold")
+    )
+  ) &
+  theme(legend.position = "top")
+
+# Add global x and y labels
+final <- ggdraw() +
+  draw_plot(combo, 0, 0, 1, 1) +
+  draw_label("Mean Valence Difference", x = 0.007, y = 0.2, angle = 90, hjust = 0, size = 18) +
+  draw_label("Turn Stage", x = 0.5, y = 0.02, vjust = 0, size = 18)
+
+# Save if needed
+# ggsave("valence_gap_turnstage.png", final, dpi = 300, width = 14, height = 6)
+final
+# Save
+ggsave("combined_stage_valence_gap.png", final, width = 12, height = 6, dpi = 300)
+
+```
+
+```{r}
+library(ggplot2)
+library(patchwork)
+library(ggplot2)
+library(patchwork)
+
+# Plot: Human–AI
+p_lm_hh <- ggplot(wide_hh, aes(x = d12, y = d23, color = volume)) +
+  geom_hline(yintercept = 0, lty = 2, color = "grey60") +
+  geom_vline(xintercept = 0, lty = 2, color = "grey60") +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", aes(linetype = volume), se = FALSE) +
+  labs(
+    title = "Field Data",
+    x     = expression(Delta[12]~"(Middle − Early)"),
+    y     = expression(Delta[23]~"(Late − Middle)"),
+    color = "Story Length",
+    linetype = "Story Length"
+  ) +
+  scale_color_brewer(palette = "Set1") +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title     = element_text(hjust = 0.5, size = 20, face = "bold"),
+    axis.text      = element_text(size = 14),
+    axis.title.x   = element_text(face = "bold", size = 16),
+    axis.title.y   = element_text(face = "bold", size = 16),
+    legend.title   = element_text(size = 16, face = "bold"),
+    legend.text    = element_text(size = 14),
+    legend.position = "top"
+  )
+
+# Plot: AI–AI
+p_lm_aa <- ggplot(wide_aa, aes(x = d12, y = d23, color = volume)) +
+  geom_hline(yintercept = 0, lty = 2, color = "grey60") +
+  geom_vline(xintercept = 0, lty = 2, color = "grey60") +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", aes(linetype = volume), se = FALSE) +
+  labs(
+    title = "Simulated Data",
+    x     = expression(Delta[12]~"(Middle − Early)"),
+    y     = NULL,
+    color = "Story Length",
+    linetype = "Story Length"
+  ) +
+  scale_color_brewer(palette = "Set2") +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title     = element_text(hjust = 0.5, size = 20, face = "bold"),
+    axis.text      = element_text(size = 14),
+    axis.title.x   = element_text(face = "bold", size = 16),
+    axis.title.y   = element_blank(),
+    legend.title   = element_text(size = 16, face = "bold"),
+    legend.text    = element_text(size = 14),
+    legend.position = "top"
+  )
+
+# Combine with patchwork and shared title
+rubber_plot <- p_lm_hh + p_lm_aa +
+  plot_annotation(
+    title = "Rubber-Band Dynamics in Valence Gap: Field vs Simulated Data",
+    theme = theme(
+      plot.title = element_text(face = "bold", hjust = 0.5, size = 24)
+    )
+  ) &
+  theme(legend.position = "top")
+
+# Save the plot
+ggsave("combined_rubber_band_dynamics.png", rubber_plot, width = 12, height = 6, dpi = 300)
+```
+
+
+```{r}
+# 2. Valence distribution summaries
+valence_stats <- bind_rows(
+  df_long_2 %>% mutate(source_type = "Field"),
+  df_long   %>% mutate(source_type = "Simulated")
+) %>%
+  group_by(source_type, source) %>%
+  summarise(
+    mean_valence = mean(valence_score, na.rm = TRUE),
+    sd_valence   = sd(valence_score, na.rm = TRUE),
+    var_valence  = var(valence_score, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+valence_stats
+```
+
