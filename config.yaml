@@ -1,0 +1,47 @@
+# PENPAL Analysis Configuration
+
+# Data paths
+data:
+  raw_dir: "data/raw"
+  interim_dir: "data/interim"
+  processed_dir: "data/processed"
+
+# Firestore settings
+firestore:
+  credentials_path: "Berlin/src/the-never-ending-story-a7b5f-firebase-adminsdk-ax73p-9014b38264.json"
+  collection_name: "story_data_TEXT"
+  stories_collection: "stories_TEXT"
+  min_interactions: 10
+
+# Cleaning parameters
+cleaning:
+  edit_distance_threshold: 100
+  min_story_length: 10  # minimum interactions to count as a story
+
+# Embedding models
+embeddings:
+  model_name: "jinaai/jina-embeddings-v3"
+  batch_size: 32
+  task: "text-matching"
+  
+# Sentiment analysis
+sentiment:
+  model_name: "oliverguhr/german-sentiment-bert"
+  batch_size: 64
+  valence_method: "amplify"  # "simple", "amplify", or "dampen"
+
+# Simulation parameters
+simulation:
+  n_turns_per_story: 10
+  model_name: "gpt-4o"
+  seed: 42
+  # OpenAI API key: set via environment variable OPENAI_API_KEY or pass to script
+  client_ids: ["1", "2"]  # Client IDs to simulate
+  workshop_ids: ["1", "2", "3"]  # Workshop IDs to simulate
+  n_simulations: 50
+
+# Analysis parameters
+analysis:
+  random_seed: 42
+  languages:
+    - "de"  # German only for now

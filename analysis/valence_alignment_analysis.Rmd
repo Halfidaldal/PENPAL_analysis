@@ -1,0 +1,741 @@
+---
+title: "Valence Alignment in Human-AI Story Co-Creation"
+subtitle: "Analysis of Field Data and AI-AI Baseline Comparison"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+  pdf_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load required packages
+pacman::p_load(
+  tidyverse,    # Data manipulation and plotting
+  lme4,         # Mixed effects models
+  lmerTest,     # P-values for mixed models
+  arrow,        # Parquet file I/O
+  stringi,      # String operations
+  lubridate,    # Date/time handling
+  zoo,          # Rolling statistics
+  patchwork,    # Combine plots
+  cowplot,      # Additional plot utilities
+  afex          # ANOVA
+)
+
+# Set project root
+PROJECT_ROOT <- "/Users/halfidaldal/Documents/PENPAL_analysis"
+setwd(PROJECT_ROOT)
+
+# Set global theme
+theme_set(theme_minimal(base_size = 14))
+
+# Define output directories
+GRAPHS_DIR <- file.path(PROJECT_ROOT, "analysis", "figures")
+TABLES_DIR <- file.path(PROJECT_ROOT, "analysis", "tables")
+
+# Create output directories if they don't exist
+dir.create(GRAPHS_DIR, showWarnings = FALSE, recursive = TRUE)
+dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
+```
+
+# 1. Data Loading and Preprocessing
+
+## 1.1 Load Data
+
+```{r load-data}
+# Load dyadic sentiment scores
+df_field <- read_parquet("data/processed/dyadic_sentiment_scores.parquet")
+df_simulated <- read_parquet("data/processed/dyadic_sentiment_scores_simulated.parquet")
+
+# Display structure
+cat("Field data dimensions:", dim(df_field), "\n")
+cat("Simulated data dimensions:", dim(df_simulated), "\n")
+
+# Show column names
+cat("\nField data columns:\n")
+print(names(df_field))
+
+cat("\nSimulated data columns:\n")
+print(names(df_simulated))
+```
+
+## 1.2 Data Preprocessing
+
+```{r preprocess}
+# Preprocess field data
+df_field <- df_field %>%
+  rename(
+    ai_valence = ai_sentiment_score,
+    user_valence = user_sentiment_score
+  ) %>%
+  mutate(
+    # Token counts
+    user_token_count = stri_count_words(user),
+    ai_token_count = stri_count_words(ai),
+    token_ratio = if_else(ai_token_count == 0, NA_real_, 
+                         user_token_count / ai_token_count),
+    
+    # Time parsing
+    timestamp = ymd_hms(timestamp),
+    
+    # Data source label
+    data_source = "Field"
+  ) %>%
+  # Ensure conversation_id is a character/factor
+  mutate(conversation_id = as.character(conversation_id))
+
+# Preprocess simulated data
+df_simulated <- df_simulated %>%
+  rename(
+    ai_valence = ai_sentiment_score,
+    user_valence = user_sentiment_score
+  ) %>%
+  mutate(
+    # Token counts
+    user_token_count = stri_count_words(user),
+    ai_token_count = stri_count_words(ai),
+    token_ratio = if_else(ai_token_count == 0, NA_real_, 
+                         user_token_count / ai_token_count),
+    
+    # Time parsing (if available)
+    timestamp = if_else(!is.na(timestamp), ymd_hms(timestamp), as.POSIXct(NA)),
+    
+    # Data source label
+    data_source = "Simulated"
+  ) %>%
+  mutate(conversation_id = as.character(conversation_id))
+
+# Summary statistics
+cat("\n=== Field Data Summary ===\n")
+df_field %>%
+  summarise(
+    n_conversations = n_distinct(conversation_id),
+    n_turns = n(),
+    mean_turns_per_story = n() / n_distinct(conversation_id),
+    mean_user_valence = mean(user_valence, na.rm = TRUE),
+    mean_ai_valence = mean(ai_valence, na.rm = TRUE)
+  ) %>%
+  print()
+
+cat("\n=== Simulated Data Summary ===\n")
+df_simulated %>%
+  summarise(
+    n_conversations = n_distinct(conversation_id),
+    n_turns = n(),
+    mean_turns_per_story = n() / n_distinct(conversation_id),
+    mean_user_valence = mean(user_valence, na.rm = TRUE),
+    mean_ai_valence = mean(ai_valence, na.rm = TRUE)
+  ) %>%
+  print()
+```
+
+## 1.3 Compute Lagged Variables
+
+```{r compute-lags}
+# Add lagged AI valence for field data
+df_field <- df_field %>%
+  group_by(conversation_id) %>%
+  arrange(turn, .by_group = TRUE) %>%
+  mutate(
+    ai_valence_lag1 = lag(ai_valence, n = 1),
+    user_valence_lag1 = lag(user_valence, n = 1)
+  ) %>%
+  ungroup()
+
+# Add lagged AI valence for simulated data
+df_simulated <- df_simulated %>%
+  group_by(conversation_id) %>%
+  arrange(turn, .by_group = TRUE) %>%
+  mutate(
+    ai_valence_lag1 = lag(ai_valence, n = 1),
+    user_valence_lag1 = lag(user_valence, n = 1)
+  ) %>%
+  ungroup()
+```
+
+# 2. Descriptive Statistics
+
+## 2.1 Token Count Statistics
+
+```{r token-stats}
+# Field data token statistics
+token_stats_field <- df_field %>%
+  summarise(
+    mean_user_tokens = mean(user_token_count, na.rm = TRUE),
+    sd_user_tokens = sd(user_token_count, na.rm = TRUE),
+    mean_ai_tokens = mean(ai_token_count, na.rm = TRUE),
+    sd_ai_tokens = sd(ai_token_count, na.rm = TRUE),
+    mean_token_ratio = mean(token_ratio, na.rm = TRUE)
+  )
+
+cat("=== Field Data Token Statistics ===\n")
+print(token_stats_field)
+
+# Simulated data token statistics
+token_stats_sim <- df_simulated %>%
+  summarise(
+    mean_user_tokens = mean(user_token_count, na.rm = TRUE),
+    sd_user_tokens = sd(user_token_count, na.rm = TRUE),
+    mean_ai_tokens = mean(ai_token_count, na.rm = TRUE),
+    sd_ai_tokens = sd(ai_token_count, na.rm = TRUE),
+    mean_token_ratio = mean(token_ratio, na.rm = TRUE)
+  )
+
+cat("\n=== Simulated Data Token Statistics ===\n")
+print(token_stats_sim)
+```
+
+## 2.2 Valence Distribution Statistics
+
+```{r valence-stats}
+# Combined statistics
+valence_stats <- bind_rows(
+  df_field %>% 
+    pivot_longer(cols = c(user_valence, ai_valence),
+                 names_to = "agent", values_to = "valence") %>%
+    mutate(agent = str_remove(agent, "_valence")) %>%
+    group_by(data_source, agent) %>%
+    summarise(
+      mean_valence = mean(valence, na.rm = TRUE),
+      sd_valence = sd(valence, na.rm = TRUE),
+      median_valence = median(valence, na.rm = TRUE),
+      .groups = "drop"
+    ),
+  
+  df_simulated %>%
+    pivot_longer(cols = c(user_valence, ai_valence),
+                 names_to = "agent", values_to = "valence") %>%
+    mutate(agent = str_remove(agent, "_valence")) %>%
+    group_by(data_source, agent) %>%
+    summarise(
+      mean_valence = mean(valence, na.rm = TRUE),
+      sd_valence = sd(valence, na.rm = TRUE),
+      median_valence = median(valence, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+
+print(valence_stats)
+
+# Save to CSV
+write_csv(valence_stats, file.path(TABLES_DIR, "valence_descriptive_stats.csv"))
+```
+
+# 3. Valence Distribution Analysis
+
+## 3.1 Combined Valence Distribution Plot
+
+```{r valence-distribution, fig.width=12, fig.height=6}
+# Prepare data for plotting
+df_field_long <- df_field %>%
+  pivot_longer(cols = c(user_valence, ai_valence),
+               names_to = "agent", values_to = "valence") %>%
+  mutate(agent = recode(agent, 
+                       user_valence = "User", 
+                       ai_valence = "AI"))
+
+df_sim_long <- df_simulated %>%
+  pivot_longer(cols = c(user_valence, ai_valence),
+               names_to = "agent", values_to = "valence") %>%
+  mutate(agent = recode(agent, 
+                       user_valence = "AI 1", 
+                       ai_valence = "AI 2"))
+
+# Calculate means for vertical lines
+means_field <- df_field_long %>%
+  group_by(agent) %>%
+  summarise(mean_val = mean(valence, na.rm = TRUE), .groups = "drop")
+
+means_sim <- df_sim_long %>%
+  group_by(agent) %>%
+  summarise(mean_val = mean(valence, na.rm = TRUE), .groups = "drop")
+
+# Field data plot
+p_field <- ggplot(df_field_long, aes(x = valence, fill = agent)) +
+  geom_density(alpha = 0.4, color = NA) +
+  geom_vline(data = means_field,
+             aes(xintercept = mean_val, color = agent),
+             linetype = "dashed", linewidth = 0.8, show.legend = FALSE) +
+  scale_fill_brewer(palette = "Set1", name = "") +
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Field Data", x = NULL, y = NULL) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+# Simulated data plot
+p_sim <- ggplot(df_sim_long, aes(x = valence, fill = agent)) +
+  geom_density(alpha = 0.4, color = NA) +
+  geom_vline(data = means_sim,
+             aes(xintercept = mean_val, color = agent),
+             linetype = "dashed", linewidth = 0.8, show.legend = FALSE) +
+  scale_fill_brewer(palette = "Set2", name = "") +
+  scale_color_brewer(palette = "Set2") +
+  labs(title = "Simulated Data", x = NULL, y = NULL) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+# Combine plots
+combined_plot <- (p_field | p_sim) +
+  plot_annotation(
+    title = "Distribution of Valence Scores: Field vs Simulated Data",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold"))
+  )
+
+# Add axis labels using cowplot
+final_valence_dist <- ggdraw() +
+  draw_plot(combined_plot, 0, 0, 1, 1) +
+  draw_label("Valence Score", x = 0.5, y = 0.02, size = 16) +
+  draw_label("Density", x = 0.02, y = 0.5, angle = 90, size = 16)
+
+print(final_valence_dist)
+
+ggsave(file.path(GRAPHS_DIR, "valence_distribution_comparison.png"), 
+       final_valence_dist, width = 12, height = 6, dpi = 300)
+```
+
+# 4. Valence Alignment Analysis
+
+## 4.1 Per-Story Correlation (Same Turn)
+
+```{r alignment-same-turn}
+# Field data: same-turn correlation
+cor_field_same <- df_field %>%
+  group_by(conversation_id) %>%
+  filter(n() >= 3) %>%  # Require at least 3 turns
+  summarise(
+    rho = cor(user_valence, ai_valence, use = "complete.obs"),
+    n_turns = n(),
+    data_source = "Field",
+    .groups = "drop"
+  )
+
+# Simulated data: same-turn correlation
+cor_sim_same <- df_simulated %>%
+  group_by(conversation_id) %>%
+  filter(n() >= 3) %>%
+  summarise(
+    rho = cor(user_valence, ai_valence, use = "complete.obs"),
+    n_turns = n(),
+    data_source = "Simulated",
+    .groups = "drop"
+  )
+
+# Combine
+cor_same_combined <- bind_rows(cor_field_same, cor_sim_same) %>%
+  mutate(alignment_type = "Same Turn")
+
+# Summary
+cat("=== Same-Turn Alignment Summary ===\n")
+cor_same_combined %>%
+  group_by(data_source) %>%
+  summarise(
+    mean_rho = mean(rho, na.rm = TRUE),
+    sd_rho = sd(rho, na.rm = TRUE),
+    median_rho = median(rho, na.rm = TRUE),
+    n_stories = n()
+  ) %>%
+  print()
+```
+
+## 4.2 Per-Story Correlation (Previous Turn)
+
+```{r alignment-prev-turn}
+# Field data: previous-turn correlation (User response to previous AI)
+cor_field_prev <- df_field %>%
+  group_by(conversation_id) %>%
+  filter(!is.na(ai_valence_lag1)) %>%
+  filter(n() >= 3) %>%
+  summarise(
+    rho = cor(user_valence, ai_valence_lag1, use = "complete.obs"),
+    n_turns = n(),
+    data_source = "Field",
+    .groups = "drop"
+  )
+
+# Simulated data: previous-turn correlation
+cor_sim_prev <- df_simulated %>%
+  group_by(conversation_id) %>%
+  filter(!is.na(ai_valence_lag1)) %>%
+  filter(n() >= 3) %>%
+  summarise(
+    rho = cor(user_valence, ai_valence_lag1, use = "complete.obs"),
+    n_turns = n(),
+    data_source = "Simulated",
+    .groups = "drop"
+  )
+
+# Combine
+cor_prev_combined <- bind_rows(cor_field_prev, cor_sim_prev) %>%
+  mutate(alignment_type = "Previous Turn")
+
+# Summary
+cat("=== Previous-Turn Alignment Summary ===\n")
+cor_prev_combined %>%
+  group_by(data_source) %>%
+  summarise(
+    mean_rho = mean(rho, na.rm = TRUE),
+    sd_rho = sd(rho, na.rm = TRUE),
+    median_rho = median(rho, na.rm = TRUE),
+    n_stories = n()
+  ) %>%
+  print()
+```
+
+## 4.3 Alignment Comparison Plot
+
+```{r alignment-comparison-plot, fig.width=12, fig.height=6}
+# Combine all correlations
+cor_all <- bind_rows(cor_same_combined, cor_prev_combined) %>%
+  mutate(
+    alignment_type = factor(alignment_type, 
+                           levels = c("Same Turn", "Previous Turn"))
+  )
+
+# Boxplot with jittered points
+p_alignment <- ggplot(cor_all, aes(x = alignment_type, y = rho, fill = data_source)) +
+  geom_boxplot(width = 0.6, outlier.shape = NA, alpha = 0.7,
+               position = position_dodge(width = 0.75)) +
+  geom_jitter(aes(color = data_source),
+              position = position_jitterdodge(
+                dodge.width = 0.75,
+                jitter.width = 0.15
+              ),
+              size = 1.5, alpha = 0.4) +
+  scale_fill_brewer(palette = "Set2", name = "Data Source") +
+  scale_color_brewer(palette = "Set2", name = "Data Source") +
+  labs(
+    title = "Valence Alignment: Field vs Simulated Data",
+    x = "Alignment Type",
+    y = "Pearson ρ (per story)"
+  ) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 18),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+print(p_alignment)
+
+ggsave(file.path(GRAPHS_DIR, "valence_alignment_comparison.png"),
+       p_alignment, width = 12, height = 6, dpi = 300)
+```
+
+## 4.4 Statistical Tests: Alignment Differences
+
+```{r alignment-stats}
+# Test 1: Same-turn alignment difference
+t_test_same <- t.test(rho ~ data_source, data = cor_same_combined)
+cat("=== T-test: Same-Turn Alignment ===\n")
+print(t_test_same)
+
+# Test 2: Previous-turn alignment difference
+t_test_prev <- t.test(rho ~ data_source, data = cor_prev_combined)
+cat("\n=== T-test: Previous-Turn Alignment ===\n")
+print(t_test_prev)
+
+# Test 3: One-sample t-tests against zero (is alignment significant?)
+cat("\n=== One-Sample Tests Against Zero ===\n")
+cor_all %>%
+  group_by(data_source, alignment_type) %>%
+  summarise(
+    t_stat = t.test(rho, mu = 0)$statistic,
+    p_value = t.test(rho, mu = 0)$p.value,
+    mean_rho = mean(rho, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  print()
+
+# Save results
+alignment_test_results <- tibble(
+  test = c("Same-turn: Field vs Simulated", "Previous-turn: Field vs Simulated"),
+  t_statistic = c(t_test_same$statistic, t_test_prev$statistic),
+  p_value = c(t_test_same$p.value, t_test_prev$p.value),
+  mean_field = c(mean(cor_field_same$rho, na.rm = TRUE), 
+                 mean(cor_field_prev$rho, na.rm = TRUE)),
+  mean_sim = c(mean(cor_sim_same$rho, na.rm = TRUE), 
+               mean(cor_sim_prev$rho, na.rm = TRUE))
+)
+
+write_csv(alignment_test_results, 
+          file.path(TABLES_DIR, "alignment_statistical_tests.csv"))
+```
+
+# 5. Temporal Dynamics Analysis
+
+## 5.1 Stage-Based Analysis (Early/Middle/Late)
+
+```{r stage-analysis}
+# Function to compute stage-based valence gap
+compute_stage_gaps <- function(df, data_source_label) {
+  df %>%
+    group_by(conversation_id) %>%
+    arrange(turn, .by_group = TRUE) %>%
+    mutate(
+      turn_idx = row_number(),
+      n_turns = n()
+    ) %>%
+    filter(n_turns >= 3) %>%  # Need at least 3 turns
+    mutate(
+      stage = ntile(turn_idx, 3),
+      valence_gap = abs(user_valence - ai_valence)
+    ) %>%
+    ungroup() %>%
+    group_by(conversation_id, stage) %>%
+    summarise(
+      mean_gap = mean(valence_gap, na.rm = TRUE),
+      n_turns = first(n_turns),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      data_source = data_source_label,
+      stage_label = case_when(
+        stage == 1 ~ "Early",
+        stage == 2 ~ "Middle",
+        stage == 3 ~ "Late"
+      ),
+      stage_label = factor(stage_label, levels = c("Early", "Middle", "Late")),
+      story_length = if_else(n_turns >= median(n_turns), 
+                            "High ≥ median", "Low < median")
+    )
+}
+
+# Compute for both datasets
+stage_gaps_field <- compute_stage_gaps(df_field, "Field")
+stage_gaps_sim <- compute_stage_gaps(df_simulated, "Simulated")
+
+# Combined
+stage_gaps_all <- bind_rows(stage_gaps_field, stage_gaps_sim)
+
+# Summary by stage
+cat("=== Mean Valence Gap by Stage ===\n")
+stage_gaps_all %>%
+  group_by(data_source, stage_label) %>%
+  summarise(
+    mean_gap = mean(mean_gap, na.rm = TRUE),
+    sd_gap = sd(mean_gap, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  print()
+```
+
+## 5.2 Stage Valence Gap Plot
+
+```{r stage-gap-plot, fig.width=12, fig.height=6}
+# Field plot
+p_stage_field <- ggplot(stage_gaps_field, 
+                        aes(x = stage_label, y = mean_gap, 
+                            group = conversation_id, color = story_length)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.3) +
+  stat_summary(fun = mean, geom = "line", aes(group = story_length),
+               linewidth = 1.2, position = position_dodge(width = 0.2)) +
+  stat_summary(fun = mean, geom = "point",
+               size = 3, position = position_dodge(width = 0.2)) +
+  scale_color_brewer(palette = "Set1", name = "Story Length") +
+  labs(title = "Field Data", x = NULL, y = NULL) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold")
+  )
+
+# Simulated plot
+p_stage_sim <- ggplot(stage_gaps_sim, 
+                      aes(x = stage_label, y = mean_gap, 
+                          group = conversation_id, color = story_length)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.3) +
+  stat_summary(fun = mean, geom = "line", aes(group = story_length),
+               linewidth = 1.2, position = position_dodge(width = 0.2)) +
+  stat_summary(fun = mean, geom = "point",
+               size = 3, position = position_dodge(width = 0.2)) +
+  scale_color_brewer(palette = "Set2", name = "Story Length") +
+  labs(title = "Simulated Data", x = NULL, y = NULL) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold")
+  )
+
+# Combine
+combined_stage <- (p_stage_field | p_stage_sim) +
+  plot_annotation(
+    title = "Mean Valence Gap by Turn Stage",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold"))
+  )
+
+final_stage <- ggdraw() +
+  draw_plot(combined_stage, 0, 0, 1, 1) +
+  draw_label("Mean Valence Difference", x = 0.02, y = 0.5, angle = 90, size = 16) +
+  draw_label("Turn Stage", x = 0.5, y = 0.02, size = 16)
+
+print(final_stage)
+
+ggsave(file.path(GRAPHS_DIR, "stage_valence_gap_comparison.png"),
+       final_stage, width = 12, height = 6, dpi = 300)
+```
+
+## 5.3 Rubber-Band Dynamics
+
+```{r rubberband-analysis}
+# Function to compute rubber-band dynamics
+compute_rubberband <- function(df, data_source_label) {
+  df %>%
+    group_by(conversation_id) %>%
+    arrange(turn, .by_group = TRUE) %>%
+    mutate(
+      turn_idx = row_number(),
+      n_turns = n(),
+      valence_gap = abs(user_valence - ai_valence)
+    ) %>%
+    filter(n_turns >= 3) %>%
+    mutate(stage = ntile(turn_idx, 3)) %>%
+    ungroup() %>%
+    group_by(conversation_id, stage) %>%
+    summarise(
+      mean_gap = mean(valence_gap, na.rm = TRUE),
+      n_turns = first(n_turns),
+      .groups = "drop"
+    ) %>%
+    pivot_wider(
+      id_cols = c(conversation_id, n_turns),
+      names_from = stage,
+      values_from = mean_gap,
+      names_prefix = "g"
+    ) %>%
+    filter(!is.na(g1) & !is.na(g2) & !is.na(g3)) %>%
+    mutate(
+      delta_12 = g2 - g1,  # Change from Early to Middle
+      delta_23 = g3 - g2,  # Change from Middle to Late
+      data_source = data_source_label,
+      story_length = if_else(n_turns >= median(n_turns), 
+                            "High ≥ median", "Low < median")
+    )
+}
+
+# Compute for both datasets
+rb_field <- compute_rubberband(df_field, "Field")
+rb_sim <- compute_rubberband(df_simulated, "Simulated")
+
+# Fit linear models
+lm_field <- lm(delta_23 ~ delta_12 * story_length, data = rb_field)
+lm_sim <- lm(delta_23 ~ delta_12 * story_length, data = rb_sim)
+
+cat("=== Rubber-Band Model: Field Data ===\n")
+print(summary(lm_field))
+
+cat("\n=== Rubber-Band Model: Simulated Data ===\n")
+print(summary(lm_sim))
+```
+
+## 5.4 Rubber-Band Dynamics Plot
+
+```{r rubberband-plot, fig.width=12, fig.height=6}
+# Field plot
+p_rb_field <- ggplot(rb_field, aes(x = delta_12, y = delta_23, color = story_length)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", aes(linetype = story_length), se = FALSE, linewidth = 1) +
+  scale_color_brewer(palette = "Set1", name = "Story Length") +
+  scale_linetype_manual(values = c("solid", "dashed"), name = "Story Length") +
+  labs(
+    title = "Field Data",
+    x = expression(Delta[12]~"(Middle − Early)"),
+    y = expression(Delta[23]~"(Late − Middle)")
+  ) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold")
+  )
+
+# Simulated plot
+p_rb_sim <- ggplot(rb_sim, aes(x = delta_12, y = delta_23, color = story_length)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", aes(linetype = story_length), se = FALSE, linewidth = 1) +
+  scale_color_brewer(palette = "Set2", name = "Story Length") +
+  scale_linetype_manual(values = c("solid", "dashed"), name = "Story Length") +
+  labs(
+    title = "Simulated Data",
+    x = expression(Delta[12]~"(Middle − Early)"),
+    y = NULL
+  ) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.title.x = element_text(size = 14, face = "bold")
+  )
+
+# Combine
+combined_rb <- (p_rb_field | p_rb_sim) +
+  plot_annotation(
+    title = "Rubber-Band Dynamics in Valence Gap",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold"))
+  ) &
+  theme(legend.position = "top")
+
+print(combined_rb)
+
+ggsave(file.path(GRAPHS_DIR, "rubberband_dynamics_comparison.png"),
+       combined_rb, width = 12, height = 6, dpi = 300)
+```
+
+# 6. Summary and Conclusions
+
+## 6.1 Key Findings Summary
+
+```{r summary-table}
+# Create summary table
+summary_results <- tribble(
+  ~Metric, ~Field_Data, ~Simulated_Data,
+  "N Stories", n_distinct(df_field$conversation_id), n_distinct(df_simulated$conversation_id),
+  "Mean User Valence", mean(df_field$user_valence, na.rm = TRUE), mean(df_simulated$user_valence, na.rm = TRUE),
+  "Mean AI Valence", mean(df_field$ai_valence, na.rm = TRUE), mean(df_simulated$ai_valence, na.rm = TRUE),
+  "Same-Turn Alignment (ρ)", mean(cor_field_same$rho, na.rm = TRUE), mean(cor_sim_same$rho, na.rm = TRUE),
+  "Previous-Turn Alignment (ρ)", mean(cor_field_prev$rho, na.rm = TRUE), mean(cor_sim_prev$rho, na.rm = TRUE)
+) %>%
+  mutate(
+    Field_Data = round(Field_Data, 3),
+    Simulated_Data = round(Simulated_Data, 3)
+  )
+
+print(summary_results)
+
+write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
+```
+
+## 6.2 Session Information
+
+```{r session-info}
+sessionInfo()
+```
+
+---
+
+**Analysis complete.** All figures saved to `analysis/figures/` and tables to `analysis/tables/`.
