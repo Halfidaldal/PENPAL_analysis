@@ -94,6 +94,12 @@ def embed_story_columns(
     df_out = df.copy()
     embeddings_dict = {}
     
+    # Load model once and reuse for all columns
+    device = get_device()
+    print(f"Loading model: {model_name}")
+    tokenizer_kwargs = {"padding_side": "left", "trust_remote_code": True} if active_dataset == "TEXT" else {}
+    model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device), tokenizer_kwargs=tokenizer_kwargs)
+    
     for col in text_columns:
         if col not in df.columns:
             print(f"Warning: Column '{col}' not found, skipping")
@@ -102,13 +108,22 @@ def embed_story_columns(
         print(f"\n=== Embedding column: {col} ===")
         texts = df[col].astype(str).tolist()
         
-        embeddings = compute_embeddings_batch(
-            texts,
-            model_name=model_name,
-            batch_size=batch_size,
-            task=task,
-            active_dataset=active_dataset
-        )
+        # Compute embeddings directly without loading model again
+        print(f"Computing embeddings for {len(texts)} texts (batch_size={batch_size})...")
+        all_embeddings = []
+        for i in tqdm(range(0, len(texts), batch_size), desc="Embedding batches"):
+            batch = texts[i:i+batch_size]
+            
+            # Encode with optional task parameter
+            if task and hasattr(model, 'encode') and 'task' in model.encode.__code__.co_varnames:
+                embeddings = model.encode(batch, task=task, show_progress_bar=False, normalize_embeddings=True)
+            else:
+                embeddings = model.encode(batch, show_progress_bar=False, normalize_embeddings=True)
+            
+            all_embeddings.append(embeddings)
+        
+        embeddings = np.vstack(all_embeddings)
+        print(f"Embeddings shape: {embeddings.shape}")
         
         # Store as separate arrays
         embeddings_dict[col] = embeddings

@@ -232,31 +232,29 @@ def append_turn_numbers(df: pd.DataFrame) -> pd.DataFrame:
 
 def filter_by_respondent_id(
     df: pd.DataFrame,
-    threshold: int = 8,
+    threshold: int = 12,
     column: str = "respondent_id"
 ) -> pd.DataFrame:
     """
-    Filter DataFrame by respondent_id.
+    Filter DataFrame by respondent_id length.
     
     Args:
         df: Input DataFrame
         column: Name of the respondent ID column
-        threshold: Respondent ID length to filter by
+        threshold: Required length of respondent_id string
         
     Returns:
-        Filtered DataFrame
+        Filtered DataFrame (keeping only rows where len(respondent_id) == threshold)
     """
-    # filter if respondent_id does not have length 8
     if column not in df.columns:
         raise ValueError(f"Column '{column}' not found in DataFrame")
     
-    
-    filtered_df = len(df[df[column] == threshold].copy())
     n_before = len(df)
+    filtered_df = df[df[column].astype(str).str.len() == threshold].copy()
     n_after = len(filtered_df)
     n_removed = n_before - n_after
     
-    print(f"Filtering by respondent_id='{threshold}':")
+    print(f"Filtering by respondent_id length={threshold}:")
     print(f"  Before: {n_before} rows")
     print(f"  After: {n_after} rows")
     print(f"  Removed: {n_removed} rows ({100*n_removed/n_before:.1f}%)")

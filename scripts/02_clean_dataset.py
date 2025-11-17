@@ -90,7 +90,7 @@ def main():
         
     if 'respondent_id' in df.columns:
         print("\nFiltering by respondent ID...")
-        df_filtered = filter_by_respondent_id(df_filtered, threshold=8)
+        df_filtered = filter_by_respondent_id(df_filtered, threshold=12)
         print(f"✓ Filtered to {len(df_filtered)} rows with valid respondent IDs")
     
     print("\nBuilding full story text...")
