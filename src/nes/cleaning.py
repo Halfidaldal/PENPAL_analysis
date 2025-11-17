@@ -280,6 +280,7 @@ def build_full_story_text(df: pd.DataFrame) -> pd.DataFrame:
         'client_id': 'first',
         'workshop_id': 'first',
         'timestamp': 'first',
+        'respondent_id': 'first'
     }).reset_index()
     
     # Rename columns
