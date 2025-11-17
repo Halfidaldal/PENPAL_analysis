@@ -14,28 +14,22 @@ Usage:
 
 import sys
 from pathlib import Path
-import yaml
 import argparse
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.sentiment import add_sentiment_to_dataframe, compute_dyadic_sentiment
-from nes.io import load_parquet, save_parquet, get_project_root
+from nes.io import load_parquet, save_parquet, get_project_root, load_config
 from nes.cleaning import append_turn_numbers
-
-
-def load_config():
-    """Load configuration from config.yaml."""
-    config_path = get_project_root() / "config.yaml"
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
 
 
 def main():
     # Load config
     config = load_config()
     sentiment_config = config['sentiment']
+    
+    print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
     
     # Load story embeddings data
     print("Loading story data with embeddings...")

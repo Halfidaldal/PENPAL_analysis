@@ -19,7 +19,7 @@ class GenRequest:
     """
     
     def __init__(self, system_prompt: str, api_key: str, temperature: float = 0.6, 
-                 token_amount: int = 60, model: str = "gpt-4o"):
+                 token_amount: int = 60, model: str = "gpt-4o-mini"):
         """Initialize a conversation generator.
         
         Args:
@@ -111,8 +111,8 @@ class GenRequest:
             DataFrame with conversation turns
         """
         data = []
-        ai1 = GenRequest(system_prompt=systemprompt1, api_key=api_key, token_amount=38)
-        ai2 = GenRequest(system_prompt=systemprompt2, api_key=api_key, token_amount=60)
+        ai1 = GenRequest(system_prompt=systemprompt1, api_key=api_key, token_amount=30)
+        ai2 = GenRequest(system_prompt=systemprompt2, api_key=api_key, token_amount=40)
         ai1.current_input = "Ich bin wach."
         
         for i in range(n_interactions):

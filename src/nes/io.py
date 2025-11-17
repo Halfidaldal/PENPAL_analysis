@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Union
 import pandas as pd
 import numpy as np
+import yaml
 
 
 # Default paths - can be overridden by config
@@ -24,9 +25,16 @@ def get_project_root() -> Path:
     return PROJECT_ROOT
 
 
+def load_config() -> dict:
+    """Load configuration from config.yaml."""
+    config_path = get_project_root() / "config.yaml"
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
 def get_data_path(stage: str = "processed") -> Path:
     """
-    Get the path to a data directory.
+    Get the path to a data directory for the active dataset.
     
     Args:
         stage: One of 'raw', 'interim', 'processed'
@@ -34,14 +42,26 @@ def get_data_path(stage: str = "processed") -> Path:
     Returns:
         Path object to the data directory
     """
-    paths = {
-        "raw": DATA_RAW,
-        "interim": DATA_INTERIM,
-        "processed": DATA_PROCESSED,
-    }
-    if stage not in paths:
-        raise ValueError(f"Unknown stage: {stage}. Must be one of {list(paths.keys())}")
-    return paths[stage]
+    try:
+        config = load_config()
+        active_dataset = config.get('active_dataset', 'TEXT')
+        dataset_config = config['datasets'][active_dataset]
+        path_key = f"{stage}_dir"
+        
+        if path_key not in dataset_config:
+            raise ValueError(f"Unknown stage: {stage}. Must be one of ['raw', 'interim', 'processed']")
+        
+        return PROJECT_ROOT / dataset_config[path_key]
+    except (KeyError, FileNotFoundError):
+        # Fallback to old behavior if config is missing
+        paths = {
+            "raw": DATA_RAW,
+            "interim": DATA_INTERIM,
+            "processed": DATA_PROCESSED,
+        }
+        if stage not in paths:
+            raise ValueError(f"Unknown stage: {stage}. Must be one of {list(paths.keys())}")
+        return paths[stage]
 
 
 def load_csv(filename: str, stage: str = "processed", **kwargs) -> pd.DataFrame:

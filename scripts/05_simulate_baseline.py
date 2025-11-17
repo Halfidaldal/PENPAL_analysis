@@ -88,7 +88,8 @@ def main():
     
     df_simulated = simulate_ai_ai_conversations(
         client_ids=args.client_ids,
-        workshop_ids=args.workshop_ids,
+        workshop_ids=args.
+        workshop_ids,
         n_interactions=n_interactions,
         n_simulations=n_simulations,
         api_key=api_key

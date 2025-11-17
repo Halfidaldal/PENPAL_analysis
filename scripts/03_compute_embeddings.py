@@ -15,27 +15,21 @@ Usage:
 
 import sys
 from pathlib import Path
-import yaml
 import argparse
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.embeddings import compute_story_embeddings_full_stories, embed_story_columns
-from nes.io import load_csv, save_parquet, save_npy, get_project_root
-
-
-def load_config():
-    """Load configuration from config.yaml."""
-    config_path = get_project_root() / "config.yaml"
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+from nes.io import load_csv, save_parquet, save_npy, get_project_root, load_config
 
 
 def main():
     # Load config
     config = load_config()
     embeddings_config = config['embeddings']
+    
+    print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
     
     parser = argparse.ArgumentParser(description="Compute embeddings for story data.")
     parser.add_argument(
@@ -79,7 +73,7 @@ def main():
         
     print(f"\n✓ Computed embeddings for {len(df_embedded)} stories")
     print(f"✓ Embedding dimension: {story_emb.shape[1]}")
-    print("✓ Saved to data/processed/")
+    print(f"✓ Saved to data/{config.get('active_dataset', 'TEXT')}/processed/")
     print("\n✅ Script 03 complete!")
 
 

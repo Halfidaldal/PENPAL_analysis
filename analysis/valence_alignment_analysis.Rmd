@@ -61,6 +61,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 
 ```{r load-data}
 # Load dyadic sentiment scores
+setwd("/Users/halfidaldal/Documents/PENPAL_analysis")
 df_field <- read_parquet("data/processed/dyadic_sentiment_scores.parquet")
 df_simulated <- read_parquet("data/processed/dyadic_sentiment_scores_simulated.parquet")
 
@@ -358,6 +359,7 @@ cor_same_combined %>%
     n_stories = n()
   ) %>%
   print()
+
 ```
 
 ## 4.2 Per-Story Correlation (Previous Turn)
@@ -404,7 +406,117 @@ cor_prev_combined %>%
   print()
 ```
 
-## 4.3 Alignment Comparison Plot
+## 4.3.1 All turns story correlation (same turn)
+```{r alignment across all turns}
+#Violates assumptions since turns are not independent (nested in stories)
+cor_field_same_all_turns <- df_field %>%
+  summarise(
+    rho = cor(user_valence, ai_valence, use = "complete.obs"),
+    n_turns = n(),
+    data_source = "Field"
+  )
+
+cor_sim_same_all_turns <- df_simulated %>%
+  summarise(
+    rho = cor(user_valence, ai_valence, use = "complete.obs"),
+    n_turns = n(),
+    data_source = "Simulated"
+  )
+
+cor_same_combined_all_turns <- bind_rows(cor_field_same_all_turns, cor_sim_same_all_turns) %>%
+  mutate(alignment_tupe = "Same Turn All Turns")
+
+cat("=== Same-Turn All Turns Alignment Summary ===\n")
+cor_same_combined_all_turns %>%
+  group_by(data_source) %>%
+  summarise(
+    mean_rho = mean(rho, na.rm = TRUE),
+    sd_rho = sd(rho, na.rm = TRUE),
+    median_rho = median(rho, na.rm = TRUE),
+    n_stories = n()
+  ) %>%
+  print()
+```
+## 4.3.2 All turns story correlation (Previous Turn)
+
+```{r previous-turn-alignment-all-turns}
+
+#Violates assumptions since turns are not independent (nested in stories)
+cor_field_same_all_turns_prev <- df_field %>%
+  summarise(
+    rho = cor(user_valence, ai_valence_lag1, use = "complete.obs"),
+    n_turns = n(),
+    data_source = "Field"
+  )
+
+cor_sim_same_all_turns_prev <- df_simulated %>%
+  summarise(
+    rho = cor(user_valence, ai_valence_lag1, use = "complete.obs"),
+    n_turns = n(),
+    data_source = "Simulated"
+  )
+
+cor_same_combined_all_turns_prev <- bind_rows(cor_field_same_all_turns_prev, cor_sim_same_all_turns_prev) %>%
+  mutate(alignment_tupe = "Same Turn All Turns")
+
+cat("=== Same-Turn All Turns Alignment Summary ===\n")
+cor_same_combined_all_turns_prev %>%
+  group_by(data_source) %>%
+  summarise(
+    mean_rho = mean(rho, na.rm = TRUE),
+    sd_rho = sd(rho, na.rm = TRUE),
+    median_rho = median(rho, na.rm = TRUE),
+    n_stories = n()
+  ) %>%
+  print()
+
+
+```
+## 4.3.3 Probe Sentiment Narrative Development
+
+```{r alignment-probe-example, fig.width=12, fig.height=6}
+
+
+df_field %>%
+  mutate(time = ymd_hms(timestamp)) %>%
+  
+  group_by(conversation_id) %>%
+  arrange(time, .by_group = TRUE) %>%
+  mutate(turn_index = row_number()) %>%
+  ungroup() %>%
+  filter(conversation_id %in% unique(conversation_id)[20:25]) %>%
+  pivot_longer(cols = c(user_valence, ai_valence),
+               names_to = "source", values_to = "valence") %>%
+  mutate(valence_smoothed = rollmean(valence, k = 1, fill = NA, align = "center")) %>%
+  ggplot(aes(x = turn_index, y = valence_smoothed, color = source)) +
+  geom_line() +
+  facet_wrap(~conversation_id, scales = "free_x") +
+  labs(
+    title = "Rolling Average of Valence (k = 8) Human-AI",
+    x = "Turn Index",
+    y = "Smoothed Valence Score",
+    color = "Source"
+  ) +
+  theme_minimal()
+
+# Check actual per-story alignment
+df_field %>%
+  group_by(conversation_id) %>%
+  filter(n() >= 3) %>%
+  summarise(
+    rho = cor(user_valence, ai_valence, use = "complete.obs"),
+    n_turns = n()
+  ) %>%
+  ggplot(aes(x = n_turns, y = rho)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Correlation by Story Length",
+       x = "Number of Turns", y = "Pearson ρ")
+
+
+```
+
+## 4.4 Alignment Comparison Plot
 
 ```{r alignment-comparison-plot, fig.width=12, fig.height=6}
 # Combine all correlations
@@ -444,7 +556,7 @@ ggsave(file.path(GRAPHS_DIR, "valence_alignment_comparison.png"),
        p_alignment, width = 12, height = 6, dpi = 300)
 ```
 
-## 4.4 Statistical Tests: Alignment Differences
+## 4.5 Statistical Tests: Alignment Differences
 
 ```{r alignment-stats}
 # Test 1: Same-turn alignment difference
@@ -642,13 +754,13 @@ rb_sim <- compute_rubberband(df_simulated, "Simulated")
 
 # Fit linear models
 lm_field <- lm(delta_23 ~ delta_12 * story_length, data = rb_field)
-lm_sim <- lm(delta_23 ~ delta_12 * story_length, data = rb_sim)
+#lm_sim <- lm(delta_23 ~ delta_12 * story_length, data = rb_sim)
 
 cat("=== Rubber-Band Model: Field Data ===\n")
 print(summary(lm_field))
 
 cat("\n=== Rubber-Band Model: Simulated Data ===\n")
-print(summary(lm_sim))
+#print(summary(lm_sim))
 ```
 
 ## 5.4 Rubber-Band Dynamics Plot
@@ -736,6 +848,6 @@ write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
 sessionInfo()
 ```
 
----
+------------------------------------------------------------------------
 
 **Analysis complete.** All figures saved to `analysis/figures/` and tables to `analysis/tables/`.

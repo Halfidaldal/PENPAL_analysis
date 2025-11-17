@@ -1,10 +1,18 @@
 # PENPAL Analysis Configuration
 
-# Data paths
-data:
-  raw_dir: "data/raw"
-  interim_dir: "data/interim"
-  processed_dir: "data/processed"
+# Active dataset (change this to switch between datasets)
+active_dataset: "TEXT"  # Options: "TEXT", "Berlin"
+
+# Data paths per dataset
+datasets:
+  TEXT:
+    raw_dir: "data/TEXT/raw"
+    interim_dir: "data/TEXT/interim"
+    processed_dir: "data/TEXT/processed"
+  Berlin:
+    raw_dir: "data/Berlin/raw"
+    interim_dir: "data/Berlin/interim"
+    processed_dir: "data/Berlin/processed"
 
 # Firestore settings
 firestore:
@@ -20,7 +28,7 @@ cleaning:
 
 # Embedding models
 embeddings:
-  model_name: "jinaai/jina-embeddings-v3"
+  model_name: "Kingsoft-LLM/QZhou-Embedding"
   batch_size: 32
   task: "text-matching"
   
@@ -32,13 +40,13 @@ sentiment:
 
 # Simulation parameters
 simulation:
-  n_turns_per_story: 10
-  model_name: "gpt-4o"
+  n_turns_per_story: 5
+  model_name: "gpt-4o-mini"
   seed: 42
   # OpenAI API key: set via environment variable OPENAI_API_KEY or pass to script
   client_ids: ["1", "2"]  # Client IDs to simulate
   workshop_ids: ["1", "2", "3"]  # Workshop IDs to simulate
-  n_simulations: 50
+  n_simulations: 2
 
 # Analysis parameters
 analysis:

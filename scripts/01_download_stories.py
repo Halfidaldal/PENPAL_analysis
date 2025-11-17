@@ -15,20 +15,12 @@ Usage:
 import sys
 from pathlib import Path
 import argparse
-import yaml
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.cleaning import init_firestore, download_stories_from_firestore
-from nes.io import save_csv, get_project_root
-
-
-def load_config():
-    """Load configuration from config.yaml."""
-    config_path = get_project_root() / "config.yaml"
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+from nes.io import save_csv, get_project_root, load_config
 
 
 def main():
@@ -36,6 +28,8 @@ def main():
     # Load config
     config = load_config()
     firestore_config = config['firestore']
+    
+    print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
     
     # Initialize Firestore
     print("Initializing Firestore client...")
@@ -55,7 +49,7 @@ def main():
     save_csv(df_stories, output_filename, stage="raw")
     
     print(f"\n✓ Downloaded {len(df_stories)} interaction rows")
-    print(f"✓ Saved to data/raw/{output_filename}")
+    print(f"✓ Saved to data/{config.get('active_dataset', 'TEXT')}/raw/{output_filename}")
     
     print("\n✅ Script 01 complete!")
 

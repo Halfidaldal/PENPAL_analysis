@@ -16,7 +16,6 @@ import os
 import sys
 from pathlib import Path
 from tqdm import tqdm
-import yaml
 import argparse
 
 # Add src to path
@@ -24,14 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.process_spelling_openai import correct_spelling, compute_edit_distance
 from nes.cleaning import filter_by_edit_distance, build_full_story_text
-from nes.io import load_csv, save_csv, get_project_root
-
-
-def load_config():
-    """Load configuration from config.yaml."""
-    config_path = get_project_root() / "config.yaml"
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+from nes.io import load_csv, save_csv, get_project_root, load_config
 
 
 def main():
@@ -58,14 +50,16 @@ def main():
     args = parser.parse_args()
     
     api_key = args.api_key or os.environ.get('OPENAI_API_KEY')
-    if not api_key:
-        print("❌ Error: OpenAI API key required!")
+    if not api_key and args.include_spell_correction:
+        print("❌ Error: OpenAI API key required for spell correction!")
         print("   Set via --api-key flag or OPENAI_API_KEY environment variable")
         sys.exit(1)
     
     # Load config
     config = load_config()
     edit_distance_threshold = config['cleaning']['edit_distance_threshold']
+    
+    print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
     
     # Load raw data
     print("Loading raw story data...")
@@ -103,7 +97,7 @@ def main():
     
     print(f"\n✓ Filtered to {len(df_filtered)} interaction rows")
     print(f"✓ Built {len(df_stories)} complete stories")
-    print("✓ Saved to data/interim/")
+    print(f"✓ Saved to data/{config.get('active_dataset', 'TEXT')}/interim/")
     print("\n✅ Script 02 complete!")
 
 
