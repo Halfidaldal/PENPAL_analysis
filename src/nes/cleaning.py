@@ -98,6 +98,7 @@ def download_stories_from_firestore(
             "workshop_id": doc_dictionary.get("workshop_id"),
             "language": doc_dictionary.get("language"),
             "conversation_id": doc_conv,
+            "respondent_id": doc_dictionary.get("respondent_id"),
         }
         conv_docs.append(row)
 
@@ -228,6 +229,39 @@ def append_turn_numbers(df: pd.DataFrame) -> pd.DataFrame:
     df_out['turn'] = df_out.groupby('conversation_id').cumcount() + 1
     return df_out
 
+
+def filter_by_respondent_id(
+    df: pd.DataFrame,
+    threshold: int = 8,
+    column: str = "respondent_id"
+) -> pd.DataFrame:
+    """
+    Filter DataFrame by respondent_id.
+    
+    Args:
+        df: Input DataFrame
+        column: Name of the respondent ID column
+        threshold: Respondent ID length to filter by
+        
+    Returns:
+        Filtered DataFrame
+    """
+    # filter if respondent_id does not have length 8
+    if column not in df.columns:
+        raise ValueError(f"Column '{column}' not found in DataFrame")
+    
+    
+    filtered_df = len(df[df[column] == threshold].copy())
+    n_before = len(df)
+    n_after = len(filtered_df)
+    n_removed = n_before - n_after
+    
+    print(f"Filtering by respondent_id='{threshold}':")
+    print(f"  Before: {n_before} rows")
+    print(f"  After: {n_after} rows")
+    print(f"  Removed: {n_removed} rows ({100*n_removed/n_before:.1f}%)")
+    
+    return filtered_df
 
 def build_full_story_text(df: pd.DataFrame) -> pd.DataFrame:
     """

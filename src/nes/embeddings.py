@@ -25,6 +25,7 @@ def compute_embeddings_batch(
     texts: List[str],
     model_name: str = "jinaai/jina-embeddings-v3",
     batch_size: int = 32,
+    active_dataset: Optional[str] = None,
     task: Optional[str] = None,
     device: Optional[torch.device] = None
 ) -> np.ndarray:
@@ -35,6 +36,7 @@ def compute_embeddings_batch(
         texts: List of text strings to embed
         model_name: Name of the SentenceTransformer model
         batch_size: Number of texts to process at once
+        active_dataset: Name of active dataset (affects tokenizer settings)
         task: Optional task hint for the model (e.g., "text-matching")
         device: Torch device to use (auto-detected if None)
         
@@ -44,8 +46,19 @@ def compute_embeddings_batch(
     if device is None:
         device = get_device()
     
-    print(f"Loading model: {model_name}")
-    model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device))
+    print(f"Loading model: {model_name} (dataset: {active_dataset})")
+    
+    # Apply special tokenizer settings for TEXT dataset
+    tokenizer_kwargs = {}
+    if active_dataset == "TEXT":
+        tokenizer_kwargs = {"padding_side": "left", "trust_remote_code": True}
+    
+    model = SentenceTransformer(
+        model_name, 
+        trust_remote_code=True, 
+        device=str(device), 
+        tokenizer_kwargs=tokenizer_kwargs
+    )
     
     print(f"Computing embeddings for {len(texts)} texts (batch_size={batch_size})...")
     
@@ -55,9 +68,9 @@ def compute_embeddings_batch(
         
         # Encode with optional task parameter
         if task and hasattr(model, 'encode') and 'task' in model.encode.__code__.co_varnames:
-            embeddings = model.encode(batch, task=task, show_progress_bar=False)
+            embeddings = model.encode(batch, task=task, show_progress_bar=False, normalize_embeddings=True)
         else:
-            embeddings = model.encode(batch, show_progress_bar=False)
+            embeddings = model.encode(batch, show_progress_bar=False, normalize_embeddings=True)
         
         all_embeddings.append(embeddings)
     
@@ -72,6 +85,7 @@ def embed_story_columns(
     text_columns: List[str],
     model_name: str = "jinaai/jina-embeddings-v3",
     batch_size: int = 32,
+    active_dataset: Optional[str] = None,
     task: Optional[str] = None
 ) -> Tuple[pd.DataFrame, dict]:
     """
@@ -104,7 +118,8 @@ def embed_story_columns(
             texts,
             model_name=model_name,
             batch_size=batch_size,
-            task=task
+            task=task,
+            active_dataset=active_dataset
         )
         
         # Store as separate arrays
@@ -119,6 +134,7 @@ def embed_story_columns(
 def compute_story_embeddings_full_stories(
     df: pd.DataFrame,
     model_name: str = "jinaai/jina-embeddings-v3",
+    active_dataset: Optional[str] = None,
     batch_size: int = 32
 ) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -145,7 +161,7 @@ def compute_story_embeddings_full_stories(
         text_columns=columns_to_embed,
         model_name=model_name,
         batch_size=batch_size,
-        task="text-matching"
+        active_dataset=active_dataset
     )
     
     story_embeddings = embeddings_dict.get('full_story')

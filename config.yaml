@@ -29,8 +29,8 @@ cleaning:
 # Embedding models
 embeddings:
   model_name: "Kingsoft-LLM/QZhou-Embedding"
-  batch_size: 32
-  task: "text-matching"
+  batch_size: 8
+  task: null
   
 # Sentiment analysis
 sentiment:

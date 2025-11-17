@@ -51,14 +51,16 @@ def main():
     df_embedded, story_emb, user_emb, ai_emb = compute_story_embeddings_full_stories(
         df_full,
         model_name=embeddings_config['model_name'],
-        batch_size=embeddings_config['batch_size']
+        batch_size=embeddings_config['batch_size'],
+        active_dataset=config.get('active_dataset', 'TEXT')
     )
     
     df_embedded_interaction, embeddings_interaction_dict = embed_story_columns(
         df_interactions,
         ['user', 'ai'],
         model_name=embeddings_config['model_name'],
-        batch_size=embeddings_config['batch_size']
+        batch_size=embeddings_config['batch_size'],
+        active_dataset=config.get('active_dataset', 'TEXT')
     )
     
     # Save parquet with embeddings as list columns
