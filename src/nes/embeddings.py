@@ -36,7 +36,6 @@ def compute_embeddings_batch(
         texts: List of text strings to embed
         model_name: Name of the SentenceTransformer model
         batch_size: Number of texts to process at once
-        active_dataset: Name of active dataset (affects tokenizer settings)
         task: Optional task hint for the model (e.g., "text-matching")
         device: Torch device to use (auto-detected if None)
         
@@ -46,19 +45,8 @@ def compute_embeddings_batch(
     if device is None:
         device = get_device()
     
-    print(f"Loading model: {model_name} (dataset: {active_dataset})")
-    
-    # Apply special tokenizer settings for TEXT dataset
-    tokenizer_kwargs = {}
-    if active_dataset == "TEXT":
-        tokenizer_kwargs = {"padding_side": "left", "trust_remote_code": True}
-    
-    model = SentenceTransformer(
-        model_name, 
-        trust_remote_code=True, 
-        device=str(device), 
-        tokenizer_kwargs=tokenizer_kwargs
-    )
+    print(f"Loading model: {model_name}")
+    model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device), tokenizer_kwargs={"padding_side": "left", "trust_remote_code": True} if active_dataset=="TEXT" else {})
     
     print(f"Computing embeddings for {len(texts)} texts (batch_size={batch_size})...")
     
