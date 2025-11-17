@@ -22,7 +22,7 @@ import argparse
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.process_spelling_openai import correct_spelling, compute_edit_distance
-from nes.cleaning import filter_by_edit_distance, build_full_story_text
+from nes.cleaning import filter_by_edit_distance, build_full_story_text, filter_by_respondent_id
 from nes.io import load_csv, save_csv, get_project_root, load_config
 
 
@@ -87,6 +87,11 @@ def main():
     else:
         print("\nNo edit_distance column found, skipping filter")
         df_filtered = df.copy()
+        
+    if 'respondent_id' in df.columns:
+        print("\nFiltering by respondent ID...")
+        df_filtered = filter_by_respondent_id(df_filtered, threshold=8)
+        print(f"✓ Filtered to {len(df_filtered)} rows with valid respondent IDs")
     
     print("\nBuilding full story text...")
     # Save filtered interaction-level data

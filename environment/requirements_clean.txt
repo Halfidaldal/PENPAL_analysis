@@ -14,7 +14,7 @@ openai>=1.0.0
 # Machine Learning / Transformers
 torch==2.2.0
 transformers==4.38.0
-sentence-transformers==2.5.0
+sentence-transformers>=3.0.0
 
 # Progress bars
 tqdm==4.66.0
