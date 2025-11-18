@@ -34,9 +34,9 @@ embeddings:
   
 # Sentiment analysis
 sentiment:
-  model_name: "oliverguhr/german-sentiment-bert"
+  model_name: "cardiffnlp/twitter-roberta-base-sentiment-latest"
   batch_size: 64
-  valence_method: "amplify"  # "simple", "amplify", or "dampen"
+  valence_method: "simple"  # "simple", "amplify", or "dampen"
 
 # Simulation parameters
 simulation:

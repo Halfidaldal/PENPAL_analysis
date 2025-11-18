@@ -48,7 +48,7 @@ def main():
     print(f"Loaded {len(df_full)} stories")
     
     # Filter to German stories only (adjust as needed)
-    if 'language' in df_full.columns:
+    if config.get('active_dataset') == 'Berlin':
         df_de_full = df_full[df_full['language'] == 'de'].copy()
         df_de_interaction_level = df_interaction_level[df_interaction_level['language'] == 'de'].copy()
         print(f"Filtered to {len(df_de_full)} German stories")
@@ -58,17 +58,17 @@ def main():
     
     # Compute sentiment for full_user and full_ai
     print(f"\nComputing sentiment using {sentiment_config['model_name']}...")
-    df_with_sentiment = add_sentiment_to_dataframe(
-        df_de_full,
-        text_columns=['full_user', 'full_ai'],
-        model_name=sentiment_config['model_name'],
-        batch_size=sentiment_config['batch_size'],
-        valence_method=sentiment_config['valence_method']
-    )
+    #df_with_sentiment = add_sentiment_to_dataframe(
+    #    df_de_full,
+    #    text_columns=['full_user', 'full_ai'],
+    #    model_name=sentiment_config['model_name'],
+    #    batch_size=sentiment_config['batch_size'],
+    #    valence_method=sentiment_config['valence_method']
+    #)
     
     # Save story-level sentiment
-    save_parquet(df_with_sentiment, "story_sentiment_scores_simulated.parquet" if args.simulated_data else "story_sentiment_scores.parquet", stage="processed")
-    print("✓ Saved story-level sentiment scores")
+    #save_parquet(df_with_sentiment, "story_sentiment_scores_simulated.parquet" if args.simulated_data else "story_sentiment_scores.parquet", stage="processed")
+    #print("✓ Saved story-level sentiment scores")
     
     # Compute dyadic (turn-by-turn) sentiment
     print("\nComputing turn-by-turn sentiment...")

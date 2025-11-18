@@ -62,7 +62,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 ```{r load-data}
 # Load dyadic sentiment scores
 setwd("/Users/halfidaldal/Documents/PENPAL_analysis")
-df_field <- read_parquet("data/Berlin/processed/dyadic_sentiment_scores.parquet")
+df_field <- read_parquet("data/Berlin/processed/sentiment.parquet")
 df_simulated <- read_parquet("data/Berlin/processed/dyadic_sentiment_scores_simulated.parquet")
 
 # Display structure
