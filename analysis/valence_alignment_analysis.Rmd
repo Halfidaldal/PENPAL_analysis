@@ -62,7 +62,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 ```{r load-data}
 # Load dyadic sentiment scores
 setwd("/Users/halfidaldal/Documents/PENPAL_analysis")
-df_field <- read_parquet("data/Berlin/processed/sentiment.parquet")
+df_field <- read_parquet("data/TEXT/processed/dyadic_sentiment_scores.parquet")
 df_simulated <- read_parquet("data/Berlin/processed/dyadic_sentiment_scores_simulated.parquet")
 
 # Display structure
@@ -928,6 +928,12 @@ print(combined_rb)
 ggsave(file.path(GRAPHS_DIR, "rubberband_dynamics_comparison.png"),
        combined_rb, width = 12, height = 6, dpi = 300)
 ```
+
+# 6. Cosine similarity alignment
+
+## 6.1 
+
+## 6.2 Cosine distribution 
 
 # 6. Summary and Conclusions
 
