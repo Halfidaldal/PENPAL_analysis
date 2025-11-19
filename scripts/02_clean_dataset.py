@@ -93,6 +93,12 @@ def main():
         df_filtered = filter_by_respondent_id(df_filtered, threshold=12)
         print(f"✓ Filtered to {len(df_filtered)} rows with valid respondent IDs")
     
+    if 'interaction_count' in df.columns:
+        df_filtered = clean_user_ai_start(df_filtered)
+    
+    else: # adds 'turn' to df in no interaction_count found 
+        df_filtered = clean_user_ai_start(df_filtered, interaction_count=False)
+
     print("\nBuilding full story text...")
     # Save filtered interaction-level data
     save_csv(df_filtered, "interaction_level_stories_filtered.csv" if args.include_spell_correction else "interaction_level_stories_filtered_simulated.csv", stage="interim")

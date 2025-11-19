@@ -304,3 +304,43 @@ def build_full_story_text(df: pd.DataFrame) -> pd.DataFrame:
     print(f"Built full story text for {len(story_df)} stories")
     
     return story_df
+
+def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True) -> pd.DataFrame: 
+    
+    # removing remaining test_ids
+    df = df[~df["respondent_id"].str.startswith("test-")]
+
+    # adds ai starter for that respondent_id if turn 10 ai-text == None  
+    if interaction_count == False:
+        df['turn'] = df.groupby('respondent_id').cumcount() + 1
+        starter_map = df.loc[df['turn'] == 10].set_index('respondent_id')['ai'].isna().map(
+            {True: 'ai', False: 'user'}
+        )
+        df['starter'] = df['respondent_id'].map(starter_map)
+    
+    else: # called interaction_count instead
+        starter_map = df.loc[df['interaction_count'] == 10].set_index('respondent_id')['ai'].isna().map(
+        {True: 'ai', False: 'user'}
+        )
+        df['starter'] = df['respondent_id'].map(starter_map)
+
+    for rid, group in df.groupby('respondent_id'):
+        # Only modify groups where starter == 'ai'
+        if group['starter'].iloc[0] != 'ai':
+            continue
+        
+        # Identify the first user row and first ai row
+        first_user_idx = group[group['user'].notna()].index.min()
+        first_ai_idx   = group[group['ai'].notna()].index.min()
+        
+        # If either is missing, skip
+        if pd.isna(first_user_idx) or pd.isna(first_ai_idx):
+            continue
+        
+        # Prepend: user_text + " " + ai_text
+        user_text = df.loc[first_user_idx, 'user']
+        ai_text   = df.loc[first_ai_idx, 'ai']
+        
+        df.loc[first_ai_idx, 'ai'] = f"{user_text} {ai_text}"
+    
+    return df 
