@@ -49,6 +49,13 @@ simulation:
   workshop_ids: ["1", "2", "3"]  # Workshop IDs to simulate
   n_simulations: 2
 
+# textdescriptives (skud ud Lasse)
+surface_metrics: 
+  spacy_mdl: "en_core_web_md" 
+  batch_size: 10
+  n_process: 5
+
+
 # Analysis parameters
 analysis:
   random_seed: 42
