@@ -254,6 +254,10 @@ def filter_by_respondent_id(
     
     n_before = len(df)
     filtered_df = df[df[column].astype(str).str.len() == threshold].copy()
+
+    # removing remaining test_ids
+    filtered_df = filtered_df[~filtered_df[column].str.startswith("test-")]
+
     n_after = len(filtered_df)
     n_removed = n_before - n_after
     
@@ -309,9 +313,6 @@ def build_full_story_text(df: pd.DataFrame) -> pd.DataFrame:
     return story_df
 
 def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True) -> pd.DataFrame: 
-    
-    # removing remaining test_ids
-    df = df[~df["respondent_id"].str.startswith("test-")]
 
     # adds ai starter for that respondent_id if turn 10 ai-text == None  
     if interaction_count == False:
