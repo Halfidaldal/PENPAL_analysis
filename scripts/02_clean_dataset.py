@@ -58,9 +58,10 @@ def main():
     # Load config
     config = load_config()
     edit_distance_threshold = config['cleaning']['edit_distance_threshold']
-    
+    simulated = config['cleaning']['simulated']
+
     print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
-    print(f"{simulated}")
+    print(f"Cleaning Simulated: {simulated}")
 
     # Load raw data
     print("Loading raw story data...")
@@ -102,9 +103,9 @@ def main():
 
     print("\nBuilding full story text...")
     # Save filtered interaction-level data
-    save_csv(df_filtered, "interaction_level_stories_filtered_simulated.csv" if args.input_csv_raw else "interaction_level_stories_filtered.csv", stage="interim")
+    save_csv(df_filtered, "interaction_level_stories_filtered_simulated.csv" if simulated else "interaction_level_stories_filtered.csv", stage="interim")
     df_stories = build_full_story_text(df_filtered)
-    save_csv(df_stories, "stories_full_text_filtered_simulated.csv" if args.input_csv_raw else "stories_full_text_filtered.csv", stage="interim")
+    save_csv(df_stories, "stories_full_text_filtered_simulated.csv" if simulated else "stories_full_text_filtered.csv", stage="interim")
     
     
     print(f"\n✓ Filtered to {len(df_filtered)} interaction rows")
