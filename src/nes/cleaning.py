@@ -90,15 +90,18 @@ def download_stories_from_firestore(
         # Build row dict for current doc and append to conv_docs
         doc_dictionary = doc.to_dict()
         row = {
-            "timestamp": doc_dictionary.get("timestamp"),
-            "user": doc_dictionary.get("user"),
-            "ai": doc_dictionary.get("ai"),
-            "combined_prompt": doc_dictionary.get("combined_prompt"),
-            "client_id": doc_dictionary.get("client_id"),
-            "workshop_id": doc_dictionary.get("workshop_id"),
-            "language": doc_dictionary.get("language"),
+            "timestamp": doc_dictionary.get("timestamp") if "timestamp" in doc_dictionary else None,
+            "user": doc_dictionary.get("user") if "user" in doc_dictionary else None,
+            "ai": doc_dictionary.get("ai") if "ai" in doc_dictionary else None,
+            "combined_prompt": doc_dictionary.get("combined_prompt") if "combined_prompt" in doc_dictionary else None,
+            "client_id": doc_dictionary.get("client_id") if "client_id" in doc_dictionary else None,
+            "workshop_id": doc_dictionary.get("workshop_id") if "workshop_id" in doc_dictionary else None,
+            "language": doc_dictionary.get("language") if "language" in doc_dictionary else None,
             "conversation_id": doc_conv,
-            "respondent_id": doc_dictionary.get("respondent_id"),
+            "respondent_id": doc_dictionary.get("respondent_id") if "respondent_id" in doc_dictionary else None,
+            "interaction_count": doc_dictionary.get("interaction_count") if "interaction_count" in doc_dictionary else None,
+            "llm_type": doc_dictionary.get("llm_type") if "llm_type" in doc_dictionary else None,
+            
         }
         conv_docs.append(row)
 
