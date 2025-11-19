@@ -28,22 +28,11 @@ def main():
     # Load config
     config = load_config()
     embeddings_config = config['embeddings']
-    
+    simulated = config['cleaning'].get('simulated', False)
     print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
     
-    parser = argparse.ArgumentParser(description="Compute embeddings for story data.")
-    parser.add_argument(
-        "--simulated-data",
-        type=bool,
-        default=False,
-        help="Whether the input data is simulated (affects file naming).")
-
-    args = parser.parse_args()
-
-    # Load cleaned story data
-    print("Loading cleaned story data...")
-    df_full = load_csv("stories_full_text_filtered.csv" if not args.simulated_data else "stories_full_text_filtered_simulated.csv", stage="interim")
-    df_interactions = load_csv("interaction_level_stories_filtered.csv" if not args.simulated_data else "interaction_level_stories_filtered_simulated.csv", stage="interim")
+    df_full = load_csv("stories_full_text_filtered.csv" if simulated else "stories_full_text_filtered_simulated.csv", stage="interim")
+    df_interactions = load_csv("interaction_level_stories_filtered.csv" if simulated else "interaction_level_stories_filtered_simulated.csv", stage="interim")
     print(f"Loaded {len(df_full)} full stories and {len(df_interactions)} interaction-level stories")
     
     # Compute embeddings
@@ -69,9 +58,9 @@ def main():
     save_parquet(df_embedded_interaction, "story_embeddings_interaction_level.parquet" if not args.simulated_data else "story_embeddings_interaction_level_simulated.parquet", stage="processed") 
     
     # Save individual .npy files for numpy arrays
-    save_npy(story_emb, "story_embeddings_jina_field_full.npy" if not args.simulated_data else "story_embeddings_jina_full_simulated.npy",  stage="processed")
-    save_npy(user_emb, "story_user_embeddings_jina_field_full.npy" if not args.simulated_data else "story_user_embeddings_jina_full_simulated.npy", stage="processed")
-    save_npy(ai_emb, "story_ai_embeddings_jina_field_full.npy" if not args.simulated_data else "story_ai_embeddings_jina_full_simulated.npy", stage="processed")
+    save_npy(story_emb, "story_embeddings_jina_field_full.npy" if simulated else "story_embeddings_jina_full_simulated.npy",  stage="processed")
+    save_npy(user_emb, "story_user_embeddings_jina_field_full.npy" if simulated else "story_user_embeddings_jina_full_simulated.npy", stage="processed")
+    save_npy(ai_emb, "story_ai_embeddings_jina_field_full.npy" if simulated else "story_ai_embeddings_jina_full_simulated.npy", stage="processed")
         
     print(f"\n✓ Computed embeddings for {len(df_embedded)} stories")
     print(f"✓ Embedding dimension: {story_emb.shape[1]}")
