@@ -25,6 +25,7 @@ firestore:
 cleaning:
   edit_distance_threshold: 100
   min_story_length: 10  # minimum interactions to count as a story
+  simulated: False      # whether to clean simulated or user dataset 
 
 # Embedding models
 embeddings:

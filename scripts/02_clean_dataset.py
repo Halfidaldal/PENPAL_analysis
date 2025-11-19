@@ -22,7 +22,7 @@ import argparse
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.process_spelling_openai import correct_spelling, compute_edit_distance
-from nes.cleaning import filter_by_edit_distance, build_full_story_text, filter_by_respondent_id
+from nes.cleaning import filter_by_edit_distance, build_full_story_text, filter_by_respondent_id, clean_user_ai_start
 from nes.io import load_csv, save_csv, get_project_root, load_config
 
 
@@ -60,7 +60,8 @@ def main():
     edit_distance_threshold = config['cleaning']['edit_distance_threshold']
     
     print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
-    
+    print(f"{simulated}")
+
     # Load raw data
     print("Loading raw story data...")
     df = load_csv(args.input_csv_raw, stage="raw")
@@ -101,9 +102,9 @@ def main():
 
     print("\nBuilding full story text...")
     # Save filtered interaction-level data
-    save_csv(df_filtered, "interaction_level_stories_filtered.csv" if args.include_spell_correction else "interaction_level_stories_filtered_simulated.csv", stage="interim")
+    save_csv(df_filtered, "interaction_level_stories_filtered_simulated.csv" if args.input_csv_raw else "interaction_level_stories_filtered.csv", stage="interim")
     df_stories = build_full_story_text(df_filtered)
-    save_csv(df_stories, "stories_full_text_filtered.csv" if args.include_spell_correction else "stories_full_text_filtered_simulated.csv", stage="interim")
+    save_csv(df_stories, "stories_full_text_filtered_simulated.csv" if args.input_csv_raw else "stories_full_text_filtered.csv", stage="interim")
     
     
     print(f"\n✓ Filtered to {len(df_filtered)} interaction rows")
