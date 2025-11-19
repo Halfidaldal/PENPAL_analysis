@@ -339,6 +339,7 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True) -> pd.
         # Identify the first user row and first ai row
         first_user_idx = group[group['user'].notna()].index.min()
         first_ai_idx   = group[group['ai'].notna()].index.min()
+        last_ai_idx    = group[group['ai'].isna()].index        # should be the only one 
         
         # If either is missing, skip
         if pd.isna(first_user_idx) or pd.isna(first_ai_idx):
@@ -351,5 +352,6 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True) -> pd.
         df.loc[first_ai_idx, 'ai'] = f"{user_text} {ai_text}"
         # df.loc[first_user_idx, 'user'] = np.nan
         df.loc[first_user_idx, 'user'] = ""
+        df.loc[last_ai_idx, 'ai'] = ""                # change from NaN value to empty string in missing ai turn
 
     return df 
