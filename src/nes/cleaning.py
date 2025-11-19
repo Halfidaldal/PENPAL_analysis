@@ -349,6 +349,7 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True) -> pd.
         ai_text   = df.loc[first_ai_idx, 'ai']
         
         df.loc[first_ai_idx, 'ai'] = f"{user_text} {ai_text}"
-        df.loc[first_user_idx, 'user'] = np.nan
-    
+        # df.loc[first_user_idx, 'user'] = np.nan
+        df.loc[first_user_idx, 'user'] = ""
+
     return df 
