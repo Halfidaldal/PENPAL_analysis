@@ -284,8 +284,8 @@ def build_full_story_text(df: pd.DataFrame) -> pd.DataFrame:
         'user': lambda x: ' '.join(x.astype(str)),
         'ai': lambda x: ' '.join(x.astype(str)),
         **({'language': 'first'} if 'language' in df.columns else {}),
-        'client_id': 'first' if 'client_id' in df.columns else {},
-        'workshop_id': 'first' if 'workshop_id' in df.columns else {},
+        **({'client_id': 'first'} if 'client_id' in df.columns else {}),
+        **({'workshop_id': 'first'} if 'workshop_id' in df.columns else {}),
         'timestamp': 'first',
         'respondent_id': 'first'
     }).reset_index()
