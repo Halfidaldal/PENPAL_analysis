@@ -10,6 +10,7 @@ This module handles:
 
 from typing import Optional, List, Dict, Any
 import pandas as pd
+import numpy as np
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1 import FieldFilter
@@ -346,5 +347,6 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True) -> pd.
         ai_text   = df.loc[first_ai_idx, 'ai']
         
         df.loc[first_ai_idx, 'ai'] = f"{user_text} {ai_text}"
+        df.loc[first_user_idx, 'user'] = np.nan
     
     return df 
