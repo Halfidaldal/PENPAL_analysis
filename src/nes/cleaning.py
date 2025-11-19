@@ -288,7 +288,9 @@ def build_full_story_text(df: pd.DataFrame) -> pd.DataFrame:
         **({'client_id': 'first'} if 'client_id' in df.columns else {}),
         **({'workshop_id': 'first'} if 'workshop_id' in df.columns else {}),
         'timestamp': 'first',
-        'respondent_id': 'first'
+        'respondent_id': 'first',
+        'starter': 'first',
+        'llm_type': 'first'
     }).reset_index()
     
     # Rename columns
