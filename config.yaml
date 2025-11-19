@@ -40,7 +40,7 @@ sentiment:
 
 # Simulation parameters
 simulation:
-  n_turns_per_story: 5
+  n_turns_per_story: 10
   model_name: "gpt-4o-mini"
   seed: 42
   # OpenAI API key: set via environment variable OPENAI_API_KEY or pass to script

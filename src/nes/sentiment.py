@@ -69,13 +69,13 @@ def continuous_valence_score(
     """
     if method == "simple":
         # Ignore neutral, just positive minus negative
-        valence = probs[:, 0] - probs[:, 1]
+        valence = probs[:, 2] - probs[:, 0]
     elif method == "amplify":
         # Amplify when neutral is high
-        valence = (probs[:, 0] - probs[:, 1]) / (1 - probs[:, 2] + 1e-6)
+        valence = (probs[:, 2] - probs[:, 0]) / (1 - probs[:, 1] + 1e-6)
     elif method == "dampen":
         # Dampen when neutral is high
-        valence = (probs[:, 0] - probs[:, 1]) * (1 - probs[:, 2])
+        valence = (probs[:, 2] - probs[:, 0]) * (1 - probs[:, 1])
     else:
         raise ValueError(f"Unknown method: {method}")
     
