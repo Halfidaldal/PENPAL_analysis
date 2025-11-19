@@ -36,12 +36,6 @@ def main():
         help="Path to input CSV file with raw story data."
     )
     parser.add_argument(
-        "--include-spell-correction",
-        type=bool,
-        default=False,
-        help="Whether to include spell correction in the cleaning process."
-    )
-    parser.add_argument(
         "--api-key",
         type=str,
         default=None,
@@ -50,7 +44,7 @@ def main():
     args = parser.parse_args()
     
     api_key = args.api_key or os.environ.get('OPENAI_API_KEY')
-    if not api_key and args.include_spell_correction:
+    if not api_key and args.api_key is not None:
         print("❌ Error: OpenAI API key required for spell correction!")
         print("   Set via --api-key flag or OPENAI_API_KEY environment variable")
         sys.exit(1)
@@ -68,7 +62,7 @@ def main():
     df = load_csv(args.input_csv_raw, stage="raw")
     print(f"Loaded {len(df)} rows")
     
-    if args.include_spell_correction is True:
+    if api_key:
         print("\nApplying spell correction to user inputs...")
         df['user_corrected'] = [correct_spelling(text, api_key=api_key) for text in tqdm(df["user"], desc="Spell Correction")]
         print("Spell correction complete.")
