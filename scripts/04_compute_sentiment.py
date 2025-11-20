@@ -28,23 +28,16 @@ def main():
     # Load config
     config = load_config()
     sentiment_config = config['sentiment']
+    simulated = config['cleaning'].get('simulated', False)
     
     print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
     
     # Load story embeddings data
     print("Loading story data with embeddings...")
     
-    parser = argparse.ArgumentParser(description="Compute sentiment for a CSV.")
-    parser.add_argument(
-        "--simulated-data", 
-        type=bool, 
-        default=False, 
-        help="Whether the input data is simulated (affects file naming)."
-    )
-    args = parser.parse_args()
 
-    df_full = load_parquet("story_embeddings_full_simulated.parquet" if args.simulated_data else "story_embeddings_field_full.parquet", stage="processed")
-    df_interaction_level = load_parquet("story_embeddings_interaction_level_simulated.parquet" if args.simulated_data else "story_embeddings_interaction_level.parquet", stage="processed")
+    df_full = load_parquet("story_embeddings_full_simulated.parquet" if simulated else "story_embeddings_full.parquet", stage="processed")
+    df_interaction_level = load_parquet("story_embeddings_interaction_level_simulated.parquet" if simulated else "story_embeddings_interaction_level.parquet", stage="processed")
     print(f"Loaded {len(df_full)} stories")
     
     # Filter to German stories only (adjust as needed)
@@ -80,7 +73,7 @@ def main():
     )
     
     # Save dyadic sentiment
-    save_parquet(df_dyadic, "dyadic_sentiment_scores_simulated.parquet" if args.simulated_data else "dyadic_sentiment_scores.parquet", stage="processed")
+    save_parquet(df_dyadic, "dyadic_sentiment_scores_simulated.parquet" if simulated else "dyadic_sentiment_scores.parquet", stage="processed")
     print(f"✓ Saved dyadic sentiment for {len(df_dyadic)} turns")
     
     print("\n✅ Script 04 complete!")

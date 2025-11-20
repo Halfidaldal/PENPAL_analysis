@@ -54,13 +54,13 @@ def main():
     
     # Save parquet with embeddings as list columns
     print("\nSaving embeddings...")
-    save_parquet(df_embedded, "story_embeddings_field_full_simulated.parquet" if simulated else "story_embeddings_full_simulated.parquet", stage="processed")
+    save_parquet(df_embedded, "story_embeddings_full_simulated.parquet" if simulated else "story_embeddings_full.parquet", stage="processed")
     save_parquet(df_embedded_interaction, "story_embeddings_interaction_level_simulated.parquet" if simulated else "story_embeddings_interaction_level.parquet", stage="processed") 
     
     # Save individual .npy files for numpy arrays
-    save_npy(story_emb, "story_embeddings_jina_field_full_simulated.npy" if simulated else "story_embeddings_jina_full.npy",  stage="processed")
-    save_npy(user_emb, "story_user_embeddings_jina_field_full_simulated.npy" if simulated else "story_user_embeddings_jina_full.npy", stage="processed")
-    save_npy(ai_emb, "story_ai_embeddings_jina_field_full_simulated.npy" if simulated else "story_ai_embeddings_jina_full.npy", stage="processed")
+    save_npy(story_emb, "story_embeddings_full_simulated.npy" if simulated else "story_embeddings_full.npy",  stage="processed")
+    save_npy(user_emb, "story_user_embeddings_full_simulated.npy" if simulated else "story_user_embeddings_full.npy", stage="processed")
+    save_npy(ai_emb, "story_ai_embeddings_full_simulated.npy" if simulated else "story_ai_embeddings_full.npy", stage="processed")
         
     print(f"\n✓ Computed embeddings for {len(df_embedded)} stories")
     print(f"✓ Embedding dimension: {story_emb.shape[1]}")
