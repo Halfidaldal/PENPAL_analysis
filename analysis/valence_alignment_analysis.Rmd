@@ -4,15 +4,17 @@ subtitle: "Analysis of Field Data and AI-AI Baseline Comparison"
 author: "PENPAL Project"
 date: "`r Sys.Date()`"
 output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
   html_document:
     toc: true
     toc_float: true
     toc_depth: 3
     code_folding: hide
     theme: united
-  pdf_document:
-    toc: true
-    toc_depth: 3
 ---
 
 ```{r setup, include=FALSE}
@@ -36,7 +38,7 @@ pacman::p_load(
   zoo,          # Rolling statistics
   patchwork,    # Combine plots
   cowplot,      # Additional plot utilities
-  afex,          # ANOVA
+  afex          # ANOVA
 )
 
 # Set project root
@@ -740,7 +742,155 @@ print(summary_results)
 write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
 ```
 
-## 6.2 Session Information
+
+# 6. Supplementary: Interaction Effects
+
+## 6.1 Starter Interaction Effects
+
+### 6.1.1 Same-Turn Alignment by Starter
+```{r starter-same-turn}
+# Mixed model with starter interaction
+model_starter_same <- lmer(ai_valence ~ user_valence * starter + (1 | conversation_id), 
+                           data = df_field)
+
+cat("=== Same-Turn Alignment: Starter Interaction ===\n")
+print(summary(model_starter_same))
+```
+
+### 6.1.2 Previous-Turn Alignment by Starter
+```{r starter-prev-turn}
+# Mixed model with starter interaction
+df_field_lag <- df_field %>% filter(!is.na(ai_valence_lag1))
+
+model_starter_prev <- lmer(user_valence ~ ai_valence_lag1 * starter + (1 | conversation_id), 
+                           data = df_field_lag)
+
+cat("=== Previous-Turn Alignment: Starter Interaction ===\n")
+print(summary(model_starter_prev))
+```
+
+### 6.1.3 Per-Story Correlations by Starter
+```{r starter-per-story}
+# Same-turn correlations stratified by starter
+cor_starter_same <- df_field %>%
+  filter(!is.na(starter)) %>%
+  group_by(conversation_id, starter) %>%
+  filter(n() >= 3) %>%
+  summarise(
+    rho = cor(user_valence, ai_valence, use = "complete.obs"),
+    n_turns = n(),
+    .groups = "drop"
+  )
+
+cat("=== Same-Turn Correlations by Starter ===\n")
+cor_starter_same %>%
+  group_by(starter) %>%
+  summarise(
+    mean_rho = mean(rho, na.rm = TRUE),
+    sd_rho = sd(rho, na.rm = TRUE),
+    n_stories = n()
+  ) %>%
+  print()
+
+# Test difference
+t_test_starter <- t.test(rho ~ starter, data = cor_starter_same)
+cat("\nT-test (starter effect on same-turn rho):\n")
+print(t_test_starter)
+```
+
+
+## 6.2 LLM Type Interaction Effects
+
+### 6.2.1 Same-Turn Alignment by LLM Type
+```{r llm-same-turn}
+# Mixed model with LLM type interaction
+df_field_llm <- df_field %>% filter(!is.na(llm_type))
+
+model_llm_same <- lmer(ai_valence ~ user_valence * factor(llm_type) + (1 | conversation_id), 
+                       data = df_field_llm)
+
+cat("=== Same-Turn Alignment: LLM Type Interaction ===\n")
+print(summary(model_llm_same))
+```
+
+### 6.2.2 Previous-Turn Alignment by LLM Type
+```{r llm-prev-turn}
+# Mixed model with LLM type interaction
+df_field_llm_lag <- df_field %>% 
+  filter(!is.na(llm_type), !is.na(ai_valence_lag1))
+
+model_llm_prev <- lmer(user_valence ~ ai_valence_lag1 * factor(llm_type) + (1 | conversation_id), 
+                       data = df_field_llm_lag)
+
+cat("=== Previous-Turn Alignment: LLM Type Interaction ===\n")
+print(summary(model_llm_prev))
+```
+
+### 6.2.3 Per-Story Correlations by LLM Type
+```{r llm-per-story}
+# Same-turn correlations stratified by LLM type
+cor_llm_same <- df_field %>%
+  filter(!is.na(llm_type)) %>%
+  group_by(conversation_id, llm_type) %>%
+  filter(n() >= 3) %>%
+  summarise(
+    rho = cor(user_valence, ai_valence, use = "complete.obs"),
+    n_turns = n(),
+    .groups = "drop"
+  )
+
+cat("=== Same-Turn Correlations by LLM Type ===\n")
+cor_llm_same %>%
+  group_by(llm_type) %>%
+  summarise(
+    mean_rho = mean(rho, na.rm = TRUE),
+    sd_rho = sd(rho, na.rm = TRUE),
+    n_stories = n()
+  ) %>%
+  print()
+
+# ANOVA test
+anova_llm <- aov(rho ~ factor(llm_type), data = cor_llm_same)
+cat("\nANOVA (LLM type effect on same-turn rho):\n")
+print(summary(anova_llm))
+```
+
+
+## 6.3 Valence Distribution by Conditions
+
+### 6.3.1 Valence by Starter
+```{r valence-starter}
+df_field %>%
+  filter(!is.na(starter)) %>%
+  pivot_longer(cols = c(user_valence, ai_valence),
+               names_to = "agent", values_to = "valence") %>%
+  group_by(starter, agent) %>%
+  summarise(
+    mean_valence = mean(valence, na.rm = TRUE),
+    sd_valence = sd(valence, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  print()
+```
+
+### 6.3.2 Valence by LLM Type
+```{r valence-llm}
+df_field %>%
+  filter(!is.na(llm_type)) %>%
+  pivot_longer(cols = c(user_valence, ai_valence),
+               names_to = "agent", values_to = "valence") %>%
+  group_by(llm_type, agent) %>%
+  summarise(
+    mean_valence = mean(valence, na.rm = TRUE),
+    sd_valence = sd(valence, na.rm = TRUE),
+    n_turns = n(),
+    .groups = "drop"
+  ) %>%
+  print()
+```
+
+
+## 7. Session Information
 
 ```{r session-info}
 sessionInfo()
