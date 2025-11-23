@@ -182,10 +182,13 @@ def compute_transience_scores(df, tokenizer, model, window_size=128):
     pd.DataFrame
         DataFrame with added transience columns
     """
-    def gather_future_tokens(start_idx, df, window_size):
-        """Gather up to window_size tokens from subsequent rows."""
+    def gather_future_tokens(start_idx, df, window_size, current_conversation_id):
+        """Gather up to window_size tokens from subsequent rows in same conversation."""
         future_ids = []
         for j in range(start_idx + 1, len(df)):
+            # Stop if conversation boundary crossed
+            if df.at[j, "conversation_id"] != current_conversation_id:
+                break
             for col in ["user_ids", "ai_ids"]:
                 for tid in df.at[j, col]:
                     future_ids.append(tid)
@@ -197,7 +200,8 @@ def compute_transience_scores(df, tokenizer, model, window_size=128):
     ai_transience = []
     
     for i, row in tqdm(df.iterrows(), total=len(df), desc="Computing transience"):
-        future_ids = gather_future_tokens(i, df, window_size)
+        current_conversation_id = row.get("conversation_id", None)
+        future_ids = gather_future_tokens(i, df, window_size, current_conversation_id)
         
         # User transience
         u_context = row["user_ids"][-window_size:]
