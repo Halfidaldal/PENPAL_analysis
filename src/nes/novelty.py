@@ -105,14 +105,19 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     pd.DataFrame
         DataFrame with added novelty columns
     """
-    # Pre-tokenize
     df["user_ids"] = df["user"].apply(
-        lambda txt: tokenizer(txt, add_special_tokens=False)["input_ids"]
+        lambda txt: tokenizer(
+            "" if pd.isna(txt) else str(txt),
+            add_special_tokens=False
+        )["input_ids"]
     )
+
     df["ai_ids"] = df["ai"].apply(
-        lambda txt: tokenizer(txt, add_special_tokens=False)["input_ids"]
+        lambda txt: tokenizer(
+            "" if pd.isna(txt) else str(txt),
+            add_special_tokens=False
+        )["input_ids"]
     )
-    
     context_buffer = []
     last_client = None
     user_surprise, user_entropy = [], []

@@ -14,8 +14,8 @@ from nes.surface_metrics import get_descriptive_metrics_dual_full_long, get_desc
 def main():
     parser = argparse.ArgumentParser(description="Compute text descriptives for stories")
     
-    args.add_argument("--full", default="/work/PENPAL/PENPAL_analysis/data/TEXT/interim/stories_full_text_filtered.csv", help="Path to full stories CSV")
-    args.add_argument("--interaction", default="/work/PENPAL/PENPAL_analysis/data/TEXT/interim/interaction_level_stories_filtered.csv", help="Path to interaction level stories CSV")
+    parser.add_argument("--full", default="stories_full_text_filtered.csv", help="Path to full stories CSV")
+    parser.add_argument("--interaction", default="interaction_level_stories_filtered.csv", help="Path to interaction level stories CSV")
     args = parser.parse_args()
     
     df_full = pd.read_csv(args.full)
