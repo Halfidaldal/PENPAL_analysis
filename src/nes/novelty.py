@@ -106,7 +106,7 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
         DataFrame with added novelty columns
     """
     # Pre-tokenize
-    df["user_ids"] = df["user_corrected"].apply(
+    df["user_ids"] = df["user"].apply(
         lambda txt: tokenizer(txt, add_special_tokens=False)["input_ids"]
     )
     df["ai_ids"] = df["ai"].apply(
@@ -119,7 +119,7 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     ai_surprise, ai_entropy = [], []
     
     for _, row in tqdm(df.iterrows(), total=len(df), desc="Computing novelty"):
-        client = row.get("client_id", None)
+        client = row.get("conversation_id", None)
         
         # Reset context at new session
         if last_client is None or (client is not None and client != last_client):
