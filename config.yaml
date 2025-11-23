@@ -1,0 +1,69 @@
+# PENPAL Analysis Configuration
+
+# Active dataset (change this to switch between datasets)
+active_dataset: "TEXT"  # Options: "TEXT", "Berlin"
+
+# Data paths per dataset
+datasets:
+  TEXT:
+    raw_dir: "data/TEXT/raw"
+    interim_dir: "data/TEXT/interim"
+    processed_dir: "data/TEXT/processed"
+  Berlin:
+    raw_dir: "data/Berlin/raw"
+    interim_dir: "data/Berlin/interim"
+    processed_dir: "data/Berlin/processed"
+
+# Firestore settings
+firestore:
+  credentials_path: "Berlin/src/the-never-ending-story-a7b5f-firebase-adminsdk-ax73p-9014b38264.json"
+  collection_name: "story_data_TEXT"
+  stories_collection: "stories_TEXT"
+  min_interactions: 10
+
+# Cleaning parameters
+cleaning:
+  edit_distance_threshold: 100
+  min_story_length: 10  # minimum interactions to count as a story
+  simulated: False      # whether to clean simulated or user dataset 
+
+# Embedding models
+embeddings:
+  model_name: "Kingsoft-LLM/QZhou-Embedding"
+  batch_size: 8
+  task: null
+  
+novelty:
+  model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
+  window_size: 128
+  task: null
+  hf_token: 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
+
+# Sentiment analysis
+sentiment:
+  model_name: "cardiffnlp/twitter-roberta-base-sentiment-latest"
+  batch_size: 64
+  valence_method: "simple"  # "simple", "amplify", or "dampen"
+
+# Simulation parameters
+simulation:
+  n_turns_per_story: 10
+  model_name: "gpt-4o-mini"
+  seed: 42
+  # OpenAI API key: set via environment variable OPENAI_API_KEY or pass to script
+  client_ids: ["1", "2"]  # Client IDs to simulate
+  workshop_ids: ["1", "2", "3"]  # Workshop IDs to simulate
+  n_simulations: 2
+
+# textdescriptives (skud ud Lasse)
+surface_metrics: 
+  spacy_mdl: "en_core_web_md" 
+  batch_size: 10
+  n_process: 5
+
+
+# Analysis parameters
+analysis:
+  random_seed: 42
+  languages:
+    - "de"  # German only for now

@@ -1,0 +1,164 @@
+---
+title: "Novelty"
+subtitle: "Analysis of novelty"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load required packages
+pacman::p_load(
+  tidyverse,    # Data manipulation and plotting
+  lme4,         # Mixed effects models
+  lmerTest,     # P-values for mixed models
+  arrow,        # Parquet file I/O
+  stringi,      # String operations
+  lubridate,    # Date/time handling
+  zoo,          # Rolling statistics
+  patchwork,    # Combine plots
+  cowplot,      # Additional plot utilities
+  afex,          # ANOVA
+  here,          # File path management
+  emmeans      # Estimated marginal means
+
+)
+
+# Set project root
+PROJECT_ROOT <- here()
+setwd(PROJECT_ROOT)
+
+# Set global theme
+theme_set(theme_minimal(base_size = 14))
+
+# Define output directories
+GRAPHS_DIR <- file.path(PROJECT_ROOT, "analysis", "figures")
+TABLES_DIR <- file.path(PROJECT_ROOT, "analysis", "tables")
+
+# Create output directories if they don't exist
+dir.create(GRAPHS_DIR, showWarnings = FALSE, recursive = TRUE)
+dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
+```
+
+
+
+# 1. Data Loading and Preprocessing
+
+## 1.1 Load Data
+
+```{r load-data}
+
+# Load Field Data
+setwd(PROJECT_ROOT)
+df_res_field <- read_csv("data/TEXT/processed/novelty_scores.csv") %>%
+  mutate(
+    user_resonance = user_surprise - user_transience,
+    ai_resonance = ai_surprise - ai_transience,
+    datatype = "Field"
+  ) %>%
+  filter(!is.na(user_surprise) & !is.na(ai_surprise))
+
+
+
+
+```
+
+
+```{r}
+df_res_long <- df_res_field %>%
+  pivot_longer(
+    cols = c(user_surprise, user_transience, ai_surprise, ai_transience),
+    names_to = c("agent", "metric"),
+    names_pattern = "(user|ai)_(surprise|transience)"
+  ) %>%
+  
+  pivot_wider(names_from = metric, values_from = value) %>%
+  mutate(
+    resonance = surprise - transience,
+    agent = factor(agent, levels = c("user", "ai"), labels = c("User", "AI"))
+  )
+
+
+
+# Plot Resonance vs Novelty (Field Data)
+ggplot(df_res_long, aes(x = surprise, y = resonance, color = agent)) +
+  geom_point(alpha = 0.5, size = 1.5) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.2) +
+  scale_color_manual(values = c("User" = "#1f77b4", "AI" = "#ff7f0e")) +
+  labs(
+    title = "Resonance vs Novelty (Field Data)",
+    x = "Novelty (Surprisal)",
+    y = "Resonance (Novelty - Transience)"
+  ) +
+  xlim(0,8) +
+  ylim(-5,5) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+```
+
+
+
+```{r}
+
+ggplot() +
+  # human points + extended line
+  geom_point(data = df_res_field,
+             aes(x = user_surprise, y = user_resonance, colour = "Human"),
+             alpha = 0.5) +
+  geom_smooth(data = df_res_field,
+              aes(x = user_surprise, y = user_resonance, colour = "Human"),
+              method = "lm",
+              se     = FALSE,
+              fullrange = TRUE) +
+  
+  # AI points + extended line
+  geom_point(data = df_res_field,
+             aes(x = ai_surprise, y = ai_resonance, colour = "AI"),
+             alpha = 0.5) +
+  geom_smooth(data = df_res_field,
+              aes(x = ai_surprise, y = ai_resonance, colour = "AI"),
+              method = "lm",
+              se     = FALSE,
+              fullrange = TRUE) +
+  
+  # manual colours & labels
+  scale_colour_manual(name   = "Agent",
+                      values = c(Human = "#1f77b4", AI = "#ff7f0e")) +
+  labs(title = "Surprise vs. Resonance: Human vs. AI",
+       x     = "Novelty",
+       y     = "Resonance") +
+  xlim(0,8) +
+  ylim(-5,5) +
+  theme_minimal()
+```
+```{r}
+
+model_resonance <- lmer(resonance ~ surprise * agent + (1 | conversation_id), data = df_res_long)
+summary(model_resonance)
+
+# Compare slopes
+emtrends(model_resonance, specs = "agent", var = "surprise")
+
+```
+
+

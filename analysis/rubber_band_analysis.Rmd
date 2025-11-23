@@ -1,0 +1,1162 @@
+---
+title: "Rubber_band_analysis"
+subtitle: "Analysis of Field Data and AI-AI in Rubber-band dynamics"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load required packages
+pacman::p_load(
+  tidyverse,    # Data manipulation and plotting
+  lme4,         # Mixed effects models
+  lmerTest,     # P-values for mixed models
+  arrow,        # Parquet file I/O
+  stringi,      # String operations
+  lubridate,    # Date/time handling
+  zoo,          # Rolling statistics
+  patchwork,    # Combine plots
+  cowplot,      # Additional plot utilities
+  afex          # ANOVA
+)
+
+# Set project root
+PROJECT_ROOT <- "/Users/halfidaldal/Documents/PENPAL_analysis"
+setwd(PROJECT_ROOT)
+
+# Set global theme
+theme_set(theme_minimal(base_size = 14))
+
+# Define output directories
+GRAPHS_DIR <- file.path(PROJECT_ROOT, "analysis", "figures")
+TABLES_DIR <- file.path(PROJECT_ROOT, "analysis", "tables")
+
+# Create output directories if they don't exist
+dir.create(GRAPHS_DIR, showWarnings = FALSE, recursive = TRUE)
+dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
+```
+
+
+
+# 1. Data Loading and Preprocessing
+
+## 1.1 Load Data
+
+```{r load-data}
+# Load dyadic sentiment scores
+setwd("/Users/halfidaldal/Documents/PENPAL_analysis")
+df_field <- read_parquet("data/TEXT/processed/dyadic_sentiment_scores.parquet")
+df_simulated <- read_parquet("data/Berlin/processed/dyadic_sentiment_scores_simulated.parquet")
+
+# Display structure
+cat("Field data dimensions:", dim(df_field), "\n")
+cat("Simulated data dimensions:", dim(df_simulated), "\n")
+
+# Show column names
+cat("\nField data columns:\n")
+print(names(df_field))
+
+cat("\nSimulated data columns:\n")
+print(names(df_simulated))
+```
+
+
+
+## 1.2 Data Preprocessing
+
+```{r preprocess}
+# Preprocess field data
+df_field <- df_field %>%
+  rename(
+    ai_valence = ai_sentiment_score,
+    user_valence = user_sentiment_score
+  ) %>%
+  mutate(
+    # Token counts
+    user_token_count = stri_count_words(user),
+    ai_token_count = stri_count_words(ai),
+    token_ratio = if_else(ai_token_count == 0, NA_real_, 
+                         user_token_count / ai_token_count),
+    
+    # Time parsing
+    timestamp = ymd_hms(timestamp),
+    
+    # Data source label
+    data_source = "Field"
+  ) %>%
+  # Ensure conversation_id is a character/factor
+  mutate(conversation_id = as.character(conversation_id))
+
+# Preprocess simulated data
+df_simulated <- df_simulated %>%
+  rename(
+    ai_valence = ai_sentiment_score,
+    user_valence = user_sentiment_score
+  ) %>%
+  mutate(
+    # Token counts
+    user_token_count = stri_count_words(user),
+    ai_token_count = stri_count_words(ai),
+    token_ratio = if_else(ai_token_count == 0, NA_real_, 
+                         user_token_count / ai_token_count),
+    
+    # Time parsing (if available)
+    timestamp = if_else(!is.na(timestamp), ymd_hms(timestamp), as.POSIXct(NA)),
+    
+    # Data source label
+    data_source = "Simulated"
+  ) %>%
+  mutate(conversation_id = as.character(conversation_id))
+
+# Summary statistics
+cat("\n=== Field Data Summary ===\n")
+df_field %>%
+  summarise(
+    n_conversations = n_distinct(conversation_id),
+    n_turns = n(),
+    mean_turns_per_story = n() / n_distinct(conversation_id),
+    mean_user_valence = mean(user_valence, na.rm = TRUE),
+    mean_ai_valence = mean(ai_valence, na.rm = TRUE)
+  ) %>%
+  print()
+
+cat("\n=== Simulated Data Summary ===\n")
+df_simulated %>%
+  summarise(
+    n_conversations = n_distinct(conversation_id),
+    n_turns = n(),
+    mean_turns_per_story = n() / n_distinct(conversation_id),
+    mean_user_valence = mean(user_valence, na.rm = TRUE),
+    mean_ai_valence = mean(ai_valence, na.rm = TRUE)
+  ) %>%
+  print()
+```
+
+
+## 1.3 Compute Lagged Variables and Cosine
+
+```{r compute-lags}
+# Add lagged AI valence for field data
+# Note: lag() within group_by ensures no cross-story contamination
+# Turn 1 of each story will have NA for lagged values (correct behavior)
+
+df_field <- df_field %>%
+  group_by(conversation_id) %>%
+  arrange(turn, .by_group = TRUE) %>%
+  mutate(
+    ai_valence_lag1 = lag(ai_valence, n = 1),
+    user_valence_lag1 = lag(user_valence, n = 1),
+  ) %>%
+  ungroup()
+
+
+cosine_sim <- function(x, y) {
+  if (is.null(x) || is.null(y) || any(is.na(x)) || any(is.na(y))) {
+    return(NA_real_)
+  }
+  return(sum(x * y) / (sqrt(sum(x^2)) * sqrt(sum(y^2))))
+}
+
+df_field <- df_field %>%
+  group_by(conversation_id) %>%
+  arrange(turn, .by_group = TRUE) %>%
+  mutate(
+    ai_embedding_prev = lag(ai_embedding)
+  ) %>%
+  rowwise() %>%
+  mutate(
+    cosine_sim_same = cosine_sim(user_embedding, ai_embedding),
+    cosine_sim_prev = cosine_sim(user_embedding, ai_embedding_prev)
+  ) %>%
+  ungroup()
+
+# Add lagged AI valence for simulated data
+df_simulated <- df_simulated %>%
+  group_by(conversation_id) %>%
+  arrange(turn, .by_group = TRUE) %>%
+  mutate(
+    ai_valence_lag1 = lag(ai_valence, n = 1),
+    user_valence_lag1 = lag(user_valence, n = 1)
+  ) %>%
+  ungroup()
+
+# Verify no cross-story contamination
+cat("=== Lag Variable Verification ===\n")
+cat("Field data - Turn 1 with non-NA lag (should be 0):", 
+    sum(df_field$turn == 1 & !is.na(df_field$ai_valence_lag1)), "\n")
+cat("Simulated data - Turn 1 with non-NA lag (should be 0):", 
+    sum(df_simulated$turn == 1 & !is.na(df_simulated$ai_valence_lag1)), "\n")
+```
+
+
+# 2. Temporal Dynamics Analysis
+
+## 2.1 Stage-Based Analysis (Early/Middle/Late)
+
+```{r stage-analysis}
+# Function to compute stage-based valence gap
+compute_stage_gaps <- function(df, data_source_label) {
+  df %>%
+    group_by(conversation_id) %>%
+    arrange(turn, .by_group = TRUE) %>%
+    mutate(
+      turn_idx = row_number(),
+      n_turns = n()
+    ) %>%
+    filter(n_turns >= 3) %>%  # Need at least 3 turns
+    mutate(
+      stage = ntile(turn_idx, 3),
+      valence_gap = abs(user_valence - ai_valence)
+    ) %>%
+    ungroup() %>%
+    group_by(conversation_id, stage) %>%
+    summarise(
+      mean_gap = mean(valence_gap, na.rm = TRUE),
+      n_turns = first(n_turns),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      data_source = data_source_label,
+      stage_label = case_when(
+        stage == 1 ~ "Early",
+        stage == 2 ~ "Middle",
+        stage == 3 ~ "Late"
+      ),
+      stage_label = factor(stage_label, levels = c("Early", "Middle", "Late")),
+      story_length = if_else(n_turns >= median(n_turns), 
+                            "High ≥ median", "Low < median")
+    )
+}
+
+# Compute for both datasets
+stage_gaps_field <- compute_stage_gaps(df_field, "Field")
+stage_gaps_sim <- compute_stage_gaps(df_simulated, "Simulated")
+
+# Combined
+stage_gaps_all <- bind_rows(stage_gaps_field, stage_gaps_sim)
+
+# Summary by stage
+cat("=== Mean Valence Gap by Stage ===\n")
+stage_gaps_all %>%
+  group_by(data_source, stage_label) %>%
+  summarise(
+    mean_gap = mean(mean_gap, na.rm = TRUE),
+    sd_gap = sd(mean_gap, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  print()
+```
+
+## 2.2 Stage Valence Gap Plot
+
+```{r stage-gap-plot, fig.width=12, fig.height=6}
+# Field plot
+p_stage_field <- ggplot(stage_gaps_field, 
+                        aes(x = stage_label, y = mean_gap, 
+                            group = conversation_id, color = story_length)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.3) +
+  stat_summary(fun = mean, geom = "line", aes(group = story_length),
+               linewidth = 1.2, position = position_dodge(width = 0.2)) +
+  stat_summary(fun = mean, geom = "point",
+               size = 3, position = position_dodge(width = 0.2)) +
+  scale_color_brewer(palette = "Set1", name = "Story Length") +
+  labs(title = "Field Data", x = NULL, y = NULL) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold")
+  )
+
+# Simulated plot
+p_stage_sim <- ggplot(stage_gaps_sim, 
+                      aes(x = stage_label, y = mean_gap, 
+                          group = conversation_id, color = story_length)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.3) +
+  stat_summary(fun = mean, geom = "line", aes(group = story_length),
+               linewidth = 1.2, position = position_dodge(width = 0.2)) +
+  stat_summary(fun = mean, geom = "point",
+               size = 3, position = position_dodge(width = 0.2)) +
+  scale_color_brewer(palette = "Set2", name = "Story Length") +
+  labs(title = "Simulated Data", x = NULL, y = NULL) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold")
+  )
+
+# Combine
+combined_stage <- (p_stage_field | p_stage_sim) +
+  plot_annotation(
+    title = "Mean Valence Gap by Turn Stage",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold"))
+  )
+
+final_stage <- ggdraw() +
+  draw_plot(combined_stage, 0, 0, 1, 1) +
+  draw_label("Mean Valence Difference", x = 0.02, y = 0.5, angle = 90, size = 16) +
+  draw_label("Turn Stage", x = 0.5, y = 0.02, size = 16)
+
+print(final_stage)
+
+ggsave(file.path(GRAPHS_DIR, "stage_valence_gap_comparison.png"),
+       final_stage, width = 12, height = 6, dpi = 300)
+```
+
+## 2.3 Turn-by-Turn Valence Gap Trajectory
+
+```{r gap-trajectory-plot, fig.width=12, fig.height=6}
+
+# Compute valence gap for each turn
+df_field_gap <- df_field %>%
+  mutate(valence_gap = abs(user_valence - ai_valence))
+
+df_sim_gap <- df_simulated %>%
+  mutate(valence_gap = abs(user_valence - ai_valence))
+
+# Field data plot
+p_gap_field <- ggplot(df_field_gap, aes(x = turn, y = valence_gap, group = conversation_id)) +
+  geom_line(alpha = 0.2, color = "#E41A1C") +  # Individual stories (faint)
+  stat_summary(aes(group = 1), fun = mean, geom = "line", 
+               color = "#E41A1C", linewidth = 1.5) +  # Aggregate mean (bold)
+  stat_summary(aes(group = 1), fun = mean, geom = "point",
+               color = "#E41A1C", size = 3) +
+  labs(title = "Field Data", x = NULL, y = NULL) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+# Simulated data plot
+p_gap_sim <- ggplot(df_sim_gap, aes(x = turn, y = valence_gap, group = conversation_id)) +
+  geom_line(alpha = 0.2, color = "#8DA0CB") +  # Individual stories (faint)
+  stat_summary(aes(group = 1), fun = mean, geom = "line", 
+               color = "#8DA0CB", linewidth = 1.5) +  # Aggregate mean (bold)
+  stat_summary(aes(group = 1), fun = mean, geom = "point",
+               color = "#8DA0CB", size = 3) +
+  labs(title = "Simulated Data", x = NULL, y = NULL) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+# Combine
+combined_gap_trajectory <- (p_gap_field | p_gap_sim) +
+  plot_annotation(
+    title = "Valence Gap Trajectory Across Story Turns",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold"))
+  )
+
+final_gap_trajectory <- ggdraw() +
+  draw_plot(combined_gap_trajectory, 0, 0, 1, 1) +
+  draw_label("Mean Valence Difference", x = 0.02, y = 0.5, angle = 90, size = 16) +
+  draw_label("Turn Number", x = 0.5, y = 0.02, size = 16)
+
+print(final_gap_trajectory)
+
+ggsave(file.path(GRAPHS_DIR, "gap_trajectory_comparison.png"),
+       final_gap_trajectory, width = 12, height = 6, dpi = 300)
+
+```
+
+## 2.4 Rubber-Band Dynamics
+
+```{r rubberband-analysis}
+# Function to compute rubber-band dynamics
+compute_rubberband <- function(df, data_source_label) {
+  df %>%
+    group_by(conversation_id) %>%
+    arrange(turn, .by_group = TRUE) %>%
+    mutate(
+      turn_idx = row_number(),
+      n_turns = n(),
+      valence_gap = abs(user_valence - ai_valence)
+    ) %>%
+    filter(n_turns >= 3) %>%
+    mutate(stage = ntile(turn_idx, 3)) %>%
+    ungroup() %>%
+    group_by(conversation_id, stage) %>%
+    summarise(
+      mean_gap = mean(valence_gap, na.rm = TRUE),
+      n_turns = first(n_turns),
+      .groups = "drop"
+    ) %>%
+    pivot_wider(
+      id_cols = c(conversation_id, n_turns),
+      names_from = stage,
+      values_from = mean_gap,
+      names_prefix = "g"
+    ) %>%
+    filter(!is.na(g1) & !is.na(g2) & !is.na(g3)) %>%
+    mutate(
+      delta_12 = g2 - g1,  # Change from Early to Middle
+      delta_23 = g3 - g2,  # Change from Middle to Late
+      data_source = data_source_label,
+      story_length = if_else(n_turns >= median(n_turns), 
+                            "High ≥ median", "Low < median")
+    )
+}
+
+# Compute for both datasets
+rb_field <- compute_rubberband(df_field, "Field")
+rb_sim <- compute_rubberband(df_simulated, "Simulated")
+
+# Fit linear models
+lm_field <- lm(delta_23 ~ delta_12, data = rb_field)
+#lm_sim <- lm(delta_23 ~ delta_12 * story_length, data = rb_sim)
+
+cat("=== Rubber-Band Model: Field Data ===\n")
+print(summary(lm_field))
+
+cat("\n=== Rubber-Band Model: Simulated Data ===\n")
+#print(summary(lm_sim))
+```
+
+## 2.5 Turn-by-Turn Rubber-Band Dynamics
+
+```{r rubberband-turn-level}
+# Function to compute turn-by-turn rubber-band dynamics
+compute_rubberband_turns <- function(df, data_source_label) {
+  df %>%
+    group_by(conversation_id) %>%
+    arrange(turn, .by_group = TRUE) %>%
+    mutate(
+      valence_gap = abs(user_valence - ai_valence),
+      gap_change = valence_gap - lag(valence_gap),  # Change from previous turn
+      gap_change_next = lead(valence_gap) - valence_gap  # Change to next turn
+    ) %>%
+    filter(!is.na(gap_change) & !is.na(gap_change_next)) %>%  # Need both values
+    ungroup() %>%
+    mutate(
+      data_source = data_source_label,
+      n_turns = n_distinct(conversation_id)
+    )
+}
+
+# Compute for both datasets
+rb_turns_field <- compute_rubberband_turns(df_field, "Field")
+rb_turns_sim <- compute_rubberband_turns(df_simulated, "Simulated")
+
+# Fit linear models for turn-level rubber-band
+lm_turns_field <- lm(gap_change_next ~ gap_change, data = rb_turns_field)
+lm_turns_sim <- lm(gap_change_next ~ gap_change, data = rb_turns_sim)
+
+cat("=== Turn-Level Rubber-Band Model: Field Data ===\n")
+print(summary(lm_turns_field))
+
+cat("\n=== Turn-Level Rubber-Band Model: Simulated Data ===\n")
+print(summary(lm_turns_sim))
+
+# Summary statistics
+cat("\n=== Turn-Level Rubber-Band Correlation ===\n")
+cat("Field correlation (gap_change vs gap_change_next):", 
+    cor(rb_turns_field$gap_change, rb_turns_field$gap_change_next, use = "complete.obs"), "\n")
+cat("Simulated correlation (gap_change vs gap_change_next):", 
+    cor(rb_turns_sim$gap_change, rb_turns_sim$gap_change_next, use = "complete.obs"), "\n")
+```
+
+## 2.6 Rubber-Band Dynamics Plot
+
+```{r rubberband-plot, fig.width=12, fig.height=6}
+# Field plot
+p_rb_field <- ggplot(rb_field, aes(x = delta_12, y = delta_23, color = story_length)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", aes(linetype = story_length), se = FALSE, linewidth = 1) +
+  scale_color_brewer(palette = "Set1", name = "Story Length") +
+  scale_linetype_manual(values = c("solid", "dashed"), name = "Story Length") +
+  labs(
+    title = "Field Data",
+    x = expression(Delta[12]~"(Middle − Early)"),
+    y = expression(Delta[23]~"(Late − Middle)")
+  ) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold")
+  )
+
+# Simulated plot
+p_rb_sim <- ggplot(rb_sim, aes(x = delta_12, y = delta_23, color = story_length)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", aes(linetype = story_length), se = FALSE, linewidth = 1) +
+  scale_color_brewer(palette = "Set2", name = "Story Length") +
+  scale_linetype_manual(values = c("solid", "dashed"), name = "Story Length") +
+  labs(
+    title = "Simulated Data",
+    x = expression(Delta[12]~"(Middle − Early)"),
+    y = NULL
+  ) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.title.x = element_text(size = 14, face = "bold")
+  )
+
+# Combine
+combined_rb <- (p_rb_field | p_rb_sim) +
+  plot_annotation(
+    title = "Rubber-Band Dynamics in Valence Gap",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold"))
+  ) &
+  theme(legend.position = "top")
+
+print(combined_rb)
+
+ggsave(file.path(GRAPHS_DIR, "rubberband_dynamics_comparison.png"),
+       combined_rb, width = 12, height = 6, dpi = 300)
+```
+
+## 2.7 Turn-Level Rubber-Band Dynamics Plot
+
+```{r rubberband-turn-plot, fig.width=12, fig.height=6}
+# Field plot
+p_rb_turns_field <- ggplot(rb_turns_field, aes(x = gap_change, y = gap_change_next)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(alpha = 0.3, size = 2, color = "#E41A1C") +
+  geom_smooth(method = "lm", se = TRUE, color = "#E41A1C", linewidth = 1.2) +
+  labs(
+    title = "Field Data",
+    x = expression(Delta[t]~"(Gap change from"~t-1~"to"~t*")"),
+    y = expression(Delta[t+1]~"(Gap change from"~t~"to"~t+1*")")
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+# Simulated plot
+p_rb_turns_sim <- ggplot(rb_turns_sim, aes(x = gap_change, y = gap_change_next)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(alpha = 0.3, size = 2, color = "#8DA0CB") +
+  geom_smooth(method = "lm", se = TRUE, color = "#8DA0CB", linewidth = 1.2) +
+  labs(
+    title = "Simulated Data",
+    x = expression(Delta[t]~"(Gap change from"~t-1~"to"~t*")"),
+    y = NULL
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+# Combine
+combined_rb_turns <- (p_rb_turns_field | p_rb_turns_sim) +
+  plot_annotation(
+    title = "Turn-by-Turn Rubber-Band Dynamics in Valence Gap",
+    subtitle = "Negative slope indicates correction: if gap increased, it tends to decrease next turn",
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, size = 12, color = "grey40")
+    )
+  )
+
+print(combined_rb_turns)
+
+ggsave(file.path(GRAPHS_DIR, "rubberband_turn_level_comparison.png"),
+       combined_rb_turns, width = 12, height = 6, dpi = 300)
+```
+
+# 3. Permutation tests
+
+## 3.1 Stage-level Permutation Test
+
+```{r permutation-test}
+obs_perm_slope <- coef(lm_field)[2]
+
+
+set.seed(2025)
+n_sims <- 1000
+perm_slopes <- replicate(n_sims, {
+  df_perm <- stage_gaps_field %>%
+    group_by(conversation_id) %>%
+    mutate(stage_p = sample(stage)) %>%    # shuffle within each id
+    ungroup() %>%
+    filter(stage_p %in% 1:3) %>%
+    pivot_wider(
+      id_cols     = conversation_id,
+      names_from  = stage_p,
+      values_from = mean_gap,
+      names_prefix= "g",
+      values_fn   = mean,      # collapse duplicates if any
+      values_fill = NA
+    ) %>%
+    filter(!is.na(g1) & !is.na(g2) & !is.na(g3)) %>%
+    transmute(
+      d12 = g2 - g1,
+      d23 = g3 - g2
+    )
+    coef(lm(d23 ~ d12, data = df_perm))[2]
+})
+
+p_stage <- mean(abs(perm_slopes) >= abs(obs_perm_slope))
+
+cat("=== Stage-Level Permutation Test Results ===\n")
+cat("Observed slope:", round(obs_perm_slope, 4), "\n")
+cat("Null mean:", round(mean(perm_slopes), 4), "\n")
+cat("Null SD:", round(sd(perm_slopes), 4), "\n")
+cat("Effect size (z):", round((obs_perm_slope - mean(perm_slopes)) / sd(perm_slopes), 2), "\n")
+cat("P-value:", format.pval(p_stage, digits = 3), "\n\n")
+```
+
+## 3.2 Brutal Stage-Level Permutation
+```{r}
+set.seed(2025)
+n_sims <- 1000
+
+perm_slopes_stage_brutal <- replicate(n_sims, {
+  df_perm_brutal <- df_field_gap %>%
+    group_by(conversation_id) %>%
+    arrange(turn, .by_group = TRUE) %>%
+    mutate(
+      # shuffle the *sequence* of gaps inside each story
+      valence_gap_perm = sample(valence_gap)
+    ) %>%
+    ungroup() %>%
+    group_by(conversation_id) %>%
+    mutate(
+      turn_idx = row_number(),
+      n_turns = n(),
+      stage = ntile(turn_idx, 3)
+    ) %>%
+    group_by(conversation_id, stage) %>%
+    summarise(
+      mean_gap = mean(valence_gap_perm, na.rm = TRUE),
+      n_turns = first(n_turns),
+      .groups = "drop"
+    ) %>%
+    pivot_wider(
+      id_cols = c(conversation_id, n_turns),
+      names_from = stage,
+      values_from = mean_gap,
+      names_prefix = "g"
+    ) %>%
+    filter(!is.na(g1), !is.na(g2), !is.na(g3)) %>%
+    mutate(
+      delta_12 = g2 - g1,
+      delta_23 = g3 - g2
+    )
+
+  coef(lm(delta_23 ~ delta_12, data = df_perm_brutal))[2]  # slope only
+})
+
+p_stage_brutal <- mean(abs(perm_slopes_stage_brutal) >= abs(obs_perm_slope))
+
+cat("=== Stage-Level Permutation Test Results - Shuffle Turn-Level Valence Gap first ===\n")
+cat("Observed slope:", round(obs_perm_slope, 4), "\n")
+cat("Null mean:", round(mean(perm_slopes_stage_brutal), 4), "\n")
+cat("Null SD:", round(sd(perm_slopes_stage_brutal), 4), "\n")
+cat("Effect size (z):", round((obs_perm_slope - mean(perm_slopes_stage_brutal)) / sd(perm_slopes_stage_brutal), 2), "\n")
+cat("P-value:", format.pval(p_stage_brutal, digits = 3), "\n\n")
+
+```
+
+
+## 3.2 Global Shuffle Stage-Level Test
+```{r global-shuffle-test}
+set.seed(2025)
+df_global <- stage_gaps_field%>%
+  mutate(stage_g = sample(stage)) %>%      # shuffle across all IDs
+  group_by(conversation_id, stage_g) %>%
+  summarise(mean_gap = mean(mean_gap), .groups = "drop") %>%  # collapse any duplicates
+  pivot_wider(
+    id_cols     = conversation_id,
+    names_from  = stage_g,
+    values_from = mean_gap,
+    names_prefix= "g",
+    values_fn   = mean,
+    values_fill = NA
+  ) %>%
+  filter(!is.na(g1) & !is.na(g2) & !is.na(g3)) %>%
+  transmute(
+    d12 = g2 - g1,
+    d23 = g3 - g2
+  )
+
+lm_global_shuffle <- lm(d23 ~ d12, data = df_global)
+print(summary(lm_global_shuffle))
+
+```
+
+
+## 3.3 Turn-Level Permutation Test
+```{r turn-permutation}
+# Observed slope
+obs_turn_slope <- coef(lm_turns_field)[2]
+
+set.seed(2022)
+n_sims <- 1000
+perm_slopes_turn <- replicate(n_sims, {
+  df_perm <- rb_turns_field %>%
+    group_by(conversation_id) %>%
+    mutate(gap_change_perm = sample(gap_change)) %>%
+    ungroup()
+  coef(lm(gap_change_next ~ gap_change_perm, data = df_perm))[2]
+})
+
+# Calculate p-value (two-tailed)
+p_turn <- mean(abs(perm_slopes_turn) >= abs(obs_turn_slope))
+
+cat("=== Turn-Level Permutation Test Results ===\n")
+cat("Observed slope:", round(obs_turn_slope, 4), "\n")
+cat("Null mean:", round(mean(perm_slopes_turn), 4), "\n")
+cat("Null SD:", round(sd(perm_slopes_turn), 4), "\n")
+cat("Effect size (z):", round((obs_turn_slope - mean(perm_slopes_turn)) / sd(perm_slopes_turn), 2), "\n")
+cat("P-value:", format.pval(p_turn, digits = 3), "\n\n")
+
+# Tag each turn pair by whether they cross stage boundaries
+rb_turns_field %>%
+  group_by(conversation_id) %>%
+  mutate(
+    stage = ntile(turn, 3),
+    stage_next = lead(stage)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    transition_type = case_when(
+      stage == stage_next ~ "Within-Stage",
+      stage < stage_next ~ "Stage Boundary",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(transition_type)) %>%
+  group_by(transition_type) %>%
+  summarise(
+    rb_slope = coef(lm(gap_change_next ~ gap_change))[2],
+    correlation = cor(gap_change, gap_change_next),
+    n = n()
+  )
+
+
+```
+
+
+
+# 4. Cosine similarity alignment
+
+## 4.1 Cosine Similarity Distribution 
+```{r cosine-distribution, fig.width=12, fig.height=6}
+
+p_cosine_dist <- ggplot(df_field, aes(x = cosine_sim_same)) +
+  geom_density(alpha = 0.4, fill = "#66C2A5", color = NA) + 
+  geom_vline(aes(xintercept = mean(cosine_sim_same, na.rm = TRUE)),
+             color = "#66C2A5", linetype = "dashed", linewidth = 0.8) +
+  labs(
+    title = "Distribution of Cosine Similarity (User vs AI)",
+    x = "Cosine Similarity",
+    y = "Density"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 18),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+print(p_cosine_dist)
+
+ggsave(file.path(GRAPHS_DIR, "cosine_similarity_distribution.png"),
+       p_cosine_dist, width = 12, height = 6, dpi = 300)
+
+```
+
+## 4.2 Cosine Similarity Mixed Model
+```{r cosine-sim-lm}
+
+df_cosine_sim <- df_field %>%
+  filter(turn > 1, turn < 10) 
+
+lm_cosine_turn <- lmer(
+  cosine_sim_same ~ turn + (1 | conversation_id),
+  data = df_cosine_sim
+)
+print(summary(lm_cosine_turn))
+```
+
+## 4.3 Cosine Similarity Linear Plot
+```{r cosine-sim-starter, fig.width=12, fig.height=6}
+
+cosine_sim_lm_plot <- df_field %>%
+  filter(turn > 0, turn < 10) %>%
+  ggplot(aes(x = turn, y = cosine_sim_same)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(alpha = 0.3, size = 2) +  # no color here
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +  # no color here
+  xlim(1, 9) +
+  ylim(0.5, 0.8) +
+  labs(
+    title = "Field Data",
+    x = "Turn",
+    y = "Cosine Similarity Same Turn"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+print(cosine_sim_lm_plot)
+
+```
+
+## 4.4 Cosine Similarity Over Time
+```{r cosine-sim-plot, fig.width=12, fig.height=6}
+
+df_field %>%
+  filter(turn > 1, turn < 10) %>%
+  group_by(turn) %>%
+  summarise(mean_cosine = mean(cosine_sim_same, na.rm = TRUE)) %>%
+  ggplot(aes(x = turn, y = mean_cosine)) +
+  geom_line() +
+  geom_point()
+
+
+df_field %>%
+  filter(turn < 10, turn > 1) %>%
+  #group_by(starter) %>%
+  ggplot(aes(x = turn, y = cosine_sim_same, group = conversation_id)) +
+  geom_line(alpha = 0.2) +  # Individual stories (faint)
+  stat_summary(aes(group = 1), fun = mean, geom = "line", 
+               color = "blue", size = 1.5)  # Aggregate mean (bold)
+
+
+
+```
+
+## 4.5 Cosine rubber band
+```{r rubber-band}
+compute_rubberband_cosine_turns <- function(df, data_source_label) {
+  df %>%
+    group_by(conversation_id) %>%
+    arrange(turn, .by_group = TRUE) %>%
+    mutate(
+      cosine_dist = 1 - cosine_sim_same,
+      dist_change = cosine_dist - lag(cosine_dist),  # C fhange from previous turn
+      dist_change_next = lead(cosine_dist) - cosine_dist  # Change to next turn
+    ) %>%
+    filter(!is.na(dist_change) & !is.na(dist_change_next)) %>%  # Need both values
+    ungroup() %>%
+    mutate(
+      data_source = data_source_label,
+      n_turns = n_distinct(conversation_id)
+    )
+}
+
+rb_cosine <- compute_rubberband_cosine_turns(df_field, "Field")
+lm_turns_field_cosine <- lm(dist_change_next ~ dist_change, data = rb_cosine)
+
+
+cat("=== Turn-Level Rubber-Band Cosine Distance: Field Data ===\n")
+print(summary(lm_turns_field_cosine))
+
+
+```
+
+
+## 4.6 Turn level Cosine Permutation test
+```{r cosine-turn-permutation}
+# Observed slope
+obs_cosine_slope <- coef(lm_turns_field_cosine)[2]
+
+set.seed(2022)
+n_sims <- 1000
+perm_slopes_cosine <- replicate(n_sims, {
+  df_perm <- rb_cosine %>%
+    group_by(conversation_id) %>%
+    mutate(dist_change_perm = sample(dist_change)) %>%
+    ungroup()
+  coef(lm(dist_change_next ~ dist_change_perm, data = df_perm))[2]
+})
+
+# Calculate p-value (two-tailed)
+p_cosine <- mean(abs(perm_slopes_cosine) >= abs(obs_cosine_slope))
+
+cat("=== Cosine Distance Turn-Level Permutation Test Results ===\n")
+cat("Observed slope:", round(obs_cosine_slope, 4), "\n")
+cat("Null mean:", round(mean(perm_slopes_cosine), 4), "\n")
+cat("Null SD:", round(sd(perm_slopes_cosine), 4), "\n")
+cat("Effect size (z):", round((obs_cosine_slope - mean(perm_slopes_cosine)) / sd(perm_slopes_cosine), 2), "\n")
+cat("P-value:", format.pval(p_cosine, digits = 3), "\n\n")
+
+# Tag each turn pair by whether they cross stage boundaries
+rb_cosine %>%
+  group_by(conversation_id) %>%
+  mutate(
+    stage = ntile(turn, 3),
+    stage_next = lead(stage)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    transition_type = case_when(
+      stage == stage_next ~ "Within-Stage",
+      stage < stage_next ~ "Stage Boundary",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(transition_type)) %>%
+  group_by(transition_type) %>%
+  summarise(
+    rb_slope = coef(lm(dist_change_next ~ dist_change))[2],
+    correlation = cor(dist_change, dist_change_next),
+    n = n()
+  )
+
+```
+## 4.7 Turn Level Cosine RB Linear plot
+
+```{r, fig.width=12, fig.height=6}
+p_rb_turns_field_cosine <- ggplot(rb_cosine, aes(x = dist_change, y = dist_change_next)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(alpha = 0.3, size = 2, color = "#E41A1C") +
+  geom_smooth(method = "lm", se = TRUE, color = "#E41A1C", linewidth = 1.2) +
+  labs(
+    title = "Field Data",
+    x = expression(Delta[t]~"(Gap change from"~t-1~"to"~t*")"),
+    y = expression(Delta[t+1]~"(Gap change from"~t~"to"~t+1*")")
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+
+combined_rb_turns <- (p_rb_turns_field_cosine | p_rb_turns_sim) +
+  plot_annotation(
+    title = "Turn-by-Turn Rubber-Band Dynamics in Cosine Distance",
+    subtitle = "Negative slope indicates correction: if distance increased, it tends to decrease next turn",
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, size = 12, color = "grey40")
+    )
+  )
+
+print(combined_rb_turns)
+
+ggsave(file.path(GRAPHS_DIR, "rubberband_cosine_turn_level_comparison.png"),
+       combined_rb_turns, width = 12, height = 6, dpi = 300)
+
+
+```
+
+
+## 4.8 Correlation Between Cosine Distance and Valence Rubber-Band
+
+```{r rb-correlation, fig.width=12, fig.height=6}
+# Turn filtering parameters
+turn_min <- 2    # Minimum turn to include (set to 1 for no lower bound)
+turn_max <- 9  # Maximum turn to include (set to Inf for no upper bound)
+
+# Merge rubber-band data for both metrics
+rb_combined <- rb_turns_field %>%
+  inner_join(
+    rb_cosine %>% select(conversation_id, turn, dist_change, dist_change_next),
+    by = c("conversation_id", "turn"),
+    suffix = c("_valence", "_cosine")
+  ) %>%
+  filter(turn >= turn_min, turn <= turn_max)  # Apply turn filtering
+
+# Compute correlation between the two rubber-band patterns
+cat("=== Correlation Between Valence and Cosine Distance Rubber-Band ===\n")
+cat("Turn range: [", turn_min, ", ", 
+    ifelse(is.infinite(turn_max), "Inf", turn_max), "]\n", sep = "")
+cat("N observations (turn-level):", nrow(rb_combined), "\n\n")
+
+# 1. Turn-level correlation of changes (Δt)
+# This correlates valence and cosine changes at EACH turn
+cor_changes <- cor(rb_combined$gap_change, rb_combined$dist_change, 
+                   use = "complete.obs")
+cat("Turn-level correlation of gap changes (Δt):", round(cor_changes, 3), "\n")
+cat("  Interpretation: Do valence and cosine gaps change in the same direction\n")
+cat("                  at the same turn across all stories?\n\n")
+
+# 2. Turn-level correlation of next changes (Δt+1)
+cor_next_changes <- cor(rb_combined$gap_change_next, rb_combined$dist_change_next, 
+                       use = "complete.obs")
+cat("Turn-level correlation of next changes (Δt+1):", round(cor_next_changes, 3), "\n")
+cat("  Interpretation: Do subsequent valence and cosine corrections correlate?\n\n")
+
+# 3. Per-story rubber-band slopes
+# This is the KEY analysis: Do stories with strong valence RB also show strong cosine RB?
+rb_slopes <- rb_combined %>%
+  group_by(conversation_id) %>%
+  filter(n() >= 3) %>%  # Need at least 3 turns for stable regression
+  summarise(
+    # Valence rubber-band slope: β from (gap_change_next ~ gap_change)
+    valence_rb_slope = coef(lm(gap_change_next ~ gap_change))[2],
+    # Cosine rubber-band slope: β from (dist_change_next ~ dist_change)
+    cosine_rb_slope = coef(lm(dist_change_next ~ dist_change))[2],
+    n_turns = n(),
+    .groups = "drop"
+  )
+
+cat("N stories with >= 3 turns:", nrow(rb_slopes), "\n\n")
+
+cat("N stories with >= 3 turns:", nrow(rb_slopes), "\n\n")
+
+# Correlation between story-level slopes
+# This answers: Do stories with strong valence RB also show strong cosine RB?
+cor_slopes <- cor(rb_slopes$valence_rb_slope, rb_slopes$cosine_rb_slope, 
+                 use = "complete.obs")
+cat("STORY-LEVEL correlation of RB slopes:", round(cor_slopes, 3), "\n")
+cat("  Interpretation: Across stories, does valence RB strength predict cosine RB strength?\n")
+cat("                  Positive r means stories with strong valence correction\n")
+cat("                  also show strong cosine distance correction.\n")
+
+# Test significance
+slope_test <- cor.test(rb_slopes$valence_rb_slope, rb_slopes$cosine_rb_slope)
+cat("  95% CI: [", round(slope_test$conf.int[1], 3), ", ", 
+    round(slope_test$conf.int[2], 3), "]\n", sep = "")
+cat("  p-value:", format.pval(slope_test$p.value, digits = 3), "\n")
+cat("  df:", slope_test$parameter, "\n\n")
+
+# 4. Shared variance (R²)
+shared_var <- cor_slopes^2
+cat("Shared variance (R²):", round(shared_var, 3), "\n")
+cat("Interpretation:", round(shared_var * 100, 1), 
+    "% of variation in valence RB slope\n",
+    "              is explained by cosine distance RB slope\n\n")
+
+# 5. Scatter plot: Story-level RB slopes
+p_rb_correlation <- ggplot(rb_slopes, aes(x = cosine_rb_slope, y = valence_rb_slope)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
+  geom_point(alpha = 0.6, size = 2.5, color = "#E41A1C") +
+  geom_smooth(method = "lm", se = TRUE, color = "#E41A1C", linewidth = 1.2) +
+  annotate("text", x = Inf, y = Inf, 
+           label = paste0("r = ", round(cor_slopes, 3), 
+                         "\np ", ifelse(slope_test$p.value < 0.001, "< 0.001", 
+                                       paste("=", round(slope_test$p.value, 3))),
+                         "\nN = ", nrow(rb_slopes)),
+           hjust = 1.1, vjust = 1.5, size = 5) +
+  labs(
+    title = "Relationship Between Valence and Cosine Distance Rubber-Band Dynamics",
+    subtitle = paste0("Turn range: [", turn_min, ", ", 
+                     ifelse(is.infinite(turn_max), "∞", turn_max), "]"),
+    x = "Cosine Distance RB Slope (β per story)",
+    y = "Valence Gap RB Slope (β per story)"
+  ) +
+  xlim(-2,1) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, color = "grey40"),
+    axis.title = element_text(size = 13, face = "bold"),
+    axis.text = element_text(size = 11)
+  )
+
+print(p_rb_correlation)
+
+ggsave(file.path(GRAPHS_DIR, "rubberband_valence_cosine_correlation.png"),
+       p_rb_correlation, width = 10, height = 8, dpi = 300)
+
+# 6. Regression: Does cosine RB predict valence RB?
+lm_rb_predict <- lm(valence_rb_slope ~ cosine_rb_slope, data = rb_slopes)
+cat("\n=== Regression: Cosine RB Predicting Valence RB ===\n")
+print(summary(lm_rb_predict))
+
+cat("\n=== VALIDATION CHECK ===\n")
+cat("Correlation from cor():", round(cor_slopes, 3), "\n")
+cat("Correlation from lm R²:", round(sqrt(summary(lm_rb_predict)$r.squared), 3), "\n")
+cat("These should match (they do if correlation is positive).\n\n")
+```
+
+
+# 5. Supplementary: Interaction Effects
+
+## 5.1 Starter Interaction Effects
+
+### 5.1.1 Valence Gap by Starter
+```{r starter-valence}
+# Turn-level valence gap with starter interaction
+lm_starter_valence <- lm(gap_change_next ~ gap_change * starter, data = rb_turns_field)
+
+cat("=== Valence Rubber-Band: Starter Interaction ===\n")
+print(summary(lm_starter_valence))
+```
+
+### 5.1.2 Cosine Distance by Starter
+```{r starter-cosine}
+# Turn-level cosine distance with starter interaction
+lm_starter_cosine <- lm(dist_change_next ~ dist_change * starter, data = rb_cosine)
+
+cat("=== Cosine Distance Rubber-Band: Starter Interaction ===\n")
+print(summary(lm_starter_cosine))
+```
+
+### 5.1.3 Alignment (Cosine Similarity) by Starter
+```{r starter-alignment}
+# Cosine similarity over turns with starter interaction
+df_alignment_starter <- df_field %>%
+  filter(turn >= 2, turn <= 9, !is.na(cosine_sim_same), !is.na(starter))
+
+lm_alignment_starter <- lm(cosine_sim_same ~ turn * starter, data = df_alignment_starter)
+
+cat("=== Cosine Similarity (Alignment): Starter × Turn Interaction ===\n")
+print(summary(lm_alignment_starter))
+```
+
+
+## 5.2 LLM Type Interaction Effects
+
+### 5.2.1 Valence Gap by LLM Type
+```{r llm-valence}
+# Turn-level valence gap with LLM type interaction
+rb_turns_llm <- rb_turns_field %>%
+  filter(!is.na(llm_type))
+
+lm_llm_valence <- lm(gap_change_next ~ gap_change * factor(llm_type), data = rb_turns_llm)
+
+cat("=== Valence Rubber-Band: LLM Type Interaction ===\n")
+print(summary(lm_llm_valence))
+```
+
+### 5.2.2 Cosine Distance by LLM Type
+```{r llm-cosine}
+# Turn-level cosine distance with LLM type interaction
+rb_cosine_llm <- rb_cosine %>%
+  filter(!is.na(llm_type))
+
+lm_llm_cosine <- lmer(dist_change_next ~ dist_change * factor(llm_type) + (1 | conversation_id), data = rb_cosine_llm)
+
+cat("=== Cosine Distance Rubber-Band: LLM Type Interaction ===\n")
+print(summary(lm_llm_cosine))
+```
+
+### 5.2.3 Alignment (Cosine Similarity) by LLM Type
+```{r llm-alignment}
+# Cosine similarity over turns with LLM type interaction
+df_alignment_llm <- df_field %>%
+  filter(turn >= 1, turn <= 5, !is.na(cosine_sim_same), !is.na(llm_type))
+
+lm_alignment_llm <- lmer(cosine_sim_same ~ turn * factor(llm_type) + (1 | conversation_id), data = df_alignment_llm)
+
+cat("=== Cosine Similarity (Alignment): LLM Type × Turn Interaction ===\n")
+print(summary(lm_alignment_llm))
+```
