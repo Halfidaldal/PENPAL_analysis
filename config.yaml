@@ -37,6 +37,7 @@ novelty:
   model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
   window_size: 128
   task: null
+  hf_token: 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
 
 # Sentiment analysis
 sentiment:
