@@ -12,10 +12,16 @@ from nes.io import load_parquet, save_parquet, get_project_root, load_config
 from nes.surface_metrics import get_descriptive_metrics_dual_full_long, get_descriptive_metrics_dual_inter_long
 
 def main():
-
-    df_full= pd.read_csv("/work/PENPAL/PENPAL_analysis/data/TEXT/interim/stories_full_text_filtered.csv")
-    df_inter = pd.read_csv("/work/PENPAL/PENPAL_analysis/data/TEXT/interim/interaction_level_stories_filtered.csv")
-
+    parser = argparse.ArgumentParser(description="Compute text descriptives for stories")
+    
+    args.add_argument("--full", default="/work/PENPAL/PENPAL_analysis/data/TEXT/interim/stories_full_text_filtered.csv", help="Path to full stories CSV")
+    args.add_argument("--interaction", default="/work/PENPAL/PENPAL_analysis/data/TEXT/interim/interaction_level_stories_filtered.csv", help="Path to interaction level stories CSV")
+    args = parser.parse_args()
+    
+    df_full = pd.read_csv(args.full)
+    print(f"Loaded {len(df_full)} full stories")
+    df_inter = pd.read_csv(args.interaction)
+    print(f"Loaded {len(df_inter)} interaction level stories")
     # Load config
     config = load_config()
     spacy_mdl = config['surface_metrics']['spacy_mdl']
