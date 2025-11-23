@@ -12,25 +12,36 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 
-def load_language_model(model_path: str):
-    # Use bfloat16 on GPU to cut memory, float32 on CPU
-    dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+
+def load_language_model(model_path, device=None):
+    """
+    Load a causal language model and tokenizer.
+    Returns (tokenizer, model, device).
+    """
+    # We don’t actually use `device` directly anymore; let device_map decide.
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(f"Loading language model from {model_path} on {device}")
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
 
-    # Let transformers/accelerate shard the model across available devices
+    # Use a lighter dtype on GPU and let HF/accelerate place layers
+    dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
         torch_dtype=dtype,
-        device_map="auto",        # place layers on GPU/CPU automatically
-        low_cpu_mem_usage=True,   # stream weights, avoids big RAM spikes
+        device_map="auto",        # shard/put on GPU/CPU as needed
+        low_cpu_mem_usage=True,   # stream weights instead of loading all at once
     )
     model.eval()
 
-    # Infer the "main" device from the model
+    # Infer “device” from model params (first parameter’s device)
     device = next(model.parameters()).device
     return tokenizer, model, device
-
 
 def calc_sentence_surprisal(context_ids, target_ids, model, window_size=128):
     """
