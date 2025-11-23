@@ -9,30 +9,26 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 
 
-def load_language_model(model_path, device=None):
-    """
-    Load a causal language model and tokenizer.
-    
-    Parameters
-    ----------
-    model_path : str
-        Path to local model or HuggingFace model name
-    device : torch.device or None
-        Device to run on
-        
-    Returns
-    -------
-    tuple
-        (tokenizer, model, device)
-    """
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    print(f"Loading language model from {model_path} on {device}")
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+
+def load_language_model(model_path: str):
+    # Use bfloat16 on GPU to cut memory, float32 on CPU
+    dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+
     tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+
+    # Let transformers/accelerate shard the model across available devices
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        torch_dtype=dtype,
+        device_map="auto",        # place layers on GPU/CPU automatically
+        low_cpu_mem_usage=True,   # stream weights, avoids big RAM spikes
+    )
     model.eval()
-    
+
+    # Infer the "main" device from the model
+    device = next(model.parameters()).device
     return tokenizer, model, device
 
 
