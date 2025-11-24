@@ -71,12 +71,15 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 # Load Field Data
 setwd(PROJECT_ROOT)
 df_res_field <- read_csv("data/TEXT/processed/novelty_scores.csv") %>%
+  filter(!is.na(user_surprise) & !is.na(ai_surprise)) %>%
   mutate(
     user_resonance = user_surprise - user_transience,
     ai_resonance = ai_surprise - ai_transience,
     datatype = "Field"
   ) %>%
-  filter(!is.na(user_surprise) & !is.na(ai_surprise))
+  drop_na(user, ai) %>%
+  filter(starter != "ai" & interaction_count == 10)  # Exclude AI starters
+
 
 
 
@@ -151,6 +154,9 @@ ggplot() +
   ylim(-5,5) +
   theme_minimal()
 ```
+
+
+
 ```{r}
 
 model_resonance <- lmer(resonance ~ surprise * agent + (1 | conversation_id), data = df_res_long)
@@ -161,4 +167,29 @@ emtrends(model_resonance, specs = "agent", var = "surprise")
 
 ```
 
+```{r}
+
+# fit linear model only on AI rows
+fit_ai <- lm(resonance ~ surprise, data = df_res_long %>% filter(agent == "AI"))
+
+df_res_long %>%
+  group_by(agent) %>%
+  summarise(
+    min_surprise   = min(surprise,   na.rm = TRUE),
+    max_surprise   = max(surprise,   na.rm = TRUE),
+    min_resonance  = min(resonance,  na.rm = TRUE),
+    max_resonance  = max(resonance,  na.rm = TRUE)
+  )
+ai_top <- df_res_long %>%
+  filter(
+    agent == "AI",
+    surprise   > 2.5,   # adjust if needed
+    resonance  > 2.0    # adjust if needed
+  ) %>%
+  arrange(desc(resonance))
+
+# Inspect in RStudio
+View(ai_top)
+
+```
 

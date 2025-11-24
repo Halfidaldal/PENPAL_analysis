@@ -19,7 +19,7 @@ def correct_spelling(text, api_key: str) -> str:
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant that only corrects spelling mistakes while keeping the original meaning intact. If input is nonsense, reply with a long message explaining."},
+            {"role": "system", "content": "You are a helpful assistant that only corrects spelling mistakes while keeping the original meaning intact. If input is nonsense or error messages, reply with a long message explaining."},
             {"role": "user", "content": text}
         ],
         temperature=0.0  # Ensures minimal alteration
