@@ -10,6 +10,7 @@ from typing import List, Optional, Tuple
 import pandas as pd
 import numpy as np
 import torch
+import gc
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 
@@ -61,9 +62,17 @@ def compute_embeddings_batch(
             embeddings = model.encode(batch, show_progress_bar=False, normalize_embeddings=True)
         
         all_embeddings.append(embeddings)
+        
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
     
     all_embeddings = np.vstack(all_embeddings)
     print(f"Embeddings shape: {all_embeddings.shape}")
+    
+    del model
+    gc.collect()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
     
     return all_embeddings
 
@@ -121,6 +130,9 @@ def embed_story_columns(
                 embeddings = model.encode(batch, show_progress_bar=False, normalize_embeddings=True)
             
             all_embeddings.append(embeddings)
+            
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
         
         embeddings = np.vstack(all_embeddings)
         print(f"Embeddings shape: {embeddings.shape}")
@@ -130,6 +142,11 @@ def embed_story_columns(
         
         # Also store in DataFrame as list column (for parquet compatibility)
         df_out[f"{col}_embedding"] = embeddings.tolist()
+    
+    del model
+    gc.collect()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
     
     return df_out, embeddings_dict
 
