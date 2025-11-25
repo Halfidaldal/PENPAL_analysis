@@ -30,7 +30,7 @@ cleaning:
 # Embedding models
 embeddings:
   model_name: "Kingsoft-LLM/QZhou-Embedding"
-  batch_size: 8
+  batch_size: 1
   task: null
   
 novelty:
