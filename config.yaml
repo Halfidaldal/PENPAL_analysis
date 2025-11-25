@@ -39,6 +39,9 @@ novelty:
   task: null
   hf_token: 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
 
+exploration:
+  max_k: 9
+
 # Sentiment analysis
 sentiment:
   model_name: "cardiffnlp/twitter-roberta-base-sentiment-latest"

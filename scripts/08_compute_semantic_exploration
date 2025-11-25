@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""
+Script 08: Compute semantic exploration metrics (binned embedding distances).
+
+Computes non-overlapping semantic jumps at multiple timescales to measure
+how much narratives explore semantic space over time.
+
+Input:  data/processed/embeddings.csv (needs embedding columns preserved as parquet)
+Output: data/processed/semantic_exploration_binned.csv
+        data/processed/semantic_exploration_ai_ai_binned.csv
+"""
+from logging import config
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from nes.semantic_exploration import (
+    compute_semantic_exploration_metrics,
+    compute_ai_ai_semantic_exploration
+)
+from nes.io import load_config, get_project_root, save_parquet, load_parquet
+from tqdm import tqdm
+import pandas as pd
+
+
+def main():
+    config = load_config()
+    exploration_config = config.get('exploration', {})
+    simulated = config['cleaning'].get('simulated', False)
+
+
+
+    print("Computing semantic exploration for human-AI interactions...")
+    print(f"Loading embeddings from {config['datasets'][config['active_dataset']]['processed_dir']}/embeddings.parquet")
+    df_interaction_level = load_parquet("story_embeddings_interaction_level_simulated.parquet" if simulated else "story_embeddings_interaction_level.parquet", stage="processed")
+    try:
+        df_human_ai = df_interaction_level.copy()
+        
+        # Compute exploration metrics
+        exploration_df = compute_semantic_exploration_metrics(
+            df_human_ai,
+            user_embedding_col="user_embedding",
+            ai_embedding_col="ai_embedding",
+            max_k=exploration_config.get('max_k', 9)
+        )
+        
+        # Save results
+        save_parquet(exploration_df, "semantic_exploration_binned.parquet", stage="processed")
+        print(f"Saved {len(exploration_df)} exploration records to semantic_exploration_binned.parquet")
+        
+        # Print summary
+        mean_by_k = exploration_df.groupby('k')['distance'].mean()
+        print(f"\nMean semantic jump by window size:")
+        for k, dist in mean_by_k.items():
+            print(f"  k={k} (window={k+1}): {dist:.4f}")
+        
+    except Exception as e:
+        print(f"Error processing human-AI embeddings: {e}")
+        print("Make sure embeddings are saved as parquet to preserve array columns.")
+    
+    # Process AI-AI baseline if available
+    if not simulated:
+        #skipping AI-AI if not simualted data
+        pass
+    else:
+        print(f"\nComputing semantic exploration for AI-AI baseline...")
+        try:
+            df_ai_ai = pd.read_parquet(args.ai_ai_embeddings)
+            
+            exploration_ai_ai = compute_ai_ai_semantic_exploration(
+                df_ai_ai,
+                ai1_embedding_col="ai1_embedding",
+                ai2_embedding_col="ai2_embedding",
+                max_k=args.max_k
+            )
+            
+            exploration_ai_ai.to_csv(args.ai_ai_output, index=False)
+            print(f"Saved {len(exploration_ai_ai)} AI-AI exploration records to {args.ai_ai_output}")
+            
+            # Compare
+            mean_ai_ai = exploration_ai_ai.groupby('k')['distance'].mean()
+            print(f"\nComparison of mean semantic jumps:")
+            print(f"{'k':<5} {'Human-AI':<12} {'AI-AI':<12} {'Difference':<12}")
+            print("-" * 45)
+            for k in range(1, exploration_config.get('max_k', 9) + 1):
+                if k in mean_by_k and k in mean_ai_ai:
+                    diff = mean_by_k[k] - mean_ai_ai[k]
+                    print(f"{k:<5} {mean_by_k[k]:<12.4f} {mean_ai_ai[k]:<12.4f} {diff:<12.4f}")
+            
+        except Exception as e:
+            print(f"Could not process AI-AI baseline: {e}")
+
+
+if __name__ == "__main__":
+    main()
