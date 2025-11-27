@@ -1,0 +1,99 @@
+---
+title: "Explorationbins"
+output: html_document
+date: "2025-11-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load required packages
+pacman::p_load(
+  tidyverse,    # Data manipulation and plotting
+  lme4,         # Mixed effects models
+  lmerTest,     # P-values for mixed models
+  arrow,        # Parquet file I/O
+  stringi,      # String operations
+  lubridate,    # Date/time handling
+  zoo,          # Rolling statistics
+  patchwork,    # Combine plots
+  cowplot,      # Additional plot utilities
+  afex,          # ANOVA
+  here,          # File path management
+  emmeans      # Estimated marginal means
+
+)
+
+# Set project root
+PROJECT_ROOT <- here()
+setwd(PROJECT_ROOT)
+
+# Set global theme
+theme_set(theme_minimal(base_size = 14))
+
+# Define output directories
+GRAPHS_DIR <- file.path(PROJECT_ROOT, "analysis", "figures")
+TABLES_DIR <- file.path(PROJECT_ROOT, "analysis", "tables")
+
+# Create output directories if they don't exist
+dir.create(GRAPHS_DIR, showWarnings = FALSE, recursive = TRUE)
+dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
+```
+
+# 1. Data Loading and Preprocessing
+
+## 1.1 Load Data
+
+```{r load-data}
+
+# Load Field Data
+setwd(PROJECT_ROOT)
+df_res_field <- read_parquet("data/TEXT/processed/semantic_exploration_binned.parquet") %>%
+  mutate(
+    datatype = "Field"
+  )
+
+
+```
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+df_res_field %>%
+  filter(agent != 'interleaved') %>%
+  ggplot(aes(x = k, y = distance, color = agent)) +
+  geom_point(alpha = 0.5, size = 1.5) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.2) +
+  labs(
+    title = "Distance",
+    x = "Bin size",
+    y = "Distance"
+  ) +
+  ylim(0.05, 0.3)
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+lm <- df_res_field %>%
+  filter(agent != "interleaved") %>%
+  mutate(
+    # flatten list-column to character
+    conversation_id = map_chr(conversation_id, as.character),
+    # and treat it as a grouping factor
+    conversation_id = factor(conversation_id)
+  )
+
+lm_field <- lmer(distance ~ k * agent + (1 | conversation_id), data = lm)
+
+summary(lm_field)
+```

@@ -35,14 +35,15 @@ def main():
     print(f"Loading embeddings from {config['datasets'][config['active_dataset']]['processed_dir']}/embeddings.parquet")
     df_interaction_level = load_parquet("story_embeddings_interaction_level_simulated.parquet" if simulated else "story_embeddings_interaction_level.parquet", stage="processed")
     try:
+        #filter first interaction away
+        #df_human_ai = df_interaction_level[df_interaction_level['interaction_count'] > 1].copy()
         df_human_ai = df_interaction_level.copy()
-        
         # Compute exploration metrics
         exploration_df = compute_semantic_exploration_metrics(
             df_human_ai,
             user_embedding_col="user_embedding",
             ai_embedding_col="ai_embedding",
-            max_k=exploration_config.get('max_k', 9)
+            max_k=exploration_config.get('max_k', 10)
         )
         
         # Save results
@@ -50,10 +51,10 @@ def main():
         print(f"Saved {len(exploration_df)} exploration records to semantic_exploration_binned.parquet")
         
         # Print summary
-        mean_by_k = exploration_df.groupby('k')['distance'].mean()
-        print(f"\nMean semantic jump by window size:")
-        for k, dist in mean_by_k.items():
-            print(f"  k={k} (window={k+1}): {dist:.4f}")
+        mean_by_agent_k = exploration_df.groupby(["agent", "k"])["distance"].mean()
+        print("\nMean semantic jump by window size and agent:")
+        for (agent, k), dist in mean_by_agent_k.items():
+            print(f"  agent={agent}, k={k} (window={k+1}): {dist:.4f}")
         
     except Exception as e:
         print(f"Error processing human-AI embeddings: {e}")
@@ -72,7 +73,7 @@ def main():
                 df_ai_ai,
                 ai1_embedding_col="ai1_embedding",
                 ai2_embedding_col="ai2_embedding",
-                max_k=args.max_k
+                max_k=exploration_config.get('max_k', 10)
             )
             
             exploration_ai_ai.to_csv(args.ai_ai_output, index=False)
@@ -83,7 +84,7 @@ def main():
             print(f"\nComparison of mean semantic jumps:")
             print(f"{'k':<5} {'Human-AI':<12} {'AI-AI':<12} {'Difference':<12}")
             print("-" * 45)
-            for k in range(1, exploration_config.get('max_k', 9) + 1):
+            for (agent, k) in range(1, exploration_config.get('max_k', 9) + 1):
                 if k in mean_by_k and k in mean_ai_ai:
                     diff = mean_by_k[k] - mean_ai_ai[k]
                     print(f"{k:<5} {mean_by_k[k]:<12.4f} {mean_ai_ai[k]:<12.4f} {diff:<12.4f}")

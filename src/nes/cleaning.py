@@ -317,19 +317,16 @@ def build_full_story_text(df: pd.DataFrame) -> pd.DataFrame:
 
 def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True) -> pd.DataFrame: 
 
-    # adds ai starter for that respondent_id if turn 10 ai-text == None  
-    if interaction_count == False:
-        df['turn'] = df.groupby('respondent_id').cumcount() + 1
-        starter_map = df.loc[df['turn'] == 10].set_index('respondent_id')['ai'].isna().map(
-            {True: 'ai', False: 'user'}
-        )
-        df['starter'] = df['respondent_id'].map(starter_map)
-    
-    else: # called interaction_count instead
-        starter_map = df.loc[df['interaction_count'] == 10].set_index('respondent_id')['ai'].isna().map(
+    # adds ai starter for that respondent_id if user is equal to baseline
+
+    df['turn'] = df.groupby('respondent_id').cumcount() + 1
+    starter_map = (df['user'] == 'This is the story of').groupby(df['respondent_id']).any().map(
         {True: 'ai', False: 'user'}
-        )
-        df['starter'] = df['respondent_id'].map(starter_map)
+    )
+    df['starter'] = df['respondent_id'].map(starter_map)
+    print(f"Identified starters for {len(df[df['starter'] == 'ai']['respondent_id'].unique())} ai")
+    print(f"Identified starters for {len(df[df['starter'] == 'user']['respondent_id'].unique())} user")
+    
 
     for rid, group in df.groupby('respondent_id'):
         # Only modify groups where starter == 'ai'

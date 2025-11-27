@@ -111,7 +111,7 @@ def compute_semantic_exploration_metrics(
     df,
     user_embedding_col="user_embedding",
     ai_embedding_col="ai_embedding",
-    max_k=9
+    max_k=10
 ):
     """
     Compute semantic exploration metrics at multiple timescales.
@@ -135,6 +135,7 @@ def compute_semantic_exploration_metrics(
     pd.DataFrame
         Long-format dataframe with columns:
         - conversation_id
+        - agent ('user' or 'ai' for single-agent metrics, absent for interleaved)
         - k (bin-width parameter)
         - bin_index (which consecutive window pair)
         - distance (cosine distance between centroids)
@@ -178,9 +179,24 @@ def compute_semantic_exploration_metrics(
                 records.append({
                     'conversation_id': conversation_id,
                     'k': k,
+                    'agent': 'interleaved',
                     'bin_index': idx,
                     'distance': float(dist)
                 })
+                
+        for agent_name, embs in (("user", user_embs), ("ai", ai_embs)):
+            for k in range(1, max_k + 1):
+                window_length = k + 1
+                distances = compute_nonoverlap_distances(embs, window_length)
+                
+                for idx, dist in enumerate(distances):
+                    records.append({
+                        'conversation_id': conversation_id,
+                        'agent': agent_name,
+                        'k': k,
+                        'bin_index': idx,
+                        'distance': float(dist)
+                    })
     
     return pd.DataFrame.from_records(records)
 
@@ -189,7 +205,7 @@ def compute_ai_ai_semantic_exploration(
     df,
     ai1_embedding_col="ai1_embedding",
     ai2_embedding_col="ai2_embedding",
-    max_k=9
+    max_k=10
 ):
     """
     Compute semantic exploration metrics for AI-AI baseline.

@@ -90,7 +90,7 @@ def main():
         print(f"✓ Filtered to {len(df_filtered)} rows with valid respondent IDs")
     
     if 'interaction_count' in df.columns:
-        df_filtered = clean_user_ai_start(df_filtered)
+        df_filtered = clean_user_ai_start(df_filtered) if 'interaction_count' in df_filtered.columns else clean_user_ai_start(df_filtered, interaction_count=False)
     
     else: # adds 'turn' to df in no interaction_count found 
         df_filtered = clean_user_ai_start(df_filtered, interaction_count=False)

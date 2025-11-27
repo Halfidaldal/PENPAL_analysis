@@ -749,6 +749,10 @@ write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
 
 ### 6.1.1 Same-Turn Alignment by Starter
 ```{r starter-same-turn}
+
+lmer_lmer <- lmer(valence ~ interaction_count + (1 | conversation_id), data = df_field_long)
+print(summary(lmer_lmer))
+
 # Mixed model with starter interaction
 model_starter_same <- lmer(ai_valence ~ user_valence * starter + (1 | conversation_id), 
                            data = df_field)

@@ -16,7 +16,7 @@ datasets:
 
 # Firestore settings
 firestore:
-  credentials_path: "Berlin/src/the-never-ending-story-a7b5f-firebase-adminsdk-ax73p-9014b38264.json"
+  credentials_path: "environment/the-never-ending-story-a7b5f-firebase-adminsdk-ax73p-9014b38264.json"
   collection_name: "story_data_TEXT"
   stories_collection: "stories_TEXT"
   min_interactions: 10
@@ -40,7 +40,7 @@ novelty:
   hf_token: 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
 
 exploration:
-  max_k: 9
+  max_k: 10
 
 # Sentiment analysis
 sentiment:
