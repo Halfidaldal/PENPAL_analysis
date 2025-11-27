@@ -22,6 +22,8 @@ def get_descriptive_metrics_dual_full_long(
     user_metrics = td.extract_df(docs_user, include_text=True)
     user_metrics.index = df.index
     user_metrics["type"] = "user"
+    user_metrics["starter"] = df["starter"]
+
     if "conversation_id" in df.columns:
         user_metrics["conversation_id"] = df["conversation_id"]
 
@@ -31,6 +33,8 @@ def get_descriptive_metrics_dual_full_long(
     ai_metrics = td.extract_df(docs_ai, include_text=True)
     ai_metrics.index = df.index
     ai_metrics["type"] = "ai"
+    ai_metrics["starter"] = df["starter"]
+
     if "conversation_id" in df.columns:
         ai_metrics["conversation_id"] = df["conversation_id"]
 
