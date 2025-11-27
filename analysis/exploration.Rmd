@@ -67,19 +67,70 @@ df_res_field <- read_parquet("data/TEXT/processed/semantic_exploration_binned.pa
 You can also embed plots, for example:
 
 ```{r pressure, echo=FALSE}
+
+
+
 df_res_field %>%
   filter(agent != 'interleaved') %>%
   ggplot(aes(x = k, y = distance, color = agent)) +
   geom_point(alpha = 0.5, size = 1.5) +
   geom_smooth(method = "lm", se = TRUE, size = 1.2) +
+  scale_colour_manual(values = c("user" = "#1f77b4", "ai" = "#ff7f0e")) +
   labs(
     title = "Distance",
     x = "Bin size",
     y = "Distance"
   ) +
-  ylim(0.05, 0.3)
+  ylim(0.05, 0.3) +
+  theme_minimal(base_size = 14)
+  theme(legend.position = "top")
+
+
+ggplot(df_res_long, aes(x = surprise, y = transience, color = agent)) +
+  geom_point(alpha = 0.5, size = 1.5) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.2) +
+  scale_color_manual(values = c("User" = "#1f77b4", "AI" = "#ff7f0e")) +
+  labs(
+    title = "Transience vs Novelty (Field Data)",
+    x = "Novelty (Surprisal)",
+    y = "Transience"
+  ) +
+  xlim(0,8) +
+  ylim(0,5) +
   theme_minimal(base_size = 14) +
   theme(legend.position = "top")
+
+ggplot() +
+  # human points + extended line
+  geom_point(data = df_res_field,
+             aes(x = k, y = distance, colour = "Human"),
+             alpha = 0.5) +
+  geom_smooth(data = df_res_field,
+              aes(x = k, y = distance, colour = "Human"),
+              method = "lm",
+              se     = FALSE,
+              fullrange = TRUE) +
+  
+  # AI points + extended line
+  geom_point(data = df_res_field,
+             aes(x = k, y = distance, colour = "AI"),
+             alpha = 0.5) +
+  geom_smooth(data = df_res_field,
+              aes(x = k, y = distance, colour = "AI"),
+              method = "lm",
+              se     = FALSE,
+              fullrange = TRUE) +
+  
+  # manual colours & labels
+  scale_colour_manual(name   = "Agent",
+                      values = c(Human = "#1f77b4", AI = "#ff7f0e")) +
+  labs(title = "Bin Size vs. Exploration: Human vs. AI",
+       x     = "Bin Size (k)",
+       y     = "Distance") +
+  xlim(1,9) +
+  ylim(0,0.4) +
+  theme_minimal()
+
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
@@ -90,10 +141,13 @@ lm <- df_res_field %>%
     # flatten list-column to character
     conversation_id = map_chr(conversation_id, as.character),
     # and treat it as a grouping factor
-    conversation_id = factor(conversation_id)
+    conversation_id = factor(conversation_id),
+    distance_log = log(distance)
   )
 
 lm_field <- lmer(distance ~ k * agent + (1 | conversation_id), data = lm)
 
 summary(lm_field)
+
+lm_2 <- lmer()
 ```

@@ -157,6 +157,8 @@ def compute_semantic_exploration_metrics(
     for conversation_id, grp in tqdm(story_groups, desc="Computing semantic exploration"):
         user_list = grp['user_emb'].tolist()
         ai_list = grp['ai_emb'].tolist()
+        starter = grp['starter']
+        llm_type = grp['llm_type']
         
         try:
             user_embs = np.vstack(user_list)
@@ -181,7 +183,9 @@ def compute_semantic_exploration_metrics(
                     'k': k,
                     'agent': 'interleaved',
                     'bin_index': idx,
-                    'distance': float(dist)
+                    'distance': float(dist),
+                    'starter': starter.iloc[0],
+                    'llm_type': llm_type.iloc[0]
                 })
                 
         for agent_name, embs in (("user", user_embs), ("ai", ai_embs)):
@@ -195,7 +199,9 @@ def compute_semantic_exploration_metrics(
                         'agent': agent_name,
                         'k': k,
                         'bin_index': idx,
-                        'distance': float(dist)
+                        'distance': float(dist),
+                        'starter': starter.iloc[0],
+                        'llm_type': llm_type.iloc[0]
                     })
     
     return pd.DataFrame.from_records(records)
