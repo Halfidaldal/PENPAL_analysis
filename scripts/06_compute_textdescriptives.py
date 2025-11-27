@@ -8,7 +8,7 @@ import pandas as pd
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from nes.io import load_parquet, save_parquet, get_project_root, load_config
+from nes.io import load_parquet, save_parquet, get_project_root, load_config, load_csv
 from nes.surface_metrics import get_descriptive_metrics_dual_full_long, get_descriptive_metrics_dual_inter_long
 
 def main():
@@ -18,9 +18,9 @@ def main():
     parser.add_argument("--interaction", default="interaction_level_stories_filtered.csv", help="Path to interaction level stories CSV")
     args = parser.parse_args()
     
-    df_full = pd.read_csv(args.full)
+    df_full = load_csv(args.full, stage='interim')
     print(f"Loaded {len(df_full)} full stories")
-    df_inter = pd.read_csv(args.interaction)
+    df_inter = load_csv(args.interaction, stage='interim')
     print(f"Loaded {len(df_inter)} interaction level stories")
     # Load config
     config = load_config()
