@@ -19,7 +19,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = TRUE,
+  echo = FALSE,
   warning = FALSE,
   message = FALSE,
   fig.width = 10,
@@ -768,9 +768,9 @@ rb_turns_field %>%
 ```{r cosine-distribution, fig.width=12, fig.height=6}
 
 p_cosine_dist <- ggplot(df_field, aes(x = cosine_sim_same)) +
-  geom_density(alpha = 0.4, fill = "#66C2A5", color = NA) + 
+  geom_density(alpha = 0.4, fill = "#4DAF4A", color = NA) + 
   geom_vline(aes(xintercept = mean(cosine_sim_same, na.rm = TRUE)),
-             color = "#66C2A5", linetype = "dashed", linewidth = 0.8) +
+             color = "#4DAF4A", linetype = "dashed", linewidth = 0.8) +
   labs(
     title = "Distribution of Cosine Similarity (User vs AI)",
     x = "Cosine Similarity",
@@ -789,18 +789,64 @@ ggsave(file.path(GRAPHS_DIR, "cosine_similarity_distribution.png"),
 
 ```
 
-## 4.2 Cosine Similarity Mixed Model
+## 4.2 Cosine Similarity Mixed Model (Interaction)
 ```{r cosine-sim-lm}
 
 df_cosine_sim <- df_field %>%
-  filter(turn > 1, turn < 10) 
+  filter(turn > 1, turn < 11) 
 
-lm_cosine_turn <- lmer(
-  cosine_sim_same ~ turn + (1 | conversation_id),
-  data = df_cosine_sim
+# Reshape to long format for interaction analysis
+df_cosine_long <- df_cosine_sim %>%
+  pivot_longer(
+    cols = c(cosine_sim_same, cosine_sim_prev),
+    names_to = "lag_type",
+    values_to = "cosine_sim"
+  ) %>%
+  mutate(
+    lag_type = factor(lag_type, levels = c("cosine_sim_same", "cosine_sim_prev"),
+                     labels = c("Same Turn", "Previous Turn"))
+  )
+
+# Fit interaction model
+# same-turn alignment and alignment with previous turn
+lm_cosine_interaction <- lmer(
+  cosine_sim ~ turn * lag_type + (1 | conversation_id),
+  data = df_cosine_long
 )
 
-print(summary(lm_cosine_turn))
+cat("=== Cosine Similarity Interaction Model (Same vs Previous Turn) ===\n")
+print(summary(lm_cosine_interaction))
+
+```
+
+## 4.2b Comparison of Current vs Previous Turn Cosine Similarity
+```{r cosine-comparison-plot, fig.width=12, fig.height=6}
+
+# Plot comparison using the long format data
+p_cosine_comparison <- ggplot(df_cosine_long, aes(x = turn, y = cosine_sim, color = lag_type)) +
+  geom_point(alpha = 0.1, position = position_jitter(width = 0.2)) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.5) +
+  scale_color_manual(values = c("Same Turn" = "#9467BD", 
+                               "Previous Turn" = "#E377C2")) +
+  labs(
+    title = "Comparison of Cosine Similarity: Current vs Previous Turn",
+    subtitle = "Interaction between Turn and Lag Type",
+    x = "Turn",
+    y = "Cosine Similarity",
+    color = "Measure"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, color = "grey40"),
+    legend.position = "top",
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+print(p_cosine_comparison)
+
+ggsave(file.path(GRAPHS_DIR, "cosine_similarity_comparison_same_vs_prev.png"),
+       p_cosine_comparison, width = 12, height = 6, dpi = 300)
 ```
 
 ## 4.3 Cosine Similarity Linear Plot
@@ -811,43 +857,77 @@ cosine_sim_lm_plot <- df_field %>%
   ggplot(aes(x = turn, y = cosine_sim_same)) +
   geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
   geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
-  geom_point(alpha = 0.3, size = 2) +  # no color here
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +  # no color here
-  xlim(1, 10) +
+  geom_point(alpha = 0.3, size = 2, color = "#4DAF4A") +
+  geom_smooth(method = "lm", se = TRUE, color = "#4DAF4A", linewidth = 1.2) +
+  xlim(2, 10) +
   ylim(0.5, 0.8) +
   labs(
-    title = "Field Data",
+    title = "Cosine Similarity Over Turns (Field Data)",
     x = "Turn",
-    y = "Cosine Similarity Same Turn"
+    y = "Cosine Similarity (Same Turn)"
   ) +
   theme(
     plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
     axis.title = element_text(size = 14, face = "bold"),
     axis.text = element_text(size = 12)
   )
+
 print(cosine_sim_lm_plot)
+
+ggsave(file.path(GRAPHS_DIR, "cosine_similarity_linear_trend.png"),
+       cosine_sim_lm_plot, width = 12, height = 6, dpi = 300)
 
 ```
 
 ## 4.4 Cosine Similarity Over Time
 ```{r cosine-sim-plot, fig.width=12, fig.height=6}
 
-df_field %>%
+# Plot 1: Mean Cosine Similarity
+p_cosine_mean <- df_field %>%
   filter(turn > 1, turn < 11) %>%
   group_by(turn) %>%
   summarise(mean_cosine = mean(cosine_sim_same, na.rm = TRUE)) %>%
   ggplot(aes(x = turn, y = mean_cosine)) +
-  geom_line() +
-  geom_point()
+  geom_line(color = "#4DAF4A", linewidth = 1) +
+  geom_point(color = "#4DAF4A", size = 3) +
+  labs(
+    title = "Mean Cosine Similarity by Turn",
+    x = "Turn",
+    y = "Mean Cosine Similarity"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
 
+print(p_cosine_mean)
+ggsave(file.path(GRAPHS_DIR, "cosine_similarity_mean.png"),
+       p_cosine_mean, width = 12, height = 6, dpi = 300)
 
-df_field %>%
+# Plot 2: Individual Trajectories + Mean
+p_cosine_traj <- df_field %>%
   filter(turn > 1, turn < 11) %>%
-  #group_by(starter) %>%
   ggplot(aes(x = turn, y = cosine_sim_same, group = conversation_id)) +
-  geom_line(alpha = 0.2) +  # Individual stories (faint)
+  geom_line(alpha = 0.1, color = "#4DAF4A") +  # Individual stories (faint)
   stat_summary(aes(group = 1), fun = mean, geom = "line", 
-               color = "blue", size = 1.5)  # Aggregate mean (bold)
+               color = "#4DAF4A", linewidth = 1.5) +  # Aggregate mean (bold)
+  stat_summary(aes(group = 1), fun = mean, geom = "point",
+               color = "#4DAF4A", size = 3) +
+  labs(
+    title = "Cosine Similarity Trajectories (Field Data)",
+    x = "Turn",
+    y = "Cosine Similarity"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+print(p_cosine_traj)
+ggsave(file.path(GRAPHS_DIR, "cosine_similarity_trajectories.png"),
+       p_cosine_traj, width = 12, height = 6, dpi = 300)
 
 
 
@@ -938,8 +1018,8 @@ rb_cosine %>%
 p_rb_turns_field_cosine <- ggplot(rb_cosine, aes(x = dist_change, y = dist_change_next)) +
   geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
   geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
-  geom_point(alpha = 0.3, size = 2, color = "#E41A1C") +
-  geom_smooth(method = "lm", se = TRUE, color = "#E41A1C", linewidth = 1.2) +
+  geom_point(alpha = 0.3, size = 2, color = "#4DAF4A") +
+  geom_smooth(method = "lm", se = TRUE, color = "#4DAF4A", linewidth = 1.2) +
   labs(
     title = "Field Data",
     x = expression(Delta[t]~"(Gap change from"~t-1~"to"~t*")"),
@@ -1067,7 +1147,6 @@ p_rb_correlation <- ggplot(rb_slopes, aes(x = cosine_rb_slope, y = valence_rb_sl
     x = "Cosine Distance RB Slope (β per story)",
     y = "Valence Gap RB Slope (β per story)"
   ) +
-  xlim(-2,1) +
   theme(
     plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
     plot.subtitle = element_text(hjust = 0.5, size = 12, color = "grey40"),
@@ -1099,19 +1178,19 @@ cat("These should match (they do if correlation is positive).\n\n")
 ### 5.1.1 Valence Gap by Starter
 ```{r starter-valence}
 # Turn-level valence gap with starter interaction
-#lm_starter_valence <- lm(gap_change_next ~ gap_change * as.factor(starter), data = rb_turns_field)
+lm_starter_valence <- lm(gap_change_next ~ gap_change * as.factor(starter), data = rb_turns_field)
 
 cat("=== Valence Rubber-Band: Starter Interaction ===\n")
-#print(summary(lm_starter_valence))
+print(summary(lm_starter_valence))
 ```
 
 ### 5.1.2 Cosine Distance by Starter
 ```{r starter-cosine}
 # Turn-level cosine distance with starter interaction
-#lm_starter_cosine <- lm(dist_change_next ~ dist_change * starter, data = rb_cosine)
+lm_starter_cosine <- lm(dist_change_next ~ dist_change * starter, data = rb_cosine)
 
 cat("=== Cosine Distance Rubber-Band: Starter Interaction ===\n")
-#print(summary(lm_starter_cosine))
+print(summary(lm_starter_cosine))
 ```
 
 ### 5.1.3 Alignment (Cosine Similarity) by Starter
@@ -1120,10 +1199,10 @@ cat("=== Cosine Distance Rubber-Band: Starter Interaction ===\n")
 df_alignment_starter <- df_field %>%
   filter(interaction_count >= 2, interaction_count <= 10, !is.na(cosine_sim_same), !is.na(starter))
 
-#lm_alignment_starter <- lm(cosine_sim_same ~ turn * starter, data = df_alignment_starter)
+lm_alignment_starter <- lm(cosine_sim_same ~ turn * starter, data = df_alignment_starter)
 
 cat("=== Cosine Similarity (Alignment): Starter × Turn Interaction ===\n")
-#print(summary(lm_alignment_starter))
+print(summary(lm_alignment_starter))
 ```
 
 
