@@ -42,7 +42,7 @@ pacman::p_load(
 )
 
 # Set project root
-PROJECT_ROOT <- "/Users/halfidaldal/Documents/PENPAL_analysis"
+PROJECT_ROOT <- here()
 setwd(PROJECT_ROOT)
 
 # Set global theme
@@ -65,9 +65,8 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 
 ```{r load-data}
 # Load dyadic sentiment scores
-setwd("/Users/halfidaldal/Documents/PENPAL_analysis")
-df_field <- read_parquet("data/TEXT/processed/dyadic_sentiment_scores.parquet")
-df_simulated <- read_parquet("data/Berlin/processed/dyadic_sentiment_scores_simulated.parquet")
+df_field <- read_parquet(here("data/TEXT/processed/dyadic_sentiment_scores.parquet"))
+df_simulated <- read_parquet(here("data/Berlin/processed/dyadic_sentiment_scores_simulated.parquet"))
 
 # Display structure
 cat("Field data dimensions:", dim(df_field), "\n")
@@ -429,7 +428,7 @@ lm_field <- lm(delta_23 ~ delta_12, data = rb_field)
 #lm_sim <- lm(delta_23 ~ delta_12 * story_length, data = rb_sim)
 
 cat("=== Rubber-Band Model: Field Data ===\n")
-print(summary(lm_field))
+print(summary(lm_field)$coefficients)
 
 cat("\n=== Rubber-Band Model: Simulated Data ===\n")
 #print(summary(lm_sim))
@@ -465,10 +464,10 @@ lm_turns_field <- lm(gap_change_next ~ gap_change, data = rb_turns_field)
 lm_turns_sim <- lm(gap_change_next ~ gap_change, data = rb_turns_sim)
 
 cat("=== Turn-Level Rubber-Band Model: Field Data ===\n")
-print(summary(lm_turns_field))
+print(summary(lm_turns_field)$coefficients)
 
 cat("\n=== Turn-Level Rubber-Band Model: Simulated Data ===\n")
-print(summary(lm_turns_sim))
+print(summary(lm_turns_sim)$coefficients)
 
 # Summary statistics
 cat("\n=== Turn-Level Rubber-Band Correlation ===\n")
@@ -704,7 +703,7 @@ df_global <- stage_gaps_field%>%
   )
 
 lm_global_shuffle <- lm(d23 ~ d12, data = df_global)
-print(summary(lm_global_shuffle))
+print(summary(lm_global_shuffle)$coefficients)
 
 ```
 
@@ -815,7 +814,7 @@ lm_cosine_interaction <- lmer(
 )
 
 cat("=== Cosine Similarity Interaction Model (Same vs Previous Turn) ===\n")
-print(summary(lm_cosine_interaction))
+print(summary(lm_cosine_interaction)$coefficients)
 
 ```
 
@@ -957,7 +956,7 @@ lm_turns_field_cosine <- lm(dist_change_next ~ dist_change, data = rb_cosine)
 
 
 cat("=== Turn-Level Rubber-Band Cosine Distance: Field Data ===\n")
-print(summary(lm_turns_field_cosine))
+print(summary(lm_turns_field_cosine)$coefficients)
 
 
 ```
@@ -1191,6 +1190,25 @@ lm_starter_cosine <- lm(dist_change_next ~ dist_change * starter, data = rb_cosi
 
 cat("=== Cosine Distance Rubber-Band: Starter Interaction ===\n")
 print(summary(lm_starter_cosine))
+
+p_starter <- rb_cosine %>%
+  mutate(starter = as.factor(starter)) %>%
+  ggplot(aes(x = dist_change, y = dist_change_next, color = starter)) +
+  geom_point(alpha = 0.5, size = 1.5) +
+  geom_smooth(method = "lm", se = TRUE, fullrange = TRUE, size = 1.2) +
+  scale_color_manual(values = c("user" = "#A65628", "ai" = "#1B9E77", "User" = "#A65628", "AI" = "#1B9E77")) +
+  labs(
+    title = "Rubber Band by Starter",
+    x = expression(Delta[t]~"(Gap change from"~t-1~"to"~t*")"),
+    y = expression(Delta[t+1]~"(Gap change from"~t~"to"~t+1*")")
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+
+print(p_starter)
+
+ggsave(file.path(GRAPHS_DIR, "exploration_starter_distance.png"),
+       p_starter, width = 12, height = 6, dpi = 300)
 ```
 
 ### 5.1.3 Alignment (Cosine Similarity) by Starter

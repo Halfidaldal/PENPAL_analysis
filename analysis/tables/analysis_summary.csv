@@ -1,6 +1,6 @@
 Metric,Field_Data,Simulated_Data
-N Stories,82,6
-Mean User Valence,0.051,-0.407
-Mean AI Valence,0.178,-0.296
-Same-Turn Alignment (ρ),0.271,-0.246
-Previous-Turn Alignment (ρ),0.119,0.533
+N Stories,81,6
+Mean User Valence,0.043,-0.407
+Mean AI Valence,0.171,-0.296
+Same-Turn Alignment (ρ),0.259,-0.246
+Previous-Turn Alignment (ρ),0.109,0.533
