@@ -1,0 +1,336 @@
+---
+title: "Surface Metrics Analysis"
+subtitle: "Analysis of TextDescriptives Metrics (Readability, Complexity, POS)"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load required packages
+pacman::p_load(
+  tidyverse,    # Data manipulation and plotting
+  lme4,         # Mixed effects models
+  lmerTest,     # P-values for mixed models
+  arrow,        # Parquet file I/O
+  here,         # File path management
+  patchwork,    # Combine plots
+  cowplot,      # Additional plot utilities
+  broom.mixed   # Tidy model output
+)
+
+# Set project root
+PROJECT_ROOT <- here()
+setwd(PROJECT_ROOT)
+
+# Set global theme
+theme_set(theme_minimal(base_size = 14))
+
+# Define output directories
+GRAPHS_DIR <- file.path(PROJECT_ROOT, "analysis", "figures")
+TABLES_DIR <- file.path(PROJECT_ROOT, "analysis", "tables")
+
+# Create output directories if they don't exist
+dir.create(GRAPHS_DIR, showWarnings = FALSE, recursive = TRUE)
+dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
+
+# Define colors
+colors <- c("User" = "#377EB8", "AI" = "#FF7F00", "user" = "#377EB8", "ai" = "#FF7F00")
+```
+
+# 1. Data Loading and Preprocessing
+
+## 1.1 Load Data
+
+```{r load-data}
+# Load Full Story Data
+df_full <- read_parquet(file.path(PROJECT_ROOT, "data/TEXT/processed/full_story_surface_metrics.parquet")) %>%
+  mutate(type = factor(type, levels = c("user", "ai"), labels = c("User", "AI")))
+
+# Load Interaction Level Data
+df_inter <- read_parquet(file.path(PROJECT_ROOT, "data/TEXT/processed/interaction_level_surface_metrics.parquet")) %>%
+  mutate(type = factor(type, levels = c("user", "ai"), labels = c("User", "AI")))
+
+cat("Full Story Data Dimensions:", dim(df_full), "\n")
+cat("Interaction Data Dimensions:", dim(df_inter), "\n")
+```
+
+# 2. Full Story Analysis
+
+## 2.1 Readability Metrics
+
+```{r readability-plot, fig.width=12, fig.height=6}
+readability_metrics <- c('flesch_kincaid_grade', 'smog', 'gunning_fog')
+
+df_readability <- df_full %>%
+  select(type, all_of(readability_metrics)) %>%
+  pivot_longer(cols = -type, names_to = "metric", values_to = "value")
+
+p_readability <- ggplot(df_readability, aes(x = value, y = metric, fill = type)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  scale_fill_manual(values = colors) +
+  labs(title = "Readability Metrics by Type", x = "Score", y = "") +
+  theme(legend.position = "top")
+
+print(p_readability)
+ggsave(file.path(GRAPHS_DIR, "surface_readability.png"), p_readability, width = 12, height = 6)
+```
+
+### Statistical Models (Readability)
+
+```{r readability-stats}
+for (m in readability_metrics) {
+  cat(paste0("\n=== Model: ", m, " ===\n"))
+  model <- lmer(as.formula(paste(m, "~ type + (1 | conversation_id)")), data = df_full)
+  print(summary(model)$coefficients)
+}
+```
+
+## 2.2 Complexity & Coherence
+
+```{r complexity-coherence-plot, fig.width=12, fig.height=8}
+complexity_metrics <- c('per_word_perplexity', 'first_order_coherence', 'second_order_coherence')
+
+df_comp <- df_full %>%
+  select(type, all_of(complexity_metrics)) %>%
+  pivot_longer(cols = -type, names_to = "metric", values_to = "value")
+
+p_comp <- ggplot(df_comp, aes(x = value, y = metric, fill = type)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  scale_fill_manual(values = colors) +
+  labs(title = "Complexity & Coherence Metrics", x = "Value", y = "") +
+  facet_wrap(~metric, scales = "free", ncol = 1) +
+  theme(legend.position = "top")
+
+print(p_comp)
+ggsave(file.path(GRAPHS_DIR, "surface_complexity_coherence.png"), p_comp, width = 12, height = 8)
+```
+
+### Statistical Models (Complexity & Coherence)
+
+```{r complexity-stats}
+for (m in complexity_metrics) {
+  cat(paste0("\n=== Model: ", m, " ===\n"))
+  model <- lmer(as.formula(paste(m, "~ type + (1 | conversation_id)")), data = df_full)
+  print(summary(model)$coefficients)
+}
+```
+
+## 2.3 Dependency Metrics
+
+```{r dependency-plot, fig.width=12, fig.height=6}
+dep_metrics <- c('dependency_distance_mean', 'prop_adjacent_dependency_relation_mean')
+
+df_dep <- df_full %>%
+  select(type, all_of(dep_metrics)) %>%
+  pivot_longer(cols = -type, names_to = "metric", values_to = "value")
+
+p_dep <- ggplot(df_dep, aes(x = value, y = metric, fill = type)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  scale_fill_manual(values = colors) +
+  labs(title = "Dependency Metrics", x = "Value", y = "") +
+  facet_wrap(~metric, scales = "free", ncol = 1) +
+  theme(legend.position = "top")
+
+print(p_dep)
+ggsave(file.path(GRAPHS_DIR, "surface_dependency.png"), p_dep, width = 12, height = 6)
+```
+
+### Statistical Models (Dependency)
+
+```{r dependency-stats}
+for (m in dep_metrics) {
+  cat(paste0("\n=== Model: ", m, " ===\n"))
+  model <- lmer(as.formula(paste(m, "~ type + (1 | conversation_id)")), data = df_full)
+  print(summary(model)$coefficients)
+}
+```
+
+## 2.4 Part-of-Speech (POS) Analysis
+
+```{r pos-prep}
+# POS Mapping
+pos_names <- c(
+  'ADJ' = 'adjective', 'ADP' = 'adposition', 'ADV' = 'adverb', 'AUX' = 'auxiliary',
+  'CCONJ' = 'coordinating conjunction', 'DET' = 'determiner', 'INTJ' = 'interjection',
+  'NOUN' = 'noun', 'NUM' = 'numeral', 'PART' = 'particle', 'PRON' = 'pronoun',
+  'PROPN' = 'proper noun', 'PUNCT' = 'punctuation', 'SCONJ' = 'subordinating conjunction',
+  'SYM' = 'symbol', 'VERB' = 'verb', 'X' = 'other'
+)
+
+# Select POS columns
+pos_cols <- names(df_full)[grepl("^pos_", names(df_full))]
+df_pos <- df_full %>%
+  select(type, conversation_id, all_of(pos_cols)) %>%
+  pivot_longer(cols = starts_with("pos_"), names_to = "pos_tag", values_to = "prop") %>%
+  mutate(
+    pos_clean = str_remove(pos_tag, "pos_prop_"),
+    pos_name = recode(pos_clean, !!!pos_names),
+    pos_name = str_to_title(pos_name)
+  )
+```
+
+### AI-User Mean Differences
+
+```{r pos-diff-plot, fig.width=10, fig.height=8}
+# Calculate stats
+pos_stats <- df_pos %>%
+  group_by(type, pos_name) %>%
+  summarise(
+    mean = mean(prop, na.rm = TRUE),
+    sd = sd(prop, na.rm = TRUE),
+    n = n(),
+    .groups = 'drop'
+  ) %>%
+  pivot_wider(names_from = type, values_from = c(mean, sd, n)) %>%
+  mutate(
+    diff = mean_AI - mean_User,
+    se_diff = sqrt((sd_AI^2 / n_AI) + (sd_User^2 / n_User))
+  ) %>%
+  arrange(desc(diff))
+
+# Plot
+p_pos_diff <- ggplot(pos_stats, aes(x = diff, y = reorder(pos_name, diff), fill = diff > 0)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+  geom_errorbar(aes(xmin = diff - se_diff, xmax = diff + se_diff), width = 0.2) +
+  scale_fill_manual(values = c("TRUE" = "#FF7F00", "FALSE" = "#377EB8"), 
+                    labels = c("User Higher", "AI Higher"), name = "Direction") +
+  geom_vline(xintercept = 0, color = "black", linetype = "dashed") +
+  labs(
+    title = "AI–User Mean Differences in POS Proportions",
+    x = "Difference (AI - User) ± SE",
+    y = "POS Tag"
+  ) +
+  theme(legend.position = "top")
+
+print(p_pos_diff)
+ggsave(file.path(GRAPHS_DIR, "surface_pos_differences.png"), p_pos_diff, width = 10, height = 8)
+```
+
+### Statistical Models (POS)
+
+```{r pos-stats}
+# Run LMER for each POS tag
+pos_models <- df_pos %>%
+  group_by(pos_name) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~lmer(prop ~ type + (1 | conversation_id), data = .x)),
+    coefs = map(model, ~summary(.x)$coefficients)
+  )
+
+# Print coefficients
+walk2(pos_models$pos_name, pos_models$coefs, ~{
+  cat(paste0("\n=== POS Model: ", .x, " ===\n"))
+  print(.y)
+})
+```
+
+# 3. Interaction Level Analysis
+
+## 3.1 POS Proportions Over Time
+
+```{r pos-interaction-plot, fig.width=16, fig.height=12}
+# Filter and reshape interaction data
+df_inter_pos <- df_inter %>%
+  filter(interaction_count > 1) %>%
+  select(type, interaction_count, conversation_id, all_of(pos_cols)) %>%
+  pivot_longer(cols = starts_with("pos_"), names_to = "pos_tag", values_to = "prop") %>%
+  mutate(
+    pos_clean = str_remove(pos_tag, "pos_prop_"),
+    pos_name = recode(pos_clean, !!!pos_names),
+    pos_name = str_to_title(pos_name)
+  )
+
+p_inter_pos <- ggplot(df_inter_pos, aes(x = interaction_count, y = prop, color = type)) +
+  geom_smooth(method = "loess", se = TRUE) +
+  facet_wrap(~pos_name, scales = "free_y", ncol = 4) +
+  scale_color_manual(values = colors) +
+  labs(title = "POS Proportions Across Interactions", x = "Interaction Count", y = "Proportion") +
+  theme(legend.position = "top")
+
+print(p_inter_pos)
+ggsave(file.path(GRAPHS_DIR, "surface_pos_interaction.png"), p_inter_pos, width = 16, height = 12)
+```
+
+### Statistical Models (POS Interaction)
+
+```{r pos-interaction-stats}
+# Run LMER with interaction term
+pos_inter_models <- df_inter_pos %>%
+  group_by(pos_name) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~lmer(prop ~ interaction_count * type + (1 | conversation_id), data = .x)),
+    coefs = map(model, ~summary(.x)$coefficients)
+  )
+
+walk2(pos_inter_models$pos_name, pos_inter_models$coefs, ~{
+  cat(paste0("\n=== POS Interaction Model: ", .x, " ===\n"))
+  print(.y)
+})
+```
+
+## 3.2 Other Metrics Over Time
+
+```{r other-interaction-plot, fig.width=16, fig.height=8}
+other_metrics <- c('flesch_kincaid_grade', 'doc_length', 'entropy', 'n_characters', 'oov_ratio', 'proportion_unique_tokens', 'token_length_std')
+
+df_inter_other <- df_inter %>%
+  filter(interaction_count > 1) %>%
+  select(type, interaction_count, conversation_id, all_of(other_metrics)) %>%
+  pivot_longer(cols = all_of(other_metrics), names_to = "metric", values_to = "value")
+
+p_inter_other <- ggplot(df_inter_other, aes(x = interaction_count, y = value, color = type)) +
+  geom_smooth(method = "loess", se = TRUE) +
+  facet_wrap(~metric, scales = "free_y", ncol = 3) +
+  scale_color_manual(values = colors) +
+  labs(title = "Surface Metrics Across Interactions", x = "Interaction Count", y = "Value") +
+  theme(legend.position = "top")
+
+print(p_inter_other)
+ggsave(file.path(GRAPHS_DIR, "surface_metrics_interaction.png"), p_inter_other, width = 16, height = 8)
+```
+
+### Statistical Models (Other Metrics Interaction)
+
+```{r other-interaction-stats}
+other_inter_models <- df_inter_other %>%
+  group_by(metric) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~lmer(value ~ interaction_count * type + (1 | conversation_id), data = .x)),
+    coefs = map(model, ~summary(.x)$coefficients)
+  )
+
+walk2(other_inter_models$metric, other_inter_models$coefs, ~{
+  cat(paste0("\n=== Metric Interaction Model: ", .x, " ===\n"))
+  print(.y)
+})
+```
+
+# 4. Session Information
+
+```{r session-info}
+sessionInfo()
+```
