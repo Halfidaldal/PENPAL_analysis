@@ -3,3 +3,9 @@ venv/
 .venv/
 renv/
 .renv/
+.Rproj.user
+renv/library/
+renv/staging/
+.Rhistory
+.RData
+.Rproj.user/

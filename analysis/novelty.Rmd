@@ -67,8 +67,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 ```{r load-data}
 
 # Load Field Data
-setwd(PROJECT_ROOT)
-df_res_field <- read_csv("data/TEXT/processed/novelty_scores.csv") %>%
+df_res_field <- read_csv(here("data/TEXT/processed/novelty_scores.csv")) %>%
   filter(!is.na(user_surprise) & !is.na(ai_surprise)) %>%
   mutate(
     user_resonance = user_surprise - user_transience,
