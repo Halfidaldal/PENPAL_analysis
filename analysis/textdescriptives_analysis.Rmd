@@ -1,0 +1,129 @@
+---
+title: "textdescriptives_analysis"
+output: html_document
+---
+
+
+## Setup
+
+```{r, setup}
+
+install.packages(c('lme4', 'lmerTest', 'arrow'))
+
+library(dplyr)
+library(arrow)
+library(tidyr)
+library(lme4)
+library(lmerTest)
+library(purrr)
+library(here)
+
+``` 
+
+
+## Load data
+
+```{r}
+
+wd = getwd()
+
+
+fs_path = 'full_story_surface_metrics.parquet'
+il_path = 'interaction_level_surface_metrics.parquet'
+
+df_fs = read_parquet(paste(here(data_dir), fs_path, sep="/"))
+df_il = read_parquet(paste(here(data_dir), il_path, sep="/"))
+              
+
+df_il_9 <- df_il %>% 
+  filter(interaction_count > 1)
+       
+```
+
+
+## Modelling 
+
+### Full story 
+```{r}
+
+pos_cols = df_fs %>% select(starts_with('pos_'))
+
+df_fs_long <- df_fs %>% 
+  tidyr::pivot_longer(
+    cols = starts_with("pos_") & 
+   !c(pos_prop_SYM, pos_prop_X),
+    names_to = "pos_feature",
+    values_to = "pos_prop"
+  )
+
+
+```
+
+
+```{r}
+
+models <- df_fs_long %>% 
+  split(.$pos_feature) %>% 
+  map(~ lmer(
+    pos_prop ~ type + (1 | conversation_id),
+    data = .x
+  ))
+
+m_full_sum <- models %>% map(summary)
+m_full_sum
+
+```
+
+
+
+### Interaction count  
+
+```{r}
+
+pos_cols = df_il_9 %>% select(starts_with('pos_'))
+
+df_long_il <- df_il_9 %>% 
+  tidyr::pivot_longer(
+    cols = starts_with("pos_") & 
+   !c(pos_prop_SYM, pos_prop_X),
+    names_to = "pos_feature",
+    values_to = "pos_prop"
+  )
+
+```
+
+
+
+```{r}
+
+models <- df_long_il %>% 
+  split(.$pos_feature) %>% 
+  map(~ lmer(
+    pos_prop ~ interaction_count * type + (1 | conversation_id),
+    data = .x
+  ))
+
+m_il_summaries <- models %>% map(summary)
+m_il_summaries
+```
+
+#### Lagged interaction
+
+
+## Plots 
+
+```{r}
+names(df_long_il)
+```
+
+
+```{r}
+
+model = lmer(
+  flesch_kincaid_grade ~ type * interaction_count + (1 | conversation_id),
+  data=df_long_il)
+
+summary(model)
+```
+
+
