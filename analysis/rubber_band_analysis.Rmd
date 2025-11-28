@@ -38,7 +38,8 @@ pacman::p_load(
   zoo,          # Rolling statistics
   patchwork,    # Combine plots
   cowplot,      # Additional plot utilities
-  afex          # ANOVA
+  afex,          # ANOVA
+  here
 )
 
 # Set project root
@@ -1161,7 +1162,7 @@ ggsave(file.path(GRAPHS_DIR, "rubberband_valence_cosine_correlation.png"),
 # 6. Regression: Does cosine RB predict valence RB?
 lm_rb_predict <- lm(valence_rb_slope ~ cosine_rb_slope, data = rb_slopes)
 cat("\n=== Regression: Cosine RB Predicting Valence RB ===\n")
-print(summary(lm_rb_predict))
+print(summary(lm_rb_predict)$coefficients)
 
 cat("\n=== VALIDATION CHECK ===\n")
 cat("Correlation from cor():", round(cor_slopes, 3), "\n")
@@ -1180,7 +1181,7 @@ cat("These should match (they do if correlation is positive).\n\n")
 lm_starter_valence <- lm(gap_change_next ~ gap_change * as.factor(starter), data = rb_turns_field)
 
 cat("=== Valence Rubber-Band: Starter Interaction ===\n")
-print(summary(lm_starter_valence))
+print(summary(lm_starter_valence)$coefficients)
 ```
 
 ### 5.1.2 Cosine Distance by Starter
@@ -1189,7 +1190,7 @@ print(summary(lm_starter_valence))
 lm_starter_cosine <- lm(dist_change_next ~ dist_change * starter, data = rb_cosine)
 
 cat("=== Cosine Distance Rubber-Band: Starter Interaction ===\n")
-print(summary(lm_starter_cosine))
+print(summary(lm_starter_cosine)$coefficients)
 
 p_starter <- rb_cosine %>%
   mutate(starter = as.factor(starter)) %>%
@@ -1220,7 +1221,7 @@ df_alignment_starter <- df_field %>%
 lm_alignment_starter <- lm(cosine_sim_same ~ turn * starter, data = df_alignment_starter)
 
 cat("=== Cosine Similarity (Alignment): Starter × Turn Interaction ===\n")
-print(summary(lm_alignment_starter))
+print(summary(lm_alignment_starter)$coefficients)
 ```
 
 
@@ -1235,7 +1236,7 @@ rb_turns_llm <- rb_turns_field %>%
 lm_llm_valence <- lm(gap_change_next ~ gap_change * factor(llm_type), data = rb_turns_llm)
 
 cat("=== Valence Rubber-Band: LLM Type Interaction ===\n")
-print(summary(lm_llm_valence))
+print(summary(lm_llm_valence)$coefficients)
 ```
 
 ### 5.2.2 Cosine Distance by LLM Type
@@ -1247,7 +1248,7 @@ rb_cosine_llm <- rb_cosine %>%
 lm_llm_cosine <- lmer(dist_change_next ~ dist_change * factor(llm_type) + (1 | conversation_id), data = rb_cosine_llm)
 
 cat("=== Cosine Distance Rubber-Band: LLM Type Interaction ===\n")
-print(summary(lm_llm_cosine))
+print(summary(lm_llm_cosine)$coefficients)
 ```
 
 ### 5.2.3 Alignment (Cosine Similarity) by LLM Type
@@ -1259,5 +1260,5 @@ df_alignment_llm <- df_field %>%
 lm_alignment_llm <- lmer(cosine_sim_same ~ turn * factor(llm_type) + (1 | conversation_id), data = df_alignment_llm)
 
 cat("=== Cosine Similarity (Alignment): LLM Type × Turn Interaction ===\n")
-print(summary(lm_alignment_llm))
+print(summary(lm_alignment_llm)$coefficients)
 ```

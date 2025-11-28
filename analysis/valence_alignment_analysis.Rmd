@@ -840,7 +840,7 @@ p_llm_same <- df_field_llm %>%
 print(p_llm_same)
 
 ggsave(file.path(GRAPHS_DIR, "alignment_llm_same.png"),
-       p_interleaved, width = 12, height = 6, dpi = 300)
+       p_llm_same, width = 12, height = 6, dpi = 300)
 
 ```
 
@@ -872,7 +872,7 @@ p_llm_prev <- df_field_llm_lag %>%
 print(p_llm_prev)
 
 ggsave(file.path(GRAPHS_DIR, "alignment_llm_prev.png"),
-       p_interleaved, width = 12, height = 6, dpi = 300)
+       p_llm_prev, width = 12, height = 6, dpi = 300)
 ```
 
 ### 6.2.3 Per-Story Correlations by LLM Type
