@@ -16,6 +16,13 @@ output:
     code_folding: hide
     theme: united
 ---
+## Summary
+
+- Across both datasets, early–middle valence gaps strongly predict opposite-direction changes from middle–late (negative slope).
+- This reveals a robust “rubber-band” effect: emotional divergence later snaps back toward each participant’s initial baseline.
+- The pattern holds for short and long interaction sequences; interaction volume does not moderate the effect.
+- The rebound is slightly stronger in the field data, but present in both human–AI and AI–AI conditions.
+- This suggests an intrinsic stabilising tendency in the model that humans weakly amplify rather than disrupt.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(

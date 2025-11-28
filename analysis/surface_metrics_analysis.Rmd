@@ -16,7 +16,13 @@ output:
     code_folding: hide
     theme: united
 ---
+## Summary
 
+- AI text is more syntactically complex and less readable: longer dependency distances, higher grade-level estimates, more nouns/adjectives/determiners.
+- Human text is more variable and conversational, using more pronouns, auxiliaries, adverbs, interjections, and shorter dependency structures.
+- Several linguistic features change over turn count (e.g., punctuation, entropy, document length), with differing slopes for user vs AI.
+- The two agents maintain distinct stylistic signatures across the interaction, not converging linguistically.
+- Overall, AI emphasises structural complexity, while humans contribute stylistic diversity and natural conversational markers.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(

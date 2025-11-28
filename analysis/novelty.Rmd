@@ -17,6 +17,14 @@ output:
     theme: united
 ---
 
+## Summary
+
+- Humans produce higher novelty (surprisal) and higher transience than the model, indicating stronger deviations from earlier story context.
+- Both agents display a positive novelty–resonance relationship (innovation bias).
+- The slope is steeper for humans, meaning surprising human turns exert greater forward influence on narrative development.
+- AI contributions show lower variance and lower informational impact relative to human inputs.
+- Together, the metrics show that humans are the primary drivers of narrative innovation and thematic redirection.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   echo = FALSE,

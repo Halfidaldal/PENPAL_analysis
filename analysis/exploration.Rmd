@@ -17,6 +17,15 @@ output:
     theme: united
 ---
 
+## Summary
+
+- Semantic distances decrease with larger bin sizes, reflecting expected averaging across longer interaction windows.
+- In the field data, AI contributions show slightly higher centroid distances than user contributions, indicating somewhat greater semantic spread.
+- No significant user–AI interaction: both follow similar decay rates as bin size increases.
+- Starter identity (user vs AI) has minimal effect on exploration patterns.
+- In interleaved AI–AI runs, both models show similar behaviour, with one variant displaying faster semantic compression.
+- Overall, exploration patterns are structured and nonrandom, with AI in the field dataset often making the larger semantic jumps.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   echo = FALSE,

@@ -58,6 +58,14 @@ dir.create(GRAPHS_DIR, showWarnings = FALSE, recursive = TRUE)
 dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 ```
 
+## Summary
+
+- Emotional alignment is asymmetric: the model reliably aligns to the user (User → AI), while humans do not mirror the preceding AI tone.
+- AI–AI interactions show higher, bidirectional alignment driven by symmetric context access.
+- Field data shows greater variance in valence and weaker overall coordination compared to the simulated dataset.
+- Participant-level modelling reveals a consistent “rubber-band” effect, where early divergence returns toward baseline in later stages.
+- Overall, affective dynamics in the field are primarily model-driven rather than mutually convergent.
+
 # 1. Data Loading and Preprocessing
 
 ## 1.1 Load Data
