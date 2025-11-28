@@ -93,7 +93,7 @@ df_sentida <- df_sentida %>%
 
 ggplot(df_sentida, aes(x = token_ratio, y = cosine_similarity)) +
   geom_point(alpha = 0.5, size = 1) +
-  geom_smooth(method = "loess", se = TRUE, color = "red") +
+  geom_smooth(method = "loess", se = TRUE, color = "#4DAF4A") +
   theme_minimal() +
   labs(
     title = "Cos Sim based on User/AI Token Ratio",
@@ -219,7 +219,7 @@ ggplot(df_sentida, aes(x = user_valence_score)) +
   labs(title = "Density Plot: User Valence Score", x = "User Valence Score", y = "Density")
 
 ggplot(df_sentida, aes(x = ai_valence_score)) +
-  geom_density(fill = "red", alpha = 0.5) +
+  geom_density(fill = "#FF7F00", alpha = 0.5) +
   labs(title = "Density Plot: AI Valence Score", x = "AI Valence Score", y = "Density")
 
 df_long_2 <- df_sentida %>%
@@ -228,7 +228,7 @@ df_long_2 <- df_sentida %>%
 
 ggplot(df_long_2, aes(x = valence_score, fill = source)) +
   geom_density(alpha = 0.4, color = NA) +
-  scale_fill_brewer(palette = "Set1", name = "Source", labels = c("AI", "User")) +
+  scale_fill_manual(values = c("user_valence_score" = "#377EB8", "ai_valence_score" = "#FF7F00"), name = "Source", labels = c("AI", "User")) +
   labs(
     title = "Distribution of Valence Scores: User vs AI",
     x = "Valence Score",
@@ -505,7 +505,7 @@ df_sentida_humanlike <- df_sentida_humanlike %>%
 
 ggplot(df_sentida_humanlike, aes(x = token_ratio, y = cosine_similarity)) +
   geom_point(alpha = 0.5, size = 1) +
-  geom_smooth(method = "loess", se = TRUE, color = "red") +
+  geom_smooth(method = "loess", se = TRUE, color = "#4DAF4A") +
   theme_minimal() +
   labs(
     title = "Cos Sim based on User/AI Token Ratio",
@@ -577,8 +577,8 @@ base_plot_2 <- ggplot(df_long_2, aes(x = valence_score, fill = source)) +
   geom_vline(data = means_df_2,
              aes(xintercept = mean_val, color = source),
              linetype = "dashed", size = 0.3, show.legend = FALSE) +
-  scale_fill_brewer(palette = "Set1", name = "", labels = c("AI", "User")) +
-  scale_color_manual(values = c("user_valence_score" = "blue", "ai_valence_score" = "red")) +  # optional
+  scale_fill_manual(values = c("user_valence_score" = "#377EB8", "ai_valence_score" = "#FF7F00"), name = "", labels = c("AI", "User")) +
+  scale_color_manual(values = c("user_valence_score" = "#377EB8", "ai_valence_score" = "#FF7F00")) +  # optional
   theme_minimal(base_size = 18) +
   theme(
     legend.position = "top",

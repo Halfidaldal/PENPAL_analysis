@@ -19,7 +19,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = TRUE,
+  echo = FALSE,
   warning = FALSE,
   message = FALSE,
   fig.width = 10,
@@ -182,7 +182,7 @@ df_field <- df_field %>%
   rowwise() %>%
   mutate(
     cosine_sim_same = cosine_sim(user_embedding, ai_embedding),
-    cosine_sim_prev = cosine_sim(user_embedding, ai_embedding)
+    cosine_sim_prev = cosine_sim(user_embedding, ai_embedding_prev)
   ) %>%
   ungroup()
 
@@ -307,8 +307,8 @@ p_field <- ggplot(df_field_long, aes(x = valence, fill = agent)) +
   geom_vline(data = means_field,
              aes(xintercept = mean_val, color = agent),
              linetype = "dashed", linewidth = 0.8, show.legend = FALSE) +
-  scale_fill_brewer(palette = "Set1", name = "") +
-  scale_color_brewer(palette = "Set1") +
+  scale_fill_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00"), name = "") +
+  scale_color_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00")) +
   labs(title = "Field Data", x = NULL, y = NULL) +
   theme(
     legend.position = "top",
@@ -533,9 +533,13 @@ df_field %>%
   filter(conversation_id %in% unique(conversation_id)[20:25]) %>%
   pivot_longer(cols = c(user_valence, ai_valence),
                names_to = "source", values_to = "valence") %>%
-  mutate(valence_smoothed = rollmean(valence, k = 1, fill = NA, align = "center")) %>%
+  mutate(
+    source = recode(source, "user_valence" = "User", "ai_valence" = "AI"),
+    valence_smoothed = rollmean(valence, k = 1, fill = NA, align = "center")
+  ) %>%
   ggplot(aes(x = turn_index, y = valence_smoothed, color = source)) +
   geom_line() +
+  scale_color_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00")) +
   facet_wrap(~conversation_id, scales = "free_x") +
   labs(
     title = "Rolling Average of Valence (k = 8) Human-AI",
@@ -595,6 +599,7 @@ agg_same <- cor_same_combined_all_turns %>%
   mutate(alignment_type = "Same Turn")
 
 agg_prev <- cor_same_combined_all_turns_prev %>%
+  mutate(alignment_type = "Previous Turn") %>%
   select(data_source, rho, alignment_type)
 
 agg_data <- bind_rows(agg_same, agg_prev) %>%
@@ -750,8 +755,8 @@ write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
 ### 6.1.1 Same-Turn Alignment by Starter
 ```{r starter-same-turn}
 
-lmer_lmer <- lmer(valence ~ interaction_count + (1 | conversation_id), data = df_field_long)
-print(summary(lmer_lmer))
+lmer_valence_time <- lmer(valence ~ interaction_count + (1 | conversation_id), data = df_field_long)
+print(summary(lmer_valence_time))
 
 # Mixed model with starter interaction
 model_starter_same <- lmer(ai_valence ~ user_valence * starter + (1 | conversation_id), 
