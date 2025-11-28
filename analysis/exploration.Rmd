@@ -186,7 +186,7 @@ lm_agent <- df_res_field %>%
 lm_field <- lmer(distance_log ~ k * agent + (1 | conversation_id), data = lm_agent)
 
 cat("=== Agent Interaction Model ===\n")
-print(summary(lm_field))
+print(summary(lm_field)$coefficients)
 ```
 
 ## 3.2 LLM Type Interaction Model (Interleaved)
@@ -203,7 +203,7 @@ lm_llm_type <- df_res_field %>%
 lm_interleaved_llm_type <- lmer(distance_log ~ k * factor(llm_type) + (1 | conversation_id), data = lm_llm_type)
 
 cat("=== LLM Type Interaction Model (Interleaved) ===\n")
-print(summary(lm_interleaved_llm_type))
+print(summary(lm_interleaved_llm_type)$coefficients)
 ```
 
 ## 3.3 Starter Interaction Model (Interleaved)
@@ -220,7 +220,7 @@ lm_starter <- df_res_field %>%
 lm_interleaved_starter <- lmer(distance_log ~ k * factor(starter) + (1 | conversation_id), data = lm_starter)
 
 cat("=== Starter Interaction Model (Interleaved) ===\n")
-print(summary(lm_interleaved_starter))
+print(summary(lm_interleaved_starter)$coefficients)
 ```
 
 # 4. Session Information

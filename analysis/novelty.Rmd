@@ -173,7 +173,7 @@ ggsave(file.path(GRAPHS_DIR, "novelty_transience_vs_novelty.png"),
 
 model_resonance <- lmer(resonance ~ surprise * agent + (1 | conversation_id), data = df_res_long)
 cat("=== Resonance Model ===\n")
-print(summary(model_resonance))
+print(summary(model_resonance)$coefficients)
 
 # Compare slopes
 cat("\n=== Slope Comparison (Resonance) ===\n")
@@ -186,7 +186,7 @@ print(emtrends(model_resonance, specs = "agent", var = "surprise"))
 model_transience <- lmer(transience ~ surprise * agent + (1 | conversation_id), data = df_res_long)
 
 cat("=== Transience Model ===\n")
-print(summary(model_transience))
+print(summary(model_transience)$coefficients)
 
 cat("\n=== Slope Comparison (Transience) ===\n")
 print(emtrends(model_transience, specs = "agent", var = "surprise"))
