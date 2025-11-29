@@ -18,7 +18,7 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from nes.sentiment import add_sentiment_to_dataframe, compute_dyadic_sentiment
+from nes.sentiment import add_sentiment_to_dataframe, compute_dyadic_sentiment, compute_semantic_projection_batch
 from nes.io import load_parquet, save_parquet, get_project_root, load_config
 from nes.cleaning import append_turn_numbers
 
@@ -69,6 +69,22 @@ def main():
         valence_method=sentiment_config['valence_method'],
         batch_size=sentiment_config['batch_size'],
         model_name=sentiment_config['model_name']
+    )
+    
+    # Compute Semantic Projection Sentiment
+    print("\nComputing Semantic Projection Sentiment...")
+    # User turns
+    print("Projecting user turns...")
+    df_dyadic['user_sentiment_projection'] = compute_semantic_projection_batch(
+        df_dyadic['user'].astype(str).tolist(),
+        batch_size=sentiment_config['batch_size']
+    )
+    
+    # AI turns
+    print("Projecting AI turns...")
+    df_dyadic['ai_sentiment_projection'] = compute_semantic_projection_batch(
+        df_dyadic['ai'].astype(str).tolist(),
+        batch_size=sentiment_config['batch_size']
     )
     
     # Save dyadic sentiment

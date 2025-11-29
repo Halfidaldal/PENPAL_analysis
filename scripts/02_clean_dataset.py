@@ -53,6 +53,7 @@ def main():
     config = load_config()
     edit_distance_threshold = config['cleaning']['edit_distance_threshold']
     simulated = config['cleaning']['simulated']
+    max_turns = config['cleaning']['max_turns']
 
     print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
     print(f"Cleaning Simulated: {simulated}")
@@ -84,16 +85,15 @@ def main():
         print("\nNo edit_distance column found, skipping filter")
         df_filtered = df.copy()
         
-    if 'interaction_count' in df.columns:
-        df_filtered = clean_user_ai_start(df_filtered) if 'interaction_count' in df_filtered.columns else clean_user_ai_start(df_filtered, interaction_count=False)
-    else: # adds 'turn' to df in no interaction_count found 
-        df_filtered = clean_user_ai_start(df_filtered, interaction_count=False)
+
+    df_filtered = clean_user_ai_start(df_filtered, max_turns = max_turns) if simulated else df_filtered
         
     if 'respondent_id' in df.columns:
         print("\nFiltering by respondent ID...")
         df_filtered = filter_by_respondent_id(df_filtered, threshold=12)
         print(f"✓ Filtered to {len(df_filtered)} rows with valid respondent IDs")
-    
+    else:
+        print("\nNo respondent_id column found, skipping filter")
 
 
     print("\nBuilding full story text...")

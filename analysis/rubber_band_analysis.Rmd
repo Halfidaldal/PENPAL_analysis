@@ -96,8 +96,8 @@ print(names(df_simulated))
 # Preprocess field data
 df_field <- df_field %>%
   rename(
-    ai_valence = ai_sentiment_score,
-    user_valence = user_sentiment_score
+    ai_valence = ai_sentiment_projection,
+    user_valence = user_sentiment_projection
   ) %>%
   mutate(
     # Token counts
@@ -114,7 +114,7 @@ df_field <- df_field %>%
   ) %>%
   # Ensure conversation_id is a character/factor
   mutate(conversation_id = as.character(conversation_id)) %>%
-  filter(interaction_count > 1)
+  filter(turn > 1)
 
 # Preprocess simulated data
 df_simulated <- df_simulated %>%
@@ -339,10 +339,27 @@ ggsave(file.path(GRAPHS_DIR, "stage_valence_gap_comparison.png"),
 
 # Compute valence gap for each turn
 df_field_gap <- df_field %>%
-  mutate(valence_gap = abs(user_valence - ai_valence))
+  mutate(valence_gap = abs(user_valence - ai_valence),
+         valence_gap_prev = abs(ai_valence_lag1 - user_valence))
 
 df_sim_gap <- df_simulated %>%
   mutate(valence_gap = abs(user_valence - ai_valence))
+
+
+df_valence_gap_long <- df_field_gap %>%
+  pivot_longer(
+    cols = c(valence_gap, valence_gap_prev),
+    names_to = "lag_type",
+    values_to = "valence_gap"
+  ) %>%
+  mutate(
+    lag_type = factor(
+      lag_type,
+      levels = c("valence_gap", "valence_gap_prev"),
+      labels = c("Same Turn", "Previous Turn")
+    )
+  )
+
 
 # Field data plot
 p_gap_field <- ggplot(df_field_gap, aes(x = turn, y = valence_gap, group = conversation_id)) +
@@ -1269,3 +1286,48 @@ lm_alignment_llm <- lmer(cosine_sim_same ~ turn * factor(llm_type) + (1 | conver
 cat("=== Cosine Similarity (Alignment): LLM Type × Turn Interaction ===\n")
 print(summary(lm_alignment_llm)$coefficients)
 ```
+```{r}
+df_valence_long <- df_field_gap %>%
+  pivot_longer(
+    cols = c(valence_gap, valence_gap_prev),
+    names_to = "lag_type",
+    values_to = "valence_gap"
+  ) %>%
+  mutate(
+    lag_type = factor(
+      lag_type,
+      levels = c("valence_gap", "valence_gap_prev"),
+      labels = c("Same Turn", "Previous Turn")
+    )
+  )
+
+p_valence_gap_comparison <- ggplot(df_valence_long, aes(x = turn, y = valence_gap, color = lag_type)) +
+  geom_point(alpha = 0.1, position = position_jitter(width = 0.2)) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.5) +
+  scale_color_manual(values = c("Same Turn" = "#9467BD", 
+                               "Previous Turn" = "#E377C2")) +
+  labs(
+    title = "Comparison of Cosine Similarity: Current vs Previous Turn",
+    subtitle = "Interaction between Turn and Lag Type",
+    x = "Turn",
+    y = "Cosine Similarity",
+    color = "Measure"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, color = "grey40"),
+    legend.position = "top",
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+print(p_cosine_comparison)
+
+ggsave(file.path(GRAPHS_DIR, "cosine_similarity_comparison_same_vs_prev.png"),
+       p_cosine_comparison, width = 12, height = 6, dpi = 300)
+
+p_valence_gap_comparison_lm <- lmer(valence_gap ~ turn * lag_type + (1 | conversation_id), data = df_valence_long)
+summary(p_valence_gap_comparison_lm)
+
+```
+

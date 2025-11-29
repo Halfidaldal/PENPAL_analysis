@@ -19,7 +19,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = FALSE,
+  echo = TRUE,
   warning = FALSE,
   message = FALSE,
   fig.width = 10,
@@ -94,8 +94,8 @@ print(names(df_simulated))
 # Preprocess field data
 df_field <- df_field %>%
   rename(
-    ai_valence = ai_sentiment_score,
-    user_valence = user_sentiment_score
+    ai_valence = ai_sentiment_projection,
+    user_valence = user_sentiment_projection
   ) %>%
   mutate(
     # Token counts
@@ -112,7 +112,7 @@ df_field <- df_field %>%
   ) %>%
   # Ensure conversation_id is a character/factor
   mutate(conversation_id = as.character(conversation_id)) %>%
-  filter(interaction_count > 1)
+  filter(turn > 1)
 
 
 # Preprocess simulated data
@@ -302,6 +302,7 @@ df_sim_long <- df_simulated %>%
   mutate(agent = recode(agent, 
                        user_valence = "AI 1", 
                        ai_valence = "AI 2"))
+
 
 # Calculate means for vertical lines
 means_field <- df_field_long %>%
@@ -691,6 +692,116 @@ model_prev <- lmer(user_valence ~ ai_valence_lag1 + (1 | conversation_id), data 
 cat("\n=== Mixed Effects Model: Previous-Turn Alignment (Field Data) ===\n")
 print(summary(model_prev)$coefficients)
 ```
+```{r}
+# We assume df_field already has:
+
+
+# 1) Build long-format dataset with both directions in a common structure
+
+# Same-turn: User -> AI
+df_same_dir <- df_field %>%
+  transmute(
+    conversation_id,
+    turn,
+    alignment_direction = "User_to_AI",
+    predictor_valence = user_valence,
+    response_valence = ai_valence
+  )
+
+# Previous-turn: AI -> User (response to previous AI valence)
+df_prev_dir <- df_field %>%
+  filter(!is.na(ai_valence_lag1)) %>%   # ensure valid lag values
+  transmute(
+    conversation_id,
+    turn,
+    alignment_direction = "AI_to_User",
+    predictor_valence = ai_valence_lag1,
+    response_valence = user_valence
+  )
+
+# Combine into one long dataset
+df_alignment_long <- bind_rows(df_same_dir, df_prev_dir) %>%
+  mutate(
+    alignment_direction = factor(
+      alignment_direction,
+      levels = c("User_to_AI", "AI_to_User")
+    )
+  )
+
+cat("=== Directional Alignment Long-Format Data ===\n")
+df_alignment_long %>%
+  group_by(alignment_direction) %>%
+  summarise(
+    n_rows = n(),
+    mean_predictor = mean(predictor_valence, na.rm = TRUE),
+    mean_response  = mean(response_valence,  na.rm = TRUE),
+    n_conversations = n_distinct(conversation_id),
+    .groups = "drop"
+  ) %>%
+  print()
+```
+```{r}
+# 2) Mixed-effects model comparing slopes across directions
+# Reference level: User_to_AI
+# Key term: predictor_valence:alignment_directionAI_to_User
+
+model_direction <- lmer(
+  response_valence ~ predictor_valence * alignment_direction +
+    (1 | conversation_id),
+  data = df_alignment_long
+)
+
+cat("=== Mixed Effects Model: Directional Alignment (User -> AI vs AI -> User) ===\n")
+direction_summary <- summary(model_direction)
+print(direction_summary$coefficients)
+
+```
+
+```{r}
+# 3) Visualise directional alignment with separate regression lines
+
+p_direction_alignment <- df_alignment_long %>%
+  ggplot(aes(
+    x = predictor_valence,
+    y = response_valence,
+    color = alignment_direction
+  )) +
+  geom_point(alpha = 0.3, size = 1.3) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    fullrange = TRUE,
+    size = 1.2
+  ) +
+  scale_color_manual(
+    values = c("User_to_AI" = "#377EB8", "AI_to_User" = "#FF7F00"),
+    name = "Alignment Direction",
+    labels = c("User → AI (same turn)", "AI → User (previous turn)")
+  ) +
+  labs(
+    title = "Directional Valence Alignment in Field Data",
+    x = "Predictor Valence",
+    y = "Response Valence"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 18),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+print(p_direction_alignment)
+
+ggsave(
+  file.path(GRAPHS_DIR, "directional_valence_alignment_field.png"),
+  p_direction_alignment,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+```
+
 
 ## 4.6 Statistical Tests: Alignment Differences
 
@@ -766,7 +877,7 @@ write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
 ### 6.1.1 Same-Turn Alignment by Starter
 ```{r starter-same-turn}
 
-lmer_valence_time <- lmer(valence ~ interaction_count + (1 | conversation_id), data = df_field_long)
+lmer_valence_time <- lmer(valence ~ turn + (1 | conversation_id), data = df_field_long)
 print(summary(lmer_valence_time)$coefficients)
 
 # Mixed model with starter interaction
@@ -826,7 +937,7 @@ print(t_test_starter)
 # Mixed model with LLM type interaction
 df_field_llm <- df_field %>% filter(!is.na(llm_type))
 
-model_llm_same <- lmer(ai_valence ~ user_valence * factor(llm_type) + (1 | conversation_id), 
+model_llm_same <- lmer(ai_valence ~ user_valence * factor(llm_type) *  + (1 | conversation_id), 
                        data = df_field_llm)
 
 cat("=== Same-Turn Alignment: LLM Type Interaction ===\n")
@@ -868,7 +979,7 @@ p_llm_prev <- df_field_llm_lag %>%
   mutate(llm_type = as.factor(llm_type)) %>%
   ggplot(aes(x = ai_valence_lag1, y = user_valence, color = llm_type)) +
   geom_point(alpha = 0.5, size = 1.5) +
-  geom_smooth(method = "lm", se = TRUE, size = 1.2) +
+  geom_smooth(method = "lm", se = TRUE, fullrange= TRUE, size = 1.2) +
   labs(
     title = "User Valence by Prev AI (Ai -> User)",
     x = "Previous AI Valence",
@@ -946,6 +1057,9 @@ df_field %>%
   print()
 ```
 
+```{r}
+
+```
 
 ## 7. Session Information
 

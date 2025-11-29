@@ -13,6 +13,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from sentence_transformers import SentenceTransformer
+import os
 
 
 def get_device() -> torch.device:
@@ -40,7 +42,7 @@ def load_sentiment_model(
         device = get_device()
     
     print(f"Loading sentiment model: {model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
     model = AutoModelForSequenceClassification.from_pretrained(model_name)
     model.eval()
     model.to(device)
@@ -213,3 +215,82 @@ def compute_dyadic_sentiment(
     df['ai_sentiment_score'] = ai_scores
     df = df.sort_values(['conversation_id', 'turn']).reset_index(drop=True)
     return df
+
+
+class SemanticProjectionSentiment:
+    """
+    Sentiment analysis using Semantic Projection (embedding projection onto a concept vector).
+    Reference: https://github.com/lauritswl/SemanticProjection
+    """
+    def __init__(
+        self, 
+        model_name: str = "paraphrase-multilingual-mpnet-base-v2", 
+        vector_path: str = "src/nes/data/Sentiment.csv", 
+        device: Optional[torch.device] = None
+    ):
+        self.model_name = model_name
+        self.vector_path = vector_path
+        self.device = device if device else get_device()
+        
+        print(f"Loading Semantic Projection model: {model_name}")
+        self.model = SentenceTransformer(model_name, device=str(self.device))
+        self.vector = self._load_vector()
+
+    def _load_vector(self) -> np.ndarray:
+        if not os.path.exists(self.vector_path):
+            # Try relative path if absolute fails
+            rel_path = os.path.join(os.path.dirname(__file__), "data", "Sentiment.csv")
+            if os.path.exists(rel_path):
+                self.vector_path = rel_path
+            else:
+                # Try one level up if we are in src/nes
+                rel_path_2 = os.path.join(os.path.dirname(os.path.dirname(__file__)), "nes", "data", "Sentiment.csv")
+                if os.path.exists(rel_path_2):
+                    self.vector_path = rel_path_2
+                else:
+                    raise FileNotFoundError(f"Vector file not found at {self.vector_path}. Please download it first.")
+        
+        # The file has a header 0,1,2... so we read it normally
+        df = pd.read_csv(self.vector_path)
+        return df.values.flatten()
+
+    def compute_score(self, texts: List[str], batch_size: int = 32) -> np.ndarray:
+        print(f"Encoding {len(texts)} texts for projection...")
+        embeddings = self.model.encode(texts, batch_size=batch_size, show_progress_bar=True, convert_to_numpy=True)
+        
+        # Project onto the sentiment vector
+        v = self.vector
+        norm_v = np.linalg.norm(v)
+        if norm_v == 0:
+            raise ValueError("Concept vector has zero norm.")
+            
+        unit_v = v / norm_v
+        
+        # Scalar projection: dot product with unit vector
+        # This gives the component of the embedding along the sentiment direction
+        scores = np.dot(embeddings, unit_v)
+        return scores
+
+
+def compute_semantic_projection_batch(
+    texts: List[str],
+    model_name: str = "paraphrase-multilingual-mpnet-base-v2",
+    vector_path: str = "src/nes/data/Sentiment.csv",
+    batch_size: int = 32,
+    device: Optional[torch.device] = None
+) -> np.ndarray:
+    """
+    Compute sentiment scores using Semantic Projection.
+    
+    Args:
+        texts: List of text strings
+        model_name: SentenceTransformer model name
+        vector_path: Path to the concept vector CSV
+        batch_size: Batch size for encoding
+        device: Torch device
+        
+    Returns:
+        NumPy array of sentiment scores
+    """
+    projector = SemanticProjectionSentiment(model_name, vector_path, device)
+    return projector.compute_score(texts, batch_size)

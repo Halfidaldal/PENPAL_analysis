@@ -1,7 +1,7 @@
 # PENPAL Analysis Configuration
 
 # Active dataset (change this to switch between datasets)
-active_dataset: "TEXT"  # Options: "TEXT", "Berlin"
+active_dataset: "Berlin"  # Options: "TEXT", "Berlin"
 
 # Data paths per dataset
 datasets:
@@ -17,22 +17,35 @@ datasets:
 # Firestore settings
 firestore:
   credentials_path: "environment/the-never-ending-story-a7b5f-firebase-adminsdk-ax73p-9014b38264.json"
-  collection_name: "story_data_TEXT"
-  stories_collection: "stories_TEXT"
-  min_interactions: 10
+  TEXT:
+    collection_name: "story_data_TEXT"
+    stories_collection: "stories_TEXT"
+    min_interactions: 10
+  Berlin:
+    collection_name: "story_data_berlin"
+    stories_collection: "stories"
+    min_interactions: 5
 
 # Cleaning parameters
 cleaning:
   edit_distance_threshold: 100
-  min_story_length: 10  # minimum interactions to count as a story
   simulated: False      # whether to clean simulated or user dataset 
+  TEXT:
+    max_turns: 10        # maximum turns per story to keep during cleaning
+  Berlin:
+    max_turns: 5        # maximum turns per story to keep during cleaning
 
 # Embedding models
 embeddings:
-  model_name: "Kingsoft-LLM/QZhou-Embedding"
-  batch_size: 1
-  task: null
-  
+  TEXT:
+    model_name: "Kingsoft-LLM/QZhou-Embedding"
+    batch_size: 1
+    task: null
+  Berlin:
+    model_name: "sentence-transformers/all-mpnet-base-v2"
+    batch_size: 1
+    task: null
+
 novelty:
   model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
   window_size: 128
@@ -44,19 +57,39 @@ exploration:
 
 # Sentiment analysis
 sentiment:
-  model_name: "cardiffnlp/twitter-roberta-base-sentiment-latest"
-  batch_size: 64
-  valence_method: "simple"  # "simple", "amplify", or "dampen"
+  TEXT:
+    model_name: "cardiffnlp/twitter-roberta-base-sentiment-latest"
+    batch_size: 64
+    valence_method: "simple"  # "simple", "amplify", or "dampen"
+    engine: 'projection'  # 'bert' or 'projection'
+    language: 'en'
+  Berlin:
+    model_name: "ssary/XLM-RoBERTa-German-sentiment"
+    batch_size: 64
+    valence_method: "simple"  # "simple", "amplify", or "dampen"
+    engine: 'projection'  # 'bert' or 'projection'
+    language: 'de'
+  axis: 'valence'       # Semantic Projection axis name
+
 
 # Simulation parameters
 simulation:
-  n_turns_per_story: 10
-  model_name: "gpt-4o-mini"
-  seed: 42
-  # OpenAI API key: set via environment variable OPENAI_API_KEY or pass to script
-  client_ids: ["1", "2"]  # Client IDs to simulate
-  workshop_ids: ["1", "2", "3"]  # Workshop IDs to simulate
-  n_simulations: 2
+  Berlin:
+    n_turns_per_story: 5
+    model_name: "gpt-4o-mini"
+    seed: 42
+    # OpenAI API key: set via environment variable OPENAI_API_KEY or pass to script
+    client_ids: ["1", "2"]  # Client IDs to simulate
+    workshop_ids: ["1", "2", "3"]  # Workshop IDs to simulate
+    n_simulations: 2
+  TEXT:
+    n_turns_per_story: 10
+    model_name: "gpt-4o-mini"
+    seed: 42
+    # OpenAI API key: set via environment variable OPENAI_API_KEY or pass to script
+    client_ids: ["1", "2"]  # Client IDs to simulate
+    workshop_ids: ["1", "2", "3"]  # Workshop IDs to simulate
+    n_simulations: 2
 
 # textdescriptives (skud ud Lasse)
 surface_metrics: 

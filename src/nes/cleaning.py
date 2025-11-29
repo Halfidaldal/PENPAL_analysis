@@ -287,10 +287,11 @@ def build_full_story_text(df: pd.DataFrame) -> pd.DataFrame:
         **({'language': 'first'} if 'language' in df.columns else {}),
         **({'client_id': 'first'} if 'client_id' in df.columns else {}),
         **({'workshop_id': 'first'} if 'workshop_id' in df.columns else {}),
-        'timestamp': 'first',
-        'respondent_id': 'first',
-        'starter': 'first',
-        'llm_type': 'first'
+        'timestamp': 'first' if 'timestamp' in df.columns else {},
+        **({'respondent_id': 'first'} if 'respondent_id' in df.columns else {}),
+        **({'interaction_count': 'first'} if 'interaction_count' in df.columns else {}),
+        **({'starter': 'first'} if 'starter' in df.columns else {}),
+        **({'llm_type': 'first'} if 'llm_type' in df.columns else {})
     }).reset_index()
     
     # Rename columns
@@ -315,18 +316,24 @@ def build_full_story_text(df: pd.DataFrame) -> pd.DataFrame:
     
     return story_df
 
-def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True) -> pd.DataFrame: 
+def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_turns: int = 10) -> pd.DataFrame: 
 
     # adds ai starter for that respondent_id if user is equal to baseline
 
-    df['turn'] = df.groupby('respondent_id').cumcount() + 1
+    if 'respondent_id' in df.columns:
+        df['turn'] = df.groupby('respondent_id').cumcount() + 1
     starter_map = (df['user'] == 'This is the story of').groupby(df['respondent_id']).any().map(
         {True: 'ai', False: 'user'}
     )
-    df['starter'] = df['respondent_id'].map(starter_map)
-    print(f"Identified starters for {len(df[df['starter'] == 'ai']['respondent_id'].unique())} ai")
-    print(f"Identified starters for {len(df[df['starter'] == 'user']['respondent_id'].unique())} user")
-    
+    if 'starter' in df.columns and 'respondent_id' in df.columns:
+        df['starter'] = df['respondent_id'].map(starter_map)
+        print(f"Identified starters for {len(df[df['starter'] == 'ai']['respondent_id'].unique())} ai")
+        print(f"Identified starters for {len(df[df['starter'] == 'user']['respondent_id'].unique())} user")
+    #sort by max_turns:
+    if interaction_count:
+        df = df[df['interaction_count'] <= max_turns].copy()
+    else:
+        df = df[df['turn'] <= max_turns].copy()
 
     for rid, group in df.groupby('respondent_id'):
         # Only modify groups where starter == 'ai'
