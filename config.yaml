@@ -42,7 +42,7 @@ embeddings:
     batch_size: 1
     task: null
   Berlin:
-    model_name: "sentence-transformers/all-mpnet-base-v2"
+    model_name: "jinaai/jina-embeddings-v3"
     batch_size: 1
     task: null
 

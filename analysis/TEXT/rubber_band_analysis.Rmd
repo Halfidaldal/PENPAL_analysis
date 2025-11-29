@@ -73,7 +73,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 
 ```{r load-data}
 # Load dyadic sentiment scores
-df_field <- read_parquet(here("data/TEXT/processed/dyadic_sentiment_scores.parquet"))
+df_field <- read_parquet(here("data/Berlin/processed/dyadic_sentiment_scores.parquet"))
 df_simulated <- read_parquet(here("data/Berlin/processed/dyadic_sentiment_scores_simulated.parquet"))
 
 # Display structure
@@ -114,7 +114,7 @@ df_field <- df_field %>%
   ) %>%
   # Ensure conversation_id is a character/factor
   mutate(conversation_id = as.character(conversation_id)) %>%
-  filter(turn > 1)
+  filter(turn < 5)
 
 # Preprocess simulated data
 df_simulated <- df_simulated %>%
@@ -817,7 +817,7 @@ ggsave(file.path(GRAPHS_DIR, "cosine_similarity_distribution.png"),
 ```{r cosine-sim-lm}
 
 df_cosine_sim <- df_field %>%
-  filter(turn > 1, turn < 11) 
+  filter(turn < 11) 
 
 # Reshape to long format for interaction analysis
 df_cosine_long <- df_cosine_sim %>%
@@ -877,13 +877,13 @@ ggsave(file.path(GRAPHS_DIR, "cosine_similarity_comparison_same_vs_prev.png"),
 ```{r cosine-sim-starter, fig.width=12, fig.height=6}
 
 cosine_sim_lm_plot <- df_field %>%
-  filter(turn > 0, turn < 11) %>%
+  filter(turn < 11) %>%
   ggplot(aes(x = turn, y = cosine_sim_same)) +
   geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
   geom_vline(xintercept = 0, linetype = 2, color = "grey60") +
   geom_point(alpha = 0.3, size = 2, color = "#4DAF4A") +
   geom_smooth(method = "lm", se = TRUE, color = "#4DAF4A", linewidth = 1.2) +
-  xlim(2, 10) +
+  xlim(1, 10) +
   ylim(0.5, 0.8) +
   labs(
     title = "Cosine Similarity Over Turns (Field Data)",
@@ -908,7 +908,7 @@ ggsave(file.path(GRAPHS_DIR, "cosine_similarity_linear_trend.png"),
 
 # Plot 1: Mean Cosine Similarity
 p_cosine_mean <- df_field %>%
-  filter(turn > 1, turn < 11) %>%
+  filter(turn < 11) %>%
   group_by(turn) %>%
   summarise(mean_cosine = mean(cosine_sim_same, na.rm = TRUE)) %>%
   ggplot(aes(x = turn, y = mean_cosine)) +
@@ -1307,10 +1307,10 @@ p_valence_gap_comparison <- ggplot(df_valence_long, aes(x = turn, y = valence_ga
   scale_color_manual(values = c("Same Turn" = "#9467BD", 
                                "Previous Turn" = "#E377C2")) +
   labs(
-    title = "Comparison of Cosine Similarity: Current vs Previous Turn",
+    title = "Comparison of Valence Gap: Current vs Previous Turn",
     subtitle = "Interaction between Turn and Lag Type",
     x = "Turn",
-    y = "Cosine Similarity",
+    y = "Valence Gap",
     color = "Measure"
   ) +
   theme(

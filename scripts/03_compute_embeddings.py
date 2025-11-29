@@ -27,9 +27,10 @@ from nes.io import load_csv, save_parquet, save_npy, get_project_root, load_conf
 def main():
     # Load config
     config = load_config()
-    embeddings_config = config['embeddings']
+    active_dataset = config.get('active_dataset', 'TEXT')
+    embeddings_config = config['embeddings'][active_dataset]
     simulated = config['cleaning'].get('simulated', False)
-    print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
+    print(f"Active dataset: {active_dataset}")
     
     df_full = load_csv("stories_full_text_filtered_simulated.csv" if simulated else "stories_full_text_filtered.csv", stage="interim")
     df_interactions = load_csv("interaction_level_stories_filtered_simulated.csv" if simulated else "interaction_level_stories_filtered.csv", stage="interim")

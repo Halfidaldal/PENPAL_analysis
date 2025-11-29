@@ -73,7 +73,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 ```{r load-data}
 # Load dyadic sentiment scores
 
-df_field <- read_parquet(here("data/TEXT/processed/dyadic_sentiment_scores.parquet"))
+df_field <- read_parquet(here("data/Berlin/processed/dyadic_sentiment_scores.parquet"))
 df_simulated <- read_parquet(here("data/Berlin/processed/dyadic_sentiment_scores_simulated.parquet"))
 
 # Display structure
@@ -112,7 +112,7 @@ df_field <- df_field %>%
   ) %>%
   # Ensure conversation_id is a character/factor
   mutate(conversation_id = as.character(conversation_id)) %>%
-  filter(turn > 1)
+  filter(turn < 5)
 
 
 # Preprocess simulated data

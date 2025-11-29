@@ -26,10 +26,11 @@ from nes.cleaning import append_turn_numbers
 def main():
     # Load config
     config = load_config()
-    sentiment_config = config['sentiment']
+    active_dataset = config.get('active_dataset', 'TEXT')
+    sentiment_config = config['sentiment'][active_dataset]
     simulated = config['cleaning'].get('simulated', False)
     
-    print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
+    print(f"Active dataset: {active_dataset}")
     
     # Load story embeddings data
     print("Loading story data with embeddings...")
