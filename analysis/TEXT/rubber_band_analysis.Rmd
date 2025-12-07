@@ -73,7 +73,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 
 ```{r load-data}
 # Load dyadic sentiment scores
-df_field <- read_parquet(here("data/Berlin/processed/dyadic_sentiment_scores.parquet"))
+df_field <- read_parquet(here("data/TEXT/processed/dyadic_sentiment_scores.parquet"))
 df_simulated <- read_parquet(here("data/Berlin/processed/dyadic_sentiment_scores_simulated.parquet"))
 
 # Display structure
@@ -114,7 +114,7 @@ df_field <- df_field %>%
   ) %>%
   # Ensure conversation_id is a character/factor
   mutate(conversation_id = as.character(conversation_id)) %>%
-  filter(turn < 5)
+  filter(turn < 10)
 
 # Preprocess simulated data
 df_simulated <- df_simulated %>%
@@ -463,12 +463,12 @@ cat("\n=== Rubber-Band Model: Simulated Data ===\n")
 
 ```{r rubberband-turn-level}
 # Function to compute turn-by-turn rubber-band dynamics
-compute_rubberband_turns <- function(df, data_source_label) {
+compute_rubberband_turns <- function(df, data_source_label, direction) {
   df %>%
     group_by(conversation_id) %>%
     arrange(turn, .by_group = TRUE) %>%
     mutate(
-      valence_gap = abs(user_valence - ai_valence),
+      valence_gap = abs(user_valence - {{ direction }}),
       gap_change = valence_gap - lag(valence_gap),  # Change from previous turn
       gap_change_next = lead(valence_gap) - valence_gap  # Change to next turn
     ) %>%
@@ -481,21 +481,34 @@ compute_rubberband_turns <- function(df, data_source_label) {
 }
 
 # Compute for both datasets
-rb_turns_field <- compute_rubberband_turns(df_field, "Field")
-rb_turns_sim <- compute_rubberband_turns(df_simulated, "Simulated")
+rb_turns_field <- compute_rubberband_turns(df_field, "Field", ai_valence)
+rb_turns_field_prev <- compute_rubberband_turns(df_field, "Field", ai_valence_lag1)
+
+rb_all <- bind_rows(
+  rb_turns_field %>% mutate(type = "same"),
+  rb_turns_field_prev %>% mutate(type = "prev")
+)
+
+rb_turns_sim <- compute_rubberband_turns(df_simulated, "Simulated", ai_valence)
 
 # Fit linear models for turn-level rubber-band
 lm_turns_field <- lm(gap_change_next ~ gap_change, data = rb_turns_field)
+lm_turns_field_direction <- lm(gap_change_next ~ gap_change * type, data = rb_all)
 lm_turns_sim <- lm(gap_change_next ~ gap_change, data = rb_turns_sim)
 
 cat("=== Turn-Level Rubber-Band Model: Field Data ===\n")
 print(summary(lm_turns_field)$coefficients)
+print(summary(lm_turns_field_direction)$coefficients)
+
+
+cat("=== Prev Turn-Level Rubber-Band Model: Field Data ===\n")
+print(summary(lm_turns_field_prev)$coefficients)
 
 cat("\n=== Turn-Level Rubber-Band Model: Simulated Data ===\n")
 print(summary(lm_turns_sim)$coefficients)
 
 # Summary statistics
-cat("\n=== Turn-Level Rubber-Band Correlation ===\n")
+cat("\n\n=== Turn-Level Rubber-Band Correlation ===\n")
 cat("Field correlation (gap_change vs gap_change_next):", 
     cor(rb_turns_field$gap_change, rb_turns_field$gap_change_next, use = "complete.obs"), "\n")
 cat("Simulated correlation (gap_change vs gap_change_next):", 

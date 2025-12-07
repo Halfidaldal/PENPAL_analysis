@@ -44,7 +44,6 @@ pacman::p_load(
 
 # Set project root
 PROJECT_ROOT <- here()
-setwd(PROJECT_ROOT)
 
 # Set global theme
 theme_set(theme_minimal(base_size = 14))
@@ -73,7 +72,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 ```{r load-data}
 # Load dyadic sentiment scores
 
-df_field <- read_parquet(here("data/Berlin/processed/dyadic_sentiment_scores.parquet"))
+df_field <- read_parquet(here("data/TEXT/processed/dyadic_sentiment_scores.parquet"))
 df_simulated <- read_parquet(here("data/Berlin/processed/dyadic_sentiment_scores_simulated.parquet"))
 
 # Display structure
@@ -112,7 +111,7 @@ df_field <- df_field %>%
   ) %>%
   # Ensure conversation_id is a character/factor
   mutate(conversation_id = as.character(conversation_id)) %>%
-  filter(turn < 5)
+  filter(turn > 1)
 
 
 # Preprocess simulated data
@@ -742,16 +741,30 @@ df_alignment_long %>%
 ```
 ```{r}
 # 2) Mixed-effects model comparing slopes across directions
-# Reference level: User_to_AI
-# Key term: predictor_valence:alignment_directionAI_to_User
+df_alignment_std <- df_alignment_long %>%
+  mutate(
+    # Scale globally or per group? 
+    # To compare "correlation strength", we effectively want beta ~ r.
+    # So we should standardize predictor and response within their respective distributions.
+    predictor_z = (predictor_valence - mean(predictor_valence, na.rm=TRUE)) / sd(predictor_valence, na.rm=TRUE),
+    response_z = (response_valence - mean(response_valence, na.rm=TRUE)) / sd(response_valence, na.rm=TRUE)
+  )
+
+# Better yet, standardize within the direction groups to ensure beta = correlation
+df_alignment_std <- df_alignment_long %>%
+  group_by(alignment_direction) %>%
+  mutate(
+    predictor_z = scale(predictor_valence),
+    response_z = scale(response_valence)
+  ) %>%
+  ungroup()
 
 model_direction <- lmer(
-  response_valence ~ predictor_valence * alignment_direction +
-    (1 | conversation_id),
-  data = df_alignment_long
+  response_z ~ predictor_z * alignment_direction + (1 | conversation_id),
+  data = df_alignment_std
 )
-
-cat("=== Mixed Effects Model: Directional Alignment (User -> AI vs AI -> User) ===\n")
+cat("=== Mixed Effects Model (Standardized): Directional Alignment (User -> AI vs AI -> User) ===\n")
+## === Mixed Effects Model: Directional Alignment (User -> AI vs AI -> User) ===
 direction_summary <- summary(model_direction)
 print(direction_summary$coefficients)
 
