@@ -284,16 +284,16 @@ write_csv(valence_stats, file.path(TABLES_DIR, "valence_descriptive_stats.csv"))
 
 # 3. Valence Distribution Analysis
 
-## 3.1 Combined Valence Distribution Plot
-
-```{r valence-distribution, fig.width=12, fig.height=6}
-# Prepare data for plotting
+## 3.1 Valence Distribution Difference Test
+```{r test-valence-distribution}
 df_field_long <- df_field %>%
   pivot_longer(cols = c(user_valence, ai_valence),
                names_to = "agent", values_to = "valence") %>%
   mutate(agent = recode(agent, 
                        user_valence = "User", 
-                       ai_valence = "AI"))
+                       ai_valence = "AI"),
+         agent = factor(agent, levels = c("User", "AI"))
+         )
 
 df_sim_long <- df_simulated %>%
   pivot_longer(cols = c(user_valence, ai_valence),
@@ -311,6 +311,19 @@ means_field <- df_field_long %>%
 means_sim <- df_sim_long %>%
   group_by(agent) %>%
   summarise(mean_val = mean(valence, na.rm = TRUE), .groups = "drop")
+
+
+valence_difference_mixed_model <- lmer(valence ~ agent + (agent | conversation_id), data=df_field_long)
+summary(valence_difference_mixed_model)
+
+```
+
+
+## 3.2 Combined Valence Distribution Plot
+
+```{r valence-distribution, fig.width=12, fig.height=6}
+# Prepare data for plotting
+
 
 # Field data plot
 p_field <- ggplot(df_field_long, aes(x = valence, fill = agent)) +
@@ -553,7 +566,7 @@ df_field %>%
   scale_color_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00")) +
   facet_wrap(~conversation_id, scales = "free_x") +
   labs(
-    title = "Rolling Average of Valence (k = 8) Human-AI",
+    title = "Rolling Average of Valence (k = 2) Human-AI",
     x = "Turn Index",
     y = "Smoothed Valence Score",
     color = "Source"
@@ -573,7 +586,9 @@ cor_all <- bind_rows(cor_same_combined, cor_prev_combined) %>%
   )
 
 # Boxplot with jittered points
-p_alignment <- ggplot(cor_all, aes(x = alignment_type, y = rho, fill = data_source)) +
+p_alignment <- cor_all %>%
+  filter(data_source == "Field") %>%
+  ggplot(aes(x = alignment_type, y = rho, fill = data_source)) +
   geom_boxplot(width = 0.6, outlier.shape = NA, alpha = 0.7,
                position = position_dodge(width = 0.75)) +
   geom_jitter(aes(color = data_source),
@@ -614,13 +629,16 @@ agg_prev <- cor_same_combined_all_turns_prev %>%
   select(data_source, rho, alignment_type)
 
 agg_data <- bind_rows(agg_same, agg_prev) %>%
+  filter(data_source == "Field") %>%
   mutate(
     alignment_type = factor(alignment_type, 
                            levels = c("Same Turn", "Previous Turn"))
   )
 
 # Create plot with per-story boxplots and aggregate overlay
-p_comparison <- ggplot(cor_all, aes(x = alignment_type, y = rho, fill = data_source)) +
+p_comparison <- cor_all %>%
+  filter(data_source == "Field") %>%
+  ggplot(aes(x = alignment_type, y = rho, fill = data_source)) +
   # Per-story boxplots
   geom_boxplot(width = 0.6, outlier.shape = NA, alpha = 0.5,
                position = position_dodge(width = 0.75)) +
@@ -678,19 +696,7 @@ print(comparison_summary)
 ```
 
 
-## 4.5 Mixed Effects Model: Random Intercepts per Story
 
-```{r mixed-effects-model}
-# Same-turn alignment with random intercepts per story
-model_same <- lmer(ai_valence ~ user_valence + (1 | conversation_id), data = df_field)
-cat("=== Mixed Effects Model: Same-Turn Alignment (Field Data) ===\n")
-print(summary(model_same)$coefficients)
-
-# Previous-turn alignment with random intercepts per story
-model_prev <- lmer(user_valence ~ ai_valence_lag1 + (1 | conversation_id), data = df_field)
-cat("\n=== Mixed Effects Model: Previous-Turn Alignment (Field Data) ===\n")
-print(summary(model_prev)$coefficients)
-```
 ```{r}
 # We assume df_field already has:
 
@@ -740,24 +746,17 @@ df_alignment_long %>%
   print()
 ```
 ```{r}
-# 2) Mixed-effects model comparing slopes across directions
-df_alignment_std <- df_alignment_long %>%
-  mutate(
-    # Scale globally or per group? 
-    # To compare "correlation strength", we effectively want beta ~ r.
-    # So we should standardize predictor and response within their respective distributions.
-    predictor_z = (predictor_valence - mean(predictor_valence, na.rm=TRUE)) / sd(predictor_valence, na.rm=TRUE),
-    response_z = (response_valence - mean(response_valence, na.rm=TRUE)) / sd(response_valence, na.rm=TRUE)
-  )
 
-# Better yet, standardize within the direction groups to ensure beta = correlation
+# standardize within the direction groups to ensure beta = correlation
 df_alignment_std <- df_alignment_long %>%
-  group_by(alignment_direction) %>%
+  group_by(conversation_id, alignment_direction) %>%
   mutate(
-    predictor_z = scale(predictor_valence),
-    response_z = scale(response_valence)
+    predictor_z = as.numeric(scale(predictor_valence)),
+    response_z = as.numeric(scale(response_valence))
   ) %>%
   ungroup()
+
+
 
 model_direction <- lmer(
   response_z ~ predictor_z * alignment_direction + (1 | conversation_id),
@@ -820,14 +819,14 @@ ggsave(
 
 ```{r alignment-stats}
 # Test 1: Same-turn alignment difference
-t_test_same <- t.test(rho ~ data_source, data = cor_same_combined)
-cat("=== T-test: Same-Turn Alignment ===\n")
-print(t_test_same)
+#t_test_same <- t.test(rho ~ data_source, data = cor_same_combined)
+#cat("=== T-test: Same-Turn Alignment ===\n")
+#print(t_test_same)
 
 # Test 2: Previous-turn alignment difference
-t_test_prev <- t.test(rho ~ data_source, data = cor_prev_combined)
-cat("\n=== T-test: Previous-Turn Alignment ===\n")
-print(t_test_prev)
+#t_test_prev <- t.test(rho ~ data_source, data = cor_prev_combined)
+#cat("\n=== T-test: Previous-Turn Alignment ===\n")
+#print(t_test_prev)
 
 # Test 3: One-sample t-tests against zero (is alignment significant?)
 cat("\n=== One-Sample Tests Against Zero ===\n")
