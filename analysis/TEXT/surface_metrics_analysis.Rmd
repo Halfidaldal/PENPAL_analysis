@@ -33,9 +33,11 @@ knitr::opts_chunk$set(
   fig.height = 6,
   dpi = 300
 )
+install.packages('pacman', 'ggridges')
 
 # Load required packages
 pacman::p_load(
+  ggridges,     # ggplot ridges
   tidyverse,    # Data manipulation and plotting
   lme4,         # Mixed effects models
   lmerTest,     # P-values for mixed models
@@ -99,7 +101,7 @@ df_readability <- df_full %>%
   pivot_longer(cols = -type, names_to = "metric", values_to = "value")
 
 p_readability <- ggplot(df_readability, aes(x = value, y = metric, fill = type)) +
-  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  geom_boxplot(outliers=FALSE, outlier.shape = NA, alpha = 0.7) +
   scale_fill_manual(values = colors) +
   labs(title = "Readability Metrics by Type", x = "Score", y = "") +
   theme(legend.position = "top")
@@ -238,6 +240,49 @@ p_pos_diff <- ggplot(pos_stats, aes(x = diff, y = reorder(pos_name, diff), fill 
 print(p_pos_diff)
 ggsave(file.path(GRAPHS_DIR, "surface_pos_differences.png"), p_pos_diff, width = 10, height = 8)
 ```
+
+```{r}
+p_pos_density <- ggplot(df_pos, aes(x = prop, color = type)) +
+  geom_density(linewidth = 0.9, adjust = 1.2) +
+  scale_color_manual(values = c("AI" = "#FF7F00", "User" = "#377EB8")) +
+  facet_wrap(~ pos_name, scales = "free_y") +
+  labs(
+    title = "Density of POS Proportions",
+    x = "Proportion",
+    y = "Density"
+  ) +
+  theme(legend.position = "top")
+
+print(p_pos_density)
+```
+
+```{r}
+df_pos_trim <- df_pos %>%
+  mutate(prop = pmin(prop, quantile(prop, 0.99, na.rm = TRUE)))
+
+p_pos_ridges <- ggplot(df_pos_trim, aes(
+  x = prop,
+  y = reorder(pos_name, prop, FUN = median),
+  fill = type
+)) +
+  geom_density_ridges(
+    alpha = 0.5,
+    scale = 3,
+    linewidth = 0.3
+  ) +
+  scale_fill_manual(values = c("AI" = "#FF7F00", "User" = "#377EB8")) +
+  labs(
+    title = "Distribution of POS Proportions (AI vs User)",
+    x = "Proportion",
+    y = "POS Tag"
+  ) +
+  theme_ridges(font_size = 12, grid = TRUE) +
+  theme(legend.position = "top")
+
+print(p_pos_ridges)
+
+```
+
 
 ### Statistical Models (POS)
 
