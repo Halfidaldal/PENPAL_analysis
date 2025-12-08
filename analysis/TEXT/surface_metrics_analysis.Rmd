@@ -95,7 +95,7 @@ cat("Interaction Data Dimensions:", dim(df_inter), "\n")
 ## 2.1 Readability Metrics
 
 ```{r readability-plot, fig.width=12, fig.height=6}
-readability_metrics <- c('flesch_kincaid_grade', 'smog', 'gunning_fog')
+readability_metrics <- c('flesch_kincaid_grade')
 
 df_readability <- df_full %>%
   select(type, all_of(readability_metrics)) %>%
@@ -180,6 +180,153 @@ for (m in dep_metrics) {
   print(summary(model)$coefficients)
 }
 ```
+## Combined Plots 
+
+```{r}
+
+# Create cleaner metric labels
+metric_labels <- c(
+  'flesch_kincaid_grade' = 'Flesch-Kincaid\nGrade Level',
+  'first_order_coherence' = 'First-Order\nCoherence',
+  'second_order_coherence' = 'Second-Order\nCoherence',
+  'dependency_distance_mean' = 'Mean Dependency\nDistance',
+  'prop_adjacent_dependency_relation_mean' = 'Adjacent Dependency\nProportion'
+)
+
+# === PANEL A: Readability ===
+readability_metrics <- c('flesch_kincaid_grade')
+df_readability <- df_full %>%
+  select(type, all_of(readability_metrics)) %>%
+  pivot_longer(cols = -type, names_to = "metric", values_to = "value") %>%
+  mutate(metric = recode(metric, !!!metric_labels))
+
+p_readability <- ggplot(df_readability, aes(x = type, y = value, fill = type)) +
+  geom_boxplot(outlier.shape=NA, alpha = 0.7, width = 0.6) +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3, 
+               fill = "white", color = "black") +
+  scale_fill_manual(values = colors) +
+  coord_cartesian(ylim = c(0, 25)) +  # Adjust these limits as needed
+  labs(
+    title = "(A) Readability",
+    x = NULL,
+    y = "F-K Grade Level"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    panel.grid.major.x = element_blank()
+  )
+
+# === PANEL B: Coherence ===
+complexity_metrics <- c('first_order_coherence', 'second_order_coherence')
+df_comp <- df_full %>%
+  select(type, all_of(complexity_metrics)) %>%
+  pivot_longer(cols = -type, names_to = "metric", values_to = "value") %>%
+  mutate(metric = recode(metric, !!!metric_labels))
+
+p_coherence <- ggplot(df_comp, aes(x = type, y = value, fill = type)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7, width = 0.6) +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3, 
+               fill = "white", color = "black") +
+  scale_fill_manual(values = colors) +
+  facet_wrap(~metric, scales = "free_y", ncol = 2) +
+  labs(
+    title = "(B) Coherence",
+    x = NULL,
+    y = "Coherence Score"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    panel.grid.major.x = element_blank(),
+    strip.text = element_text(size = 10)
+  )
+
+# === PANEL C: Dependency Structure ===
+dep_metrics <- c('dependency_distance_mean', 'prop_adjacent_dependency_relation_mean')
+df_dep <- df_full %>%
+  select(type, all_of(dep_metrics)) %>%
+  pivot_longer(cols = -type, names_to = "metric", values_to = "value") %>%
+  mutate(metric = recode(metric, !!!metric_labels))
+
+df_dep_mean <- df_dep %>% 
+  filter(metric == "Mean Dependency\nDistance")
+
+df_dep_adjacent <- df_dep %>% 
+  filter(metric == "Adjacent Dependency\nProportion")
+
+
+p_dep_mean <- ggplot(df_dep_mean, aes(x = type, y = value, fill = type)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7, width = 0.6) +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3,
+               fill = "white", color = "black") +
+  scale_fill_manual(values = colors) +
+  coord_cartesian(ylim = c(1.8, 4.5)) +   # set your preferred limits
+  labs(
+    title = "(C) Mean Dependency Distance",
+        x = NULL,
+    y = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.x = element_blank(),
+    strip.text = element_text(size = 10, face = "bold")
+  )
+
+p_dep_adj <- ggplot(df_dep_adjacent, aes(x = type, y = value, fill = type)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7, width = 0.6) +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3,
+               fill = "white", color = "black") +
+  scale_fill_manual(values = colors) +
+  coord_cartesian(ylim = c(0.37, 0.5)) +   # set your preferred limits
+  labs(
+    title = "(D) Adjacent Dependency Proportion",
+    x = NULL,
+    y = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    axis.text = element_text(size = 10),
+    plot.title = element_text(size = 12, face = "bold"),
+    panel.grid.major.x = element_blank(),
+    strip.text = element_text(size = 10, face = "bold")
+  )
+
+p_dependency <- p_dep_mean | p_dep_adj
+
+
+# === COMBINE ALL PANELS ===
+p_combined <- (p_readability | p_coherence) / p_dependency +
+  plot_layout(heights = c(1, 1)) +
+  plot_annotation(
+    caption = "Note: White diamonds indicate means. Boxes show median and IQR.",
+    theme = theme(
+      plot.caption = element_text(hjust = 0, size = 9, color = "gray30")
+    )
+  )
+
+print(p_combined)
+
+# Save high-resolution version
+ggsave(
+  file.path(GRAPHS_DIR, "surface_metrics_combined.png"), 
+  p_combined, 
+  width = 14, 
+  height = 10,
+  dpi = 300
+)
+
+```
+
+
 
 ## 2.4 Part-of-Speech (POS) Analysis
 
