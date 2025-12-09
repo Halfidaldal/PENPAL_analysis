@@ -278,3 +278,131 @@ def compute_ai_ai_semantic_exploration(
                 })
     
     return pd.DataFrame.from_records(records)
+
+
+def compute_lag_distances(embeddings, max_lag=None):
+    """
+    Compute average cosine distance between embeddings separated by lag k.
+    
+    Instead of binning, this uses all pairs separated by k steps.
+    This is more robust for short time series (N=10).
+    
+    Parameters
+    ----------
+    embeddings : np.ndarray
+        Sequence of embeddings, shape (N, D)
+    max_lag : int, optional
+        Maximum lag to compute. If None, uses N-1.
+        
+    Returns
+    -------
+    list of dict
+        List of {'k': lag, 'distance': avg_dist}
+    """
+    N, D = embeddings.shape
+    if max_lag is None:
+        max_lag = N - 1
+    
+    max_lag = min(max_lag, N - 1)
+    
+    # Normalize
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    # Avoid division by zero
+    norms[norms == 0] = 1e-10
+    embeddings_norm = embeddings / norms
+    
+    results = []
+    for k in range(1, max_lag + 1):
+        # Vectorized cosine distance for lag k
+        # A: embeddings[:-k], B: embeddings[k:]
+        # Dot product of normalized vectors = cosine similarity
+        sims = np.sum(embeddings_norm[:-k] * embeddings_norm[k:], axis=1)
+        # Clip for numerical stability
+        sims = np.clip(sims, -1.0, 1.0)
+        dists = 1.0 - sims
+        
+        results.append({
+            'k': k,
+            'distance': float(np.mean(dists)),
+            'std_distance': float(np.std(dists)),
+            'n_pairs': len(dists)
+        })
+        
+    return results
+
+
+def compute_lag_exploration_metrics(
+    df,
+    user_embedding_col="user_embedding",
+    ai_embedding_col="ai_embedding",
+    max_lag=None
+):
+    """
+    Compute semantic exploration using lag-based distances.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input dataframe
+    user_embedding_col : str
+        Name of user embedding column
+    ai_embedding_col : str
+        Name of AI embedding column
+    max_lag : int
+        Maximum lag to compute
+        
+    Returns
+    -------
+    pd.DataFrame
+        Long-format dataframe with lag-based metrics
+    """
+    # Parse embeddings
+    df = df.copy()
+    df['user_emb'] = df[user_embedding_col].apply(parse_embedding)
+    df['ai_emb'] = df[ai_embedding_col].apply(parse_embedding)
+    
+    # Filter out invalid embeddings
+    df = df[df['user_emb'].notnull() & df['ai_emb'].notnull()].reset_index(drop=True)
+    
+    # Group by story
+    story_groups = df.groupby(['conversation_id'])
+    
+    records = []
+    for conversation_id, grp in tqdm(story_groups, desc="Computing lag exploration"):
+        user_list = grp['user_emb'].tolist()
+        ai_list = grp['ai_emb'].tolist()
+        starter = grp['starter'].iloc[0] if 'starter' in grp else None
+        llm_type = grp['llm_type'].iloc[0] if 'llm_type' in grp else None
+        
+        try:
+            user_embs = np.vstack(user_list)
+            ai_embs = np.vstack(ai_list)
+        except Exception:
+            continue
+            
+        # Interleaved
+        if user_embs.shape == ai_embs.shape:
+            E = interleave_and_align(user_embs, ai_embs)
+            lag_results = compute_lag_distances(E, max_lag)
+            for res in lag_results:
+                res.update({
+                    'conversation_id': conversation_id,
+                    'agent': 'interleaved',
+                    'starter': starter,
+                    'llm_type': llm_type
+                })
+                records.append(res)
+                
+        # Individual agents
+        for agent_name, embs in (("user", user_embs), ("ai", ai_embs)):
+            lag_results = compute_lag_distances(embs, max_lag)
+            for res in lag_results:
+                res.update({
+                    'conversation_id': conversation_id,
+                    'agent': agent_name,
+                    'starter': starter,
+                    'llm_type': llm_type
+                })
+                records.append(res)
+                
+    return pd.DataFrame.from_records(records)
