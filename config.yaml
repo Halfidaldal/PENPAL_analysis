@@ -1,7 +1,7 @@
 # PENPAL Analysis Configuration
 
 # Active dataset (change this to switch between datasets)
-active_dataset: "Berlin"  # Options: "TEXT", "Berlin"
+active_dataset: "TEXT"  # Options: "TEXT", "Berlin"
 
 # Data paths per dataset
 datasets:

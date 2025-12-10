@@ -19,7 +19,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = TRUE,
+  echo = FALSE,
   warning = FALSE,
   message = FALSE,
   fig.width = 10,
@@ -111,7 +111,7 @@ df_field <- df_field %>%
   ) %>%
   # Ensure conversation_id is a character/factor
   mutate(conversation_id = as.character(conversation_id)) %>%
-  filter(turn > 1)
+  filter(turn > 1, turn < 10, respondent_id != "UXQSH4HR87CF")
 
 
 # Preprocess simulated data
@@ -187,12 +187,15 @@ df_field <- df_field %>%
   group_by(conversation_id) %>%
   arrange(turn, .by_group = TRUE) %>%
   mutate(
-    ai_embedding_prev = lag(ai_embedding)
+    ai_embedding_prev = lag(ai_embedding),
+    user_embedding_prev = lag(user_embedding)
   ) %>%
   rowwise() %>%
   mutate(
     cosine_sim_same = cosine_sim(user_embedding, ai_embedding),
-    cosine_sim_prev = cosine_sim(user_embedding, ai_embedding_prev)
+    cosine_sim_prev = cosine_sim(user_embedding, ai_embedding_prev),
+    cosine_sim_user_self = cosine_sim(user_embedding, user_embedding_prev),
+    cosine_sim_ai_self = cosine_sim(ai_embedding, ai_embedding_prev)
   ) %>%
   ungroup()
 
@@ -295,6 +298,17 @@ df_field_long <- df_field %>%
          agent = factor(agent, levels = c("User", "AI"))
          )
 
+
+
+df_field_cosine_long <- df_field %>%
+  pivot_longer(cols = c(cosine_sim_same, cosine_sim_prev),
+               names_to = "direction", values_to = "cosine_sim") %>%
+  mutate(direction = recode(direction,
+                            cosine_sim_same = "Same",
+                            cosine_sim_prev = "Prev"),
+         direction = factor(direction, levels = c("Same", "Prev"))
+         )
+
 df_sim_long <- df_simulated %>%
   pivot_longer(cols = c(user_valence, ai_valence),
                names_to = "agent", values_to = "valence") %>%
@@ -314,7 +328,8 @@ means_sim <- df_sim_long %>%
 
 
 valence_difference_mixed_model <- lmer(valence ~ agent + (agent | conversation_id), data=df_field_long)
-summary(valence_difference_mixed_model)
+cat("=== Valence Difference Model Coefficients ===\n")
+print(round(summary(valence_difference_mixed_model)$coefficients, 4))
 
 ```
 
@@ -324,13 +339,34 @@ summary(valence_difference_mixed_model)
 ```{r valence-distribution, fig.width=12, fig.height=6}
 # Prepare data for plotting
 
+p_distribution_violin <- df_field_long %>%
+  ggplot(aes(x = agent, y = valence, fill = agent)) +
+  geom_violin(width = 0.6, alpha = 0.7) +
+  geom_jitter(aes(color = agent),
+              width = 0.1,
+              size = 1.2, alpha = 0.3) +
+  geom_boxplot(width = 0.2, alpha = 0.5, outlier.shape = NA) +
+  scale_fill_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00"), name = "Agent") +
+  scale_color_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00"), name = "Agent") +
+  labs(
+    title = "Valence Distribution by Agent",
+    x = "Agent",
+    y = "Valence Score"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
+  )
+
+print(p_distribution_violin)
+
+ggsave(file.path(GRAPHS_DIR, "valence_distribution_comparison_violin.png"), 
+       p_distribution_violin, width = 12, height = 6, dpi = 300)
 
 # Field data plot
 p_field <- ggplot(df_field_long, aes(x = valence, fill = agent)) +
   geom_density(alpha = 0.4, color = NA) +
-  geom_vline(data = means_field,
-             aes(xintercept = mean_val, color = agent),
-             linetype = "dashed", linewidth = 0.8, show.legend = FALSE) +
   scale_fill_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00"), name = "") +
   scale_color_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00")) +
   labs(title = "Field Data", x = NULL, y = NULL) +
@@ -339,6 +375,7 @@ p_field <- ggplot(df_field_long, aes(x = valence, fill = agent)) +
     plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
     axis.text = element_text(size = 12)
   )
+print(p_field)
 
 # Simulated data plot
 p_sim <- ggplot(df_sim_long, aes(x = valence, fill = agent)) +
@@ -547,31 +584,49 @@ cor_same_combined_all_turns_prev %>%
 ```{r alignment-probe-example, fig.width=12, fig.height=6}
 
 
-df_field %>%
+p_probe_sentiment <- df_field %>%
   mutate(time = ymd_hms(timestamp)) %>%
   
   group_by(conversation_id) %>%
   arrange(time, .by_group = TRUE) %>%
   mutate(turn_index = row_number()) %>%
   ungroup() %>%
-  filter(conversation_id %in% unique(conversation_id)[20:25]) %>%
+  filter(conversation_id %in% unique(conversation_id)[22:24]) %>%
   pivot_longer(cols = c(user_valence, ai_valence),
                names_to = "source", values_to = "valence") %>%
-  mutate(
-    source = recode(source, "user_valence" = "User", "ai_valence" = "AI"),
-    valence_smoothed = rollmean(valence, k = 1, fill = NA, align = "center")
-  ) %>%
-  ggplot(aes(x = turn_index, y = valence_smoothed, color = source)) +
-  geom_line() +
+mutate(
+  source = recode(source, "user_valence" = "User", "ai_valence" = "AI")
+) %>%
+group_by(conversation_id, source) %>%            # NEW: smooth separately per convo + source
+arrange(turn_index, .by_group = TRUE) %>%        # NEW: make sure order is correct
+mutate(
+  valence_smoothed = rollmean(valence, k = 1,    # CHANGE: k = 3 (or 5 if you want very smooth)
+                              fill = NA,
+                              align = "center")
+) %>%
+ungroup() %>%
+ggplot(aes(x = turn_index, y = valence_smoothed, color = source)) +
+  geom_line(size = 1.2) +                                # thicker lines
+  geom_point(aes(y = valence), size = 1.2, alpha = 0.5) +# optional: show raw points faintly
   scale_color_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00")) +
-  facet_wrap(~conversation_id, scales = "free_x") +
+  facet_wrap(~ conversation_id, scales = "free_x") +
   labs(
-    title = "Rolling Average of Valence (k = 2) Human-AI",
-    x = "Turn Index",
-    y = "Smoothed Valence Score",
-    color = "Source"
+    title = "Smoothed valence over turns (rolling mean, k = 2)",  # keep this in sync with k
+    x = "Turn index",
+    y = "Valence",
+    color = NULL
   ) +
-  theme_minimal()
+  theme_minimal(base_size = 14) +                        # nicer base size
+  theme(
+    legend.position = "bottom",                          # cleaner legend
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", hjust = 0)
+  )
+
+print(p_probe_sentiment)
+ggsave(file.path(GRAPHS_DIR, "valence_probe_temporal.png"),
+       p_probe_sentiment, width = 12, height = 6, dpi = 300)
 
 ```
 
@@ -588,17 +643,11 @@ cor_all <- bind_rows(cor_same_combined, cor_prev_combined) %>%
 # Boxplot with jittered points
 p_alignment <- cor_all %>%
   filter(data_source == "Field") %>%
-  ggplot(aes(x = alignment_type, y = rho, fill = data_source)) +
-  geom_boxplot(width = 0.6, outlier.shape = NA, alpha = 0.7,
-               position = position_dodge(width = 0.75)) +
-  geom_jitter(aes(color = data_source),
-              position = position_jitterdodge(
-                dodge.width = 0.75,
-                jitter.width = 0.15
-              ),
-              size = 1.5, alpha = 0.4) +
-  scale_fill_brewer(palette = "Set2", name = "Data Source") +
-  scale_color_brewer(palette = "Set2", name = "Data Source") +
+  ggplot(aes(x = alignment_type, y = rho, fill = alignment_type)) +
+  geom_violin(width = 0.6, alpha = 0.7) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.4) +
+  scale_fill_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00")) +
+  scale_color_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00", name = "Alignment Type")) +
   labs(
     title = "Valence Alignment: Field vs Simulated Data",
     x = "Alignment Type",
@@ -638,24 +687,18 @@ agg_data <- bind_rows(agg_same, agg_prev) %>%
 # Create plot with per-story boxplots and aggregate overlay
 p_comparison <- cor_all %>%
   filter(data_source == "Field") %>%
-  ggplot(aes(x = alignment_type, y = rho, fill = data_source)) +
+  ggplot(aes(x = alignment_type, y = rho, fill = alignment_type)) +
   # Per-story boxplots
-  geom_boxplot(width = 0.6, outlier.shape = NA, alpha = 0.5,
+  geom_violin(width = 0.6, alpha = 0.7) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.5,
                position = position_dodge(width = 0.75)) +
-  # Per-story jittered points
-  geom_jitter(aes(color = data_source),
-              position = position_jitterdodge(
-                dodge.width = 0.75,
-                jitter.width = 0.15
-              ),
-              size = 1.5, alpha = 0.3) +
   # Aggregate correlations as large points
   geom_point(data = agg_data, 
-             aes(x = alignment_type, y = rho, fill = data_source),
+             aes(x = alignment_type, y = rho, fill = alignment_type),
              position = position_dodge(width = 0.75),
              size = 6, shape = 23, color = "black", stroke = 1.5) +
-  scale_fill_brewer(palette = "Set2", name = "Data Source") +
-  scale_color_brewer(palette = "Set2", name = "Data Source") +
+  scale_fill_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00")) +
+  scale_color_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00", name = "Alignment Type")) +
   labs(
     title = "Valence Alignment: Per-Story vs Aggregate Correlations",
     subtitle = "Boxplots = per-story correlations; Diamonds = aggregate (all turns pooled)",
@@ -765,7 +808,7 @@ model_direction <- lmer(
 cat("=== Mixed Effects Model (Standardized): Directional Alignment (User -> AI vs AI -> User) ===\n")
 ## === Mixed Effects Model: Directional Alignment (User -> AI vs AI -> User) ===
 direction_summary <- summary(model_direction)
-print(direction_summary$coefficients)
+print(round(direction_summary$coefficients, 4))
 
 ```
 
@@ -819,12 +862,12 @@ ggsave(
 
 ```{r alignment-stats}
 # Test 1: Same-turn alignment difference
-#t_test_same <- t.test(rho ~ data_source, data = cor_same_combined)
+t_test_same <- t.test(rho ~ data_source, data = cor_same_combined)
 #cat("=== T-test: Same-Turn Alignment ===\n")
 #print(t_test_same)
 
 # Test 2: Previous-turn alignment difference
-#t_test_prev <- t.test(rho ~ data_source, data = cor_prev_combined)
+t_test_prev <- t.test(rho ~ data_source, data = cor_prev_combined)
 #cat("\n=== T-test: Previous-Turn Alignment ===\n")
 #print(t_test_prev)
 
@@ -854,6 +897,232 @@ alignment_test_results <- tibble(
 
 write_csv(alignment_test_results, 
           file.path(TABLES_DIR, "alignment_statistical_tests.csv"))
+```
+
+
+## Cosine Distribution Difference Test
+
+```{r cosine-sim-distribution}
+
+
+df_field_cosine_long <- df_field %>%
+  pivot_longer(cols = c(cosine_sim_same, cosine_sim_prev),
+               names_to = "direction", values_to = "cosine_sim") %>%
+  mutate(direction = recode(direction,
+                            cosine_sim_same = "Same Turn",
+                            cosine_sim_prev = "Previous Turn"),
+         direction = factor(direction, levels = c("Same Turn", "Previous Turn"))
+         )
+df_field_cosine_long_prev_self <- df_field %>%
+  pivot_longer(cols = c(cosine_sim_user_self, cosine_sim_prev),
+               names_to = "direction", values_to = "cosine_sim") %>%
+  mutate(direction = recode(direction,
+                            cosine_sim_user_self = "Self",
+                            cosine_sim_prev = "Interlocutor"),
+         direction = factor(direction, levels = c("Self", "Interlocutor"))
+         )
+df_field_cosine_long_prev_self_ai <- df_field %>%
+  pivot_longer(cols = c(cosine_sim_ai_self, cosine_sim_same),
+               names_to = "direction", values_to = "cosine_sim") %>%
+  mutate(direction = recode(direction,
+                            cosine_sim_ai_self = "Self",
+                            cosine_sim_same = "Interlocutor"),
+         direction = factor(direction, levels = c("Self", "Interlocutor"))
+         )
+
+
+# Calculate means for vertical lines
+means_field <- df_field_cosine_long %>%
+  group_by(direction) %>%
+  summarise(mean_val = mean(cosine_sim, na.rm = TRUE), .groups = "drop")
+
+
+
+
+cosine_difference_mixed_model_self_user <- lmer(cosine_sim ~ direction + (direction | conversation_id), data=df_field_cosine_long_prev_self)
+cat("\n=== Cosine Sim: User (Self vs Interlocutor) ===\n")
+print(round(summary(cosine_difference_mixed_model_self_user)$coefficients, 4))
+
+cosine_difference_mixed_model_self_ai <- lmer(cosine_sim ~ direction + (direction | conversation_id), data=df_field_cosine_long_prev_self_ai)
+cat("\n=== Cosine Sim: AI (Self vs Interlocutor) ===\n")
+print(round(summary(cosine_difference_mixed_model_self_ai)$coefficients, 4))
+
+cosine_difference_mixed_model <- lmer(cosine_sim ~ direction + (direction | conversation_id), data=df_field_cosine_long)
+cat("\n=== Cosine Sim: General Direction Comparison ===\n")
+print(round(summary(cosine_difference_mixed_model)$coefficients, 4))
+```
+
+
+```{r}
+# Create plot with per-story boxplots and aggregate overlay
+p_comparison_cosine_violin <- df_field_cosine_long %>%
+  ggplot(aes(x = direction, y = cosine_sim, fill = direction)) +
+  # Per-story boxplots
+  geom_violin(width = 0.6, alpha = 0.7) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.5,
+               position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00")) +
+  scale_color_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00", name = "direction")) +
+  labs(
+    title = "Semantic Alignment: Cosine Similarity Between Agents",
+    x = "Alignment Type",
+    y = "Cosine Similarity"
+  ) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 18),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, color = "grey40"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+print(p_comparison_cosine_violin)
+
+ggsave(file.path(GRAPHS_DIR, "cosine_sim_violin.png"),
+       p_comparison_cosine_violin, width = 12, height = 8, dpi = 300)
+
+p_field <- ggplot(df_field_cosine_long, aes(x = cosine_sim, fill = direction)) +
+  geom_density(alpha = 0.4, color = NA) +
+  scale_fill_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00"), name = "") +
+  scale_color_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00")) +
+  labs(title = "Field Data", x = "Cosine Similarity", y = NULL) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+print(p_field)
+ggsave(
+  file.path(GRAPHS_DIR, "directional_cosine_alignment_field.png"),
+  p_field,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+```
+## Combined Alignment Plot
+
+```{r combined-alignment-plot, fig.width=12, fig.height=12}
+# Combine Valence Alignment (p_comparison) and Semantic Alignment (p_comparison_cosine_violin)
+# Note: p_comparison is defined in chunk 'alignment-comparison-aggregate'
+#       p_comparison_cosine_violin is defined in the chunk above
+
+# Remove x-axis title and text from the top plot to avoid redundancy
+p_comparison_clean <- p_comparison + 
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+combined_alignment_plot <- (p_comparison_clean / p_comparison_cosine_violin) +
+  plot_annotation(
+    title = "Comparison of Valence and Semantic Alignment",
+    tag_levels = 'A'
+  )
+
+print(combined_alignment_plot)
+
+ggsave(file.path(GRAPHS_DIR, "combined_valence_semantic_alignment.png"),
+       combined_alignment_plot, width = 12, height = 12, dpi = 300)
+```
+
+
+```{r cosine-self-vs-interlocutor-plot, fig.width=10, fig.height=6}
+# Plot for User: Self vs Interlocutor Cosine Similarity
+p_cosine_user_self_vs_interlocutor <- df_field_cosine_long_prev_self %>%
+  ggplot(aes(x = direction, y = cosine_sim, fill = direction)) +
+  geom_violin(width = 0.6, alpha = 0.7) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.5,
+               position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = c("Self" = "#377EB8", "Interlocutor" = "#FF7F00")) +
+  labs(
+    title = "User Semantic Alignment: Self vs. Interlocutor",
+    subtitle = "Cosine Similarity: User(t) ↔ User(t-1) vs. User(t) ↔ AI(t-1)",
+    x = "Alignment Target",
+    y = "Cosine Similarity"
+  ) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, color = "grey40")
+  )
+
+print(p_cosine_user_self_vs_interlocutor)
+
+ggsave(file.path(GRAPHS_DIR, "cosine_similarity_user_self_vs_interlocutor.png"),
+       p_cosine_user_self_vs_interlocutor, width = 10, height = 6, dpi = 300)
+```
+
+## Valence Distance Difference Test
+
+```{r valence-distance-distribution}
+# Calculate valence distances
+df_field_val <- df_field %>%
+  mutate(
+    val_dist_same = abs(user_valence - ai_valence),
+    val_dist_prev = abs(user_valence - ai_valence_lag1),
+    val_dist_user_self = abs(user_valence - user_valence_lag1),
+    val_dist_ai_self = abs(ai_valence - ai_valence_lag1)
+  )
+
+# User: Self vs Partner (Prev)
+df_field_val_long_user <- df_field_val %>%
+  pivot_longer(cols = c(val_dist_user_self, val_dist_prev),
+               names_to = "direction", values_to = "val_dist") %>%
+  mutate(direction = recode(direction,
+                            val_dist_user_self = "Self",
+                            val_dist_prev = "Interlocutor"),
+         direction = factor(direction, levels = c("Self", "Interlocutor")))
+
+# AI: Self vs Partner (Same)
+df_field_val_long_ai <- df_field_val %>%
+  pivot_longer(cols = c(val_dist_ai_self, val_dist_same),
+               names_to = "direction", values_to = "val_dist") %>%
+  mutate(direction = recode(direction,
+                            val_dist_ai_self = "Self",
+                            val_dist_same = "Interlocutor"),
+         direction = factor(direction, levels = c("Self", "Interlocutor")))
+
+cat("\n=== Valence Distance Model: User (Self vs Interlocutor) ===\n")
+val_model_user <- lmer(val_dist ~ direction + (direction | conversation_id), 
+                       data = df_field_val_long_user)
+print(round(summary(val_model_user)$coefficients, 4))
+
+cat("\n=== Valence Distance Model: AI (Self vs Interlocutor) ===\n")
+val_model_ai <- lmer(val_dist ~ direction + (direction | conversation_id), 
+                     data = df_field_val_long_ai)
+print(round(summary(val_model_ai)$coefficients, 4))
+```
+
+```{r valence-distance-plot, fig.width=12, fig.height=6}
+# Combine for plotting
+df_val_plot <- bind_rows(
+  df_field_val_long_user %>% mutate(agent = "User"),
+  df_field_val_long_ai %>% mutate(agent = "AI")
+)
+
+p_val_dist <- df_val_plot %>%
+  ggplot(aes(x = direction, y = val_dist, fill = direction)) +
+  geom_violin(width = 0.6, alpha = 0.7) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.5,
+               position = position_dodge(width = 0.75)) +
+  facet_wrap(~ agent) +
+  scale_fill_manual(values = c("Self" = "#377EB8", "Interlocutor" = "#FF7F00")) +
+  labs(
+    title = "Valence Distance: Self vs Interlocutor Alignment",
+    subtitle = "Lower distance = Higher alignment",
+    x = "Alignment Target",
+    y = "Absolute Valence Distance"
+  ) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    strip.text = element_text(size = 14, face = "bold")
+  )
+
+print(p_val_dist)
+
+ggsave(file.path(GRAPHS_DIR, "valence_distance_comparison.png"),
+       p_val_dist, width = 12, height = 6, dpi = 300)
 ```
 
 
@@ -890,14 +1159,14 @@ write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
 ```{r starter-same-turn}
 
 lmer_valence_time <- lmer(valence ~ turn + (1 | conversation_id), data = df_field_long)
-print(summary(lmer_valence_time)$coefficients)
+print(round(summary(lmer_valence_time)$coefficients, 4))
 
 # Mixed model with starter interaction
 model_starter_same <- lmer(ai_valence ~ user_valence * starter + (1 | conversation_id), 
                            data = df_field)
 
 cat("=== Same-Turn Alignment: Starter Interaction ===\n")
-print(summary(model_starter_same)$coefficients)
+print(round(summary(model_starter_same)$coefficients, 4))
 ```
 
 ### 6.1.2 Previous-Turn Alignment by Starter
@@ -909,7 +1178,7 @@ model_starter_prev <- lmer(user_valence ~ ai_valence_lag1 * starter + (1 | conve
                            data = df_field_lag)
 
 cat("=== Previous-Turn Alignment: Starter Interaction ===\n")
-print(summary(model_starter_prev)$coefficients)
+print(round(summary(model_starter_prev)$coefficients, 4))
 ```
 
 ### 6.1.3 Per-Story Correlations by Starter
@@ -949,11 +1218,11 @@ print(t_test_starter)
 # Mixed model with LLM type interaction
 df_field_llm <- df_field %>% filter(!is.na(llm_type))
 
-model_llm_same <- lmer(ai_valence ~ user_valence * factor(llm_type) *  + (1 | conversation_id), 
+model_llm_same <- lmer(ai_valence ~ user_valence * factor(llm_type) + (1 | conversation_id), 
                        data = df_field_llm)
 
 cat("=== Same-Turn Alignment: LLM Type Interaction ===\n")
-print(summary(model_llm_same)$coefficients)
+print(round(summary(model_llm_same)$coefficients, 4))
 
 p_llm_same <- df_field_llm %>%
   mutate(llm_type = as.factor(llm_type)) %>%
@@ -985,7 +1254,7 @@ model_llm_prev <- lmer(user_valence ~ ai_valence_lag1 * factor(llm_type) + (1 | 
                        data = df_field_llm_lag)
 
 cat("=== Previous-Turn Alignment: LLM Type Interaction ===\n")
-print(summary(model_llm_prev)$coefficients)
+print(round(summary(model_llm_prev)$coefficients, 4))
 
 p_llm_prev <- df_field_llm_lag %>%
   mutate(llm_type = as.factor(llm_type)) %>%

@@ -17,7 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.semantic_exploration import (
     compute_semantic_exploration_metrics,
-    compute_ai_ai_semantic_exploration
+    compute_ai_ai_semantic_exploration,
+    compute_lag_exploration_metrics
 )
 from nes.io import load_config, get_project_root, save_parquet, load_parquet
 from tqdm import tqdm
@@ -36,14 +37,13 @@ def main():
     df_interaction_level = load_parquet("story_embeddings_interaction_level_simulated.parquet" if simulated else "story_embeddings_interaction_level.parquet", stage="processed")
     try:
         #filter first interaction away
-        #df_human_ai = df_interaction_level[df_interaction_level['interaction_count'] > 1].copy()
-        df_human_ai = df_interaction_level.copy()
+        df_human_ai = df_interaction_level[(df_interaction_level['turn'] > 1) & (df_interaction_level['conversation_id'] != "conv_c8ced99a-c021-4e80-b849-823950d4c29c") & (df_interaction_level['turn'] < 10)].copy()
         # Compute exploration metrics
-        exploration_df = compute_semantic_exploration_metrics(
+        exploration_df = compute_lag_exploration_metrics(
             df_human_ai,
             user_embedding_col="user_embedding",
             ai_embedding_col="ai_embedding",
-            max_k=exploration_config.get('max_k', 10)
+            max_lag=exploration_config.get('max_k', 10)
         )
         
         # Save results

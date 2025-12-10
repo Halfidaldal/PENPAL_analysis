@@ -114,7 +114,7 @@ df_field <- df_field %>%
   ) %>%
   # Ensure conversation_id is a character/factor
   mutate(conversation_id = as.character(conversation_id)) %>%
-  filter(turn < 10)
+  filter(turn > 1)
 
 # Preprocess simulated data
 df_simulated <- df_simulated %>%

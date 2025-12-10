@@ -28,8 +28,9 @@ def main():
     # Load config
     config = load_config()
     firestore_config = config['firestore']
+    active_dataset = config.get('active_dataset', 'TEXT')
     
-    print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
+    print(f"Active dataset: {active_dataset}")
     
     # Initialize Firestore
     print("Initializing Firestore client...")
@@ -37,11 +38,11 @@ def main():
     db = init_firestore(str(credentials_path))
     
     # Download stories
-    print(f"\nDownloading stories from collection: {firestore_config['collection_name']}")
+    print(f"\nDownloading stories from collection: {firestore_config[active_dataset]['collection_name']} with min interactions: {firestore_config[active_dataset]['min_interactions']}")
     df_stories = download_stories_from_firestore(
         db,
-        collection_name=firestore_config['collection_name'],
-        min_interactions=firestore_config['min_interactions']
+        collection_name=firestore_config[active_dataset]['collection_name'],
+        min_interactions=firestore_config[active_dataset]['min_interactions']
     )
     
     # Save to raw data

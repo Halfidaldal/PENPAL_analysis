@@ -121,7 +121,6 @@ p_exploration <- df_res_field %>%
     x = "Bin size",
     y = "Log Distance"
   ) +
-  ylim(-3,-1) +
   theme_minimal(base_size = 14) +
   theme(legend.position = "top")
 

@@ -52,10 +52,11 @@ def main():
     # Load config
     config = load_config()
     edit_distance_threshold = config['cleaning']['edit_distance_threshold']
+    active_dataset = config.get('active_dataset', 'TEXT')
     simulated = config['cleaning']['simulated']
-    max_turns = config['cleaning']['max_turns']
+    max_turns = config['cleaning'][active_dataset]['max_turns']
 
-    print(f"Active dataset: {config.get('active_dataset', 'TEXT')}")
+    print(f"Active dataset: {active_dataset}")
     print(f"Cleaning Simulated: {simulated}")
 
     # Load raw data
