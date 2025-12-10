@@ -102,7 +102,7 @@ df_readability <- df_full %>%
   pivot_longer(cols = -type, names_to = "metric", values_to = "value")
 
 p_readability <- ggplot(df_readability, aes(x = value, y = metric, fill = type)) +
-  geom_boxplot(outliers=FALSE, outlier.shape = NA, alpha = 0.7) +
+  geom_boxplot(outliers=TRUE, outlier.shape = NULL, alpha = 0.7) +
   scale_fill_manual(values = colors) +
   labs(title = "Readability Metrics by Type", x = "Score", y = "") +
   theme(legend.position = "top")
@@ -187,8 +187,9 @@ for (m in dep_metrics) {
 # Create cleaner metric labels
 metric_labels <- c(
   'flesch_kincaid_grade' = 'Flesch-Kincaid\nGrade Level',
-  'first_order_coherence' = 'First-Order\nCoherence',
-  'second_order_coherence' = 'Second-Order\nCoherence',
+  # 'first_order_coherence' = 'First-Order\nCoherence',
+  # 'second_order_coherence' = 'Second-Order\nCoherence',
+  'entropy' = 'Entropy',
   'dependency_distance_mean' = 'Mean Dependency\nDistance',
   'prop_adjacent_dependency_relation_mean' = 'Adjacent Dependency\nProportion'
 )
@@ -205,7 +206,7 @@ p_readability <- ggplot(df_readability, aes(x = type, y = value, fill = type)) +
   stat_summary(fun = mean, geom = "point", shape = 23, size = 3, 
                fill = "white", color = "black") +
   scale_fill_manual(values = colors) +
-  coord_cartesian(ylim = c(0, 25)) +  # Adjust these limits as needed
+  coord_cartesian(ylim = c(0, 14)) +  # Adjust these limits as needed
   labs(
     title = "(A) Readability",
     x = NULL,
@@ -219,8 +220,8 @@ p_readability <- ggplot(df_readability, aes(x = type, y = value, fill = type)) +
     panel.grid.major.x = element_blank()
   )
 
-# === PANEL B: Coherence ===
-complexity_metrics <- c('first_order_coherence', 'second_order_coherence')
+# === PANEL B: Entropy ===
+complexity_metrics <- c('entropy')
 df_comp <- df_full %>%
   select(type, all_of(complexity_metrics)) %>%
   pivot_longer(cols = -type, names_to = "metric", values_to = "value") %>%
@@ -230,12 +231,13 @@ p_coherence <- ggplot(df_comp, aes(x = type, y = value, fill = type)) +
   geom_boxplot(outlier.shape = NA, alpha = 0.7, width = 0.6) +
   stat_summary(fun = mean, geom = "point", shape = 23, size = 3, 
                fill = "white", color = "black") +
+  coord_cartesian(ylim = c(6, 14)) +   # set your preferred limits
   scale_fill_manual(values = colors) +
-  facet_wrap(~metric, scales = "free_y", ncol = 2) +
+  # facet_wrap(~metric, scales = "free_y", ncol = 2) +
   labs(
-    title = "(B) Coherence",
+    title = "(B) Entropy",
     x = NULL,
-    y = "Coherence Score"
+    y = 'Shannon Entropy'
   ) +
   theme_minimal(base_size = 12) +
   theme(
@@ -265,7 +267,7 @@ p_dep_mean <- ggplot(df_dep_mean, aes(x = type, y = value, fill = type)) +
   stat_summary(fun = mean, geom = "point", shape = 23, size = 3,
                fill = "white", color = "black") +
   scale_fill_manual(values = colors) +
-  coord_cartesian(ylim = c(1.8, 4.5)) +   # set your preferred limits
+  coord_cartesian(ylim = c(1.5, 3.6)) +   # set your preferred limits
   labs(
     title = "(C) Mean Dependency Distance",
         x = NULL,
@@ -309,7 +311,7 @@ p_combined <- (p_readability | p_coherence) / p_dependency +
   plot_annotation(
     caption = "Note: White diamonds indicate means. Boxes show median and IQR.",
     theme = theme(
-      plot.caption = element_text(hjust = 0, size = 9, color = "gray30")
+      plot.caption = element_text(hjust = 0, size = 11, color = "gray10")
     )
   )
 
@@ -334,9 +336,9 @@ ggsave(
 # POS Mapping
 pos_names <- c(
   'ADJ' = 'adjective', 'ADP' = 'adposition', 'ADV' = 'adverb', 'AUX' = 'auxiliary',
-  'CCONJ' = 'coordinating conjunction', 'DET' = 'determiner', 'INTJ' = 'interjection',
+  'CCONJ' = 'coord. conjunction', 'DET' = 'determiner', 'INTJ' = 'interjection',
   'NOUN' = 'noun', 'NUM' = 'numeral', 'PART' = 'particle', 'PRON' = 'pronoun',
-  'PROPN' = 'proper noun', 'PUNCT' = 'punctuation', 'SCONJ' = 'subordinating conjunction',
+  'PROPN' = 'proper noun', 'PUNCT' = 'punctuation', 'SCONJ' = 'sub. conjunction',
   'SYM' = 'symbol', 'VERB' = 'verb', 'X' = 'other'
 )
 
@@ -358,7 +360,23 @@ df_pos_trim <- df_pos %>%
 
 ### AI-User Mean Differences
 
-```{r}
+```{r pos-combined, fig.width=10, fig.height=8}
+# Calculate stats
+pos_stats <- df_pos %>%
+  group_by(type, pos_name) %>%
+  summarise(
+    mean = mean(prop, na.rm = TRUE),
+    sd = sd(prop, na.rm = TRUE),
+    n = n(),
+    .groups = 'drop'
+  ) %>%
+  pivot_wider(names_from = type, values_from = c(mean, sd, n)) %>%
+  mutate(
+    diff = mean_AI - mean_User,
+    se_diff = sqrt((sd_AI^2 / n_AI) + (sd_User^2 / n_User))
+  ) %>%
+  arrange(desc(diff))
+
 # Enhanced difference plot
 p_pos_diff <- 
   ggplot(pos_stats, aes(x = diff, y = reorder(pos_name, diff), fill = diff > 0)) +
@@ -368,7 +386,7 @@ p_pos_diff <-
                     labels = c("User higher", "AI higher"), name = NULL) +
   geom_vline(xintercept = 0, color = "black", linetype = "dashed", linewidth = 0.5) +
   labs(
-    title = "(A) Differences in POS Tag Proportions",
+    title = "(B) Differences in POS Tag Proportions",
     x = "Difference in proportion (AI − User) ± SE",
     y = NULL
   ) +
@@ -390,7 +408,7 @@ p_pos_ridges <-
   )) +
   geom_density_ridges(
     alpha = 0.55,
-    scale = 2,
+    scale = 1.5,
     linewidth = 0.4
   ) +
   scale_fill_manual(
@@ -398,7 +416,7 @@ p_pos_ridges <-
     name = NULL
   ) +
   labs(
-    title = "(B) Distribution of POS Tag Proportions",
+    title = "(A) Distribution of POS Tag Proportions",
     x = "Proportion",
     y = NULL
   ) +
@@ -408,25 +426,22 @@ p_pos_ridges <-
     plot.title = element_text(size = 12, face = "bold"),
     axis.title.x = element_text(hjust = 0.5)  # Center the x-axis label
   )
+
+# === COMBINE ALL PANELS ===
+p_pos_combined <- (p_pos_ridges | p_pos_diff) + 
+  plot_layout(heights = c(1, 1)) +
+  plot_annotation(
+    # caption = "Note: White diamonds indicate means. Boxes show median and IQR.",
+    theme = theme(
+      plot.caption = element_text(hjust = 0, size = 11, color = "gray10")
+    )
+  )
+
+print(p_pos_combined)
 ```
 
 
 ```{r pos-diff-plot, fig.width=10, fig.height=8}
-# Calculate stats
-pos_stats <- df_pos %>%
-  group_by(type, pos_name) %>%
-  summarise(
-    mean = mean(prop, na.rm = TRUE),
-    sd = sd(prop, na.rm = TRUE),
-    n = n(),
-    .groups = 'drop'
-  ) %>%
-  pivot_wider(names_from = type, values_from = c(mean, sd, n)) %>%
-  mutate(
-    diff = mean_AI - mean_User,
-    se_diff = sqrt((sd_AI^2 / n_AI) + (sd_User^2 / n_User))
-  ) %>%
-  arrange(desc(diff))
 
 # Plot
 p_pos_diff <- ggplot(pos_stats, aes(x = diff, y = reorder(pos_name, diff), fill = diff > 0)) +
