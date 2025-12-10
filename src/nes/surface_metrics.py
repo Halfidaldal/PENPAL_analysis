@@ -2,12 +2,13 @@ import pandas as pd
 import textdescriptives as td
 import spacy
 
+
 nlp = spacy.load('en_core_web_md')  
 
 def get_descriptive_metrics_dual_full_long(
         df: pd.DataFrame,
-        user_col: str = "full_user",
-        ai_col: str = "full_ai",
+        user_col: str = "full_user_dot", # use the dot adjusted
+        ai_col: str = "full_ai_dot", # use the dot adjusted 
         spacy_mdl: str = "en_core_web_md",
         batch_size: int = 10,
         n_process: int = 5):
