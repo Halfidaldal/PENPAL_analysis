@@ -86,8 +86,8 @@ def main():
         print("\nNo edit_distance column found, skipping filter")
         df_filtered = df.copy()
         
-
-    df_filtered = clean_user_ai_start(df_filtered, max_turns = max_turns) if simulated else df_filtered
+    # jeg har kommenteret if-statement ud for ellers bliver 'starter' kolonnen ikke tilføjet til interaction level dataset
+    df_filtered = clean_user_ai_start(df_filtered, max_turns = max_turns)# if simulated else df_filtered 
         
     if 'respondent_id' in df.columns:
         print("\nFiltering by respondent ID...")
