@@ -31,6 +31,7 @@ knitr::opts_chunk$set(
   message = FALSE,
   fig.width = 10,
   fig.height = 6,
+  
   dpi = 300
 )
 
@@ -202,11 +203,11 @@ df_readability <- df_full %>%
   mutate(metric = recode(metric, !!!metric_labels))
 
 p_readability <- ggplot(df_readability, aes(x = type, y = value, fill = type)) +
-  geom_boxplot(outlier.shape=NA, alpha = 0.7, width = 0.6) +
+  geom_violin(outlier.shape=NA, alpha = 0.7, width = 0.6) +
   stat_summary(fun = mean, geom = "point", shape = 23, size = 3, 
                fill = "white", color = "black") +
   scale_fill_manual(values = colors) +
-  coord_cartesian(ylim = c(0, 14)) +  # Adjust these limits as needed
+  coord_cartesian(ylim = c(0, 17)) +  # Adjust these limits as needed
   labs(
     title = "(A) Readability",
     x = NULL,
@@ -228,10 +229,10 @@ df_comp <- df_full %>%
   mutate(metric = recode(metric, !!!metric_labels))
 
 p_coherence <- ggplot(df_comp, aes(x = type, y = value, fill = type)) +
-  geom_boxplot(outlier.shape = NA, alpha = 0.7, width = 0.6) +
+  geom_violin(outlier.shape = NA, alpha = 0.7, width = 0.6) +
   stat_summary(fun = mean, geom = "point", shape = 23, size = 3, 
                fill = "white", color = "black") +
-  coord_cartesian(ylim = c(6, 14)) +   # set your preferred limits
+  coord_cartesian(ylim = c(4, 18)) +   # set your preferred limits
   scale_fill_manual(values = colors) +
   # facet_wrap(~metric, scales = "free_y", ncol = 2) +
   labs(
@@ -263,11 +264,11 @@ df_dep_adjacent <- df_dep %>%
 
 
 p_dep_mean <- ggplot(df_dep_mean, aes(x = type, y = value, fill = type)) +
-  geom_boxplot(outlier.shape = NA, alpha = 0.7, width = 0.6) +
+  geom_violin(outlier.shape = NA, alpha = 0.7, width = 0.6) +
   stat_summary(fun = mean, geom = "point", shape = 23, size = 3,
                fill = "white", color = "black") +
   scale_fill_manual(values = colors) +
-  coord_cartesian(ylim = c(1.5, 3.6)) +   # set your preferred limits
+  coord_cartesian(ylim = c(1, 4.2)) +   # set your preferred limits
   labs(
     title = "(C) Mean Dependency Distance",
         x = NULL,
@@ -283,11 +284,11 @@ p_dep_mean <- ggplot(df_dep_mean, aes(x = type, y = value, fill = type)) +
   )
 
 p_dep_adj <- ggplot(df_dep_adjacent, aes(x = type, y = value, fill = type)) +
-  geom_boxplot(outlier.shape = NA, alpha = 0.7, width = 0.6) +
+  geom_violin(outlier.shape = NA, alpha = 0.7, width = 0.6) +
   stat_summary(fun = mean, geom = "point", shape = 23, size = 3,
                fill = "white", color = "black") +
   scale_fill_manual(values = colors) +
-  coord_cartesian(ylim = c(0.37, 0.5)) +   # set your preferred limits
+  coord_cartesian(ylim = c(0.35, 0.53)) +   # set your preferred limits
   labs(
     title = "(D) Adjacent Dependency Proportion",
     x = NULL,
