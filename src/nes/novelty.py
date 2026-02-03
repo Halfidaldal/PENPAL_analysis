@@ -125,10 +125,21 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
             add_special_tokens=False
         )["input_ids"]
     )
+    
+    # Identify a safe start token for unconditional probability
+    bos_token_id = tokenizer.bos_token_id
+    if bos_token_id is None:
+        bos_token_id = tokenizer.eos_token_id
+    # If still None, we might face issue with unconditional calc, but usually one exists.
+    # Fallback to empty list will skip first token in calc_sentence_surprisal logic (corrected below) check?
+    # Actually, let's enforce a dummy BOS if needed, but model might not like it.
+    # We will assume a valid ID or empty list.
+    base_context = [bos_token_id] if bos_token_id is not None else []
+    
     context_buffer = []
     last_client = None
-    user_surprise, user_entropy = [], []
-    ai_surprise, ai_entropy = [], []
+    user_novelty, user_raw, user_entropy = [], [], []
+    ai_novelty, ai_raw, ai_entropy = [], [], []
     
     for _, row in tqdm(df.iterrows(), total=len(df), desc="Computing novelty"):
         client = row.get("conversation_id", None)
@@ -140,20 +151,37 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
         
         # User novelty
         u_ids = row["user_ids"]
+        # 1. Nominal (Conditional)
         avg_s, total_s = calc_sentence_surprisal(context_buffer, u_ids, model, window_size)
-        user_surprise.append(avg_s)
+        # 2. Baseline (Unconditional)
+        avg_base, _ = calc_sentence_surprisal(base_context, u_ids, model, window_size)
+        
+        user_raw.append(avg_s) # Keep original for reference
+        # The new metric: Cond - Uncond. 
+        # If context helps, Cond < Uncond => Negative value.
+        # High Novelty (Deviation) => Cond ~ Uncond => Closer to 0.
+        user_novelty.append(avg_s - avg_base) 
         user_entropy.append(total_s)
+        
         context_buffer.extend(u_ids)
         
         # AI novelty
         a_ids = row["ai_ids"]
         avg_a, total_a = calc_sentence_surprisal(context_buffer, a_ids, model, window_size)
-        ai_surprise.append(avg_a)
+        avg_base_a, _ = calc_sentence_surprisal(base_context, a_ids, model, window_size)
+        
+        ai_raw.append(avg_a)
+        ai_novelty.append(avg_a - avg_base_a)
         ai_entropy.append(total_a)
         context_buffer.extend(a_ids)
     
-    df["user_surprise"] = user_surprise
-    df["ai_surprise"] = ai_surprise
+    # We overwrite 'user_surprise' with the new metric to propagate the fix,
+    # but we save 'user_surprise_raw' just in case.
+    df["user_surprise"] = user_novelty
+    df["ai_surprise"] = ai_novelty
+    df["user_surprise_raw"] = user_raw
+    df["ai_surprise_raw"] = ai_raw
+    
     df["user_entropy"] = user_entropy
     df["ai_entropy"] = ai_entropy
     
@@ -182,6 +210,12 @@ def compute_transience_scores(df, tokenizer, model, window_size=128):
     pd.DataFrame
         DataFrame with added transience columns
     """
+    # Identify a safe start token for unconditional probability
+    bos_token_id = tokenizer.bos_token_id
+    if bos_token_id is None:
+        bos_token_id = tokenizer.eos_token_id
+    base_context = [bos_token_id] if bos_token_id is not None else []
+
     def gather_future_tokens(start_idx, df, window_size, current_conversation_id):
         """Gather up to window_size tokens from subsequent rows in same conversation."""
         future_ids = []
@@ -196,8 +230,8 @@ def compute_transience_scores(df, tokenizer, model, window_size=128):
                         return future_ids
         return future_ids
     
-    user_transience = []
-    ai_transience = []
+    user_transience, user_raw = [], []
+    ai_transience, ai_raw = [], []
     
     for i, row in tqdm(df.iterrows(), total=len(df), desc="Computing transience"):
         current_conversation_id = row.get("conversation_id", None)
@@ -207,19 +241,28 @@ def compute_transience_scores(df, tokenizer, model, window_size=128):
         u_context = row["user_ids"][-window_size:]
         if future_ids:
             avg_fut, _ = calc_sentence_surprisal(u_context, future_ids, model, window_size)
+            avg_base, _ = calc_sentence_surprisal(base_context, future_ids, model, window_size)
+            # Metric: Cond - Uncond
+            user_transience.append(avg_fut - avg_base)
+            user_raw.append(avg_fut)
         else:
-            avg_fut = 0.0
-        user_transience.append(avg_fut)
+            user_transience.append(0.0)
+            user_raw.append(0.0)
         
         # AI transience
         a_context = row["ai_ids"][-window_size:]
         if future_ids:
             avg_fut_ai, _ = calc_sentence_surprisal(a_context, future_ids, model, window_size)
+            avg_base_ai, _ = calc_sentence_surprisal(base_context, future_ids, model, window_size)
+            ai_transience.append(avg_fut_ai - avg_base_ai)
+            ai_raw.append(avg_fut_ai)
         else:
-            avg_fut_ai = 0.0
-        ai_transience.append(avg_fut_ai)
+            ai_transience.append(0.0)
+            ai_raw.append(0.0)
     
     df["user_transience"] = user_transience
     df["ai_transience"] = ai_transience
+    df["user_transience_raw"] = user_raw
+    df["ai_transience_raw"] = ai_raw
     
     return df

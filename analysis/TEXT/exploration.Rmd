@@ -191,7 +191,7 @@ lm_agent <- df_res_field %>%
     conversation_id = factor(conversation_id)
   )
 
-lm_field <- lmer(distance_log ~ k * agent + (1 | conversation_id), data = lm_agent)
+lm_field <- lmer(distance_log ~ k * factor(agent) + (1 | conversation_id), data = lm_agent)
 
 cat("=== Agent Interaction Model ===\n")
 print(summary(lm_field)$coefficients)

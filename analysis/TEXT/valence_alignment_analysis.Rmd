@@ -60,9 +60,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 ## Summary
 
 - Emotional alignment is asymmetric: the model reliably aligns to the user (User → AI), while humans do not mirror the preceding AI tone.
-- AI–AI interactions show higher, bidirectional alignment driven by symmetric context access.
-- Field data shows greater variance in valence and weaker overall coordination compared to the simulated dataset.
-- Participant-level modelling reveals a consistent “rubber-band” effect, where early divergence returns toward baseline in later stages.
+- Field data shows greater variance in valence and weaker overall coordination compared to the simulated baseline.
 - Overall, affective dynamics in the field are primarily model-driven rather than mutually convergent.
 
 # 1. Data Loading and Preprocessing
@@ -111,7 +109,7 @@ df_field <- df_field %>%
   ) %>%
   # Ensure conversation_id is a character/factor
   mutate(conversation_id = as.character(conversation_id)) %>%
-  filter(turn > 1, turn < 10, respondent_id != "UXQSH4HR87CF")
+  filter(turn > 1, turn < 10)
 
 
 # Preprocess simulated data
@@ -294,8 +292,8 @@ df_field_long <- df_field %>%
                names_to = "agent", values_to = "valence") %>%
   mutate(agent = recode(agent, 
                        user_valence = "User", 
-                       ai_valence = "AI"),
-         agent = factor(agent, levels = c("User", "AI"))
+                       ai_valence = "LLM"),
+         agent = factor(agent, levels = c("User", "LLM"))
          )
 
 
@@ -342,12 +340,9 @@ print(round(summary(valence_difference_mixed_model)$coefficients, 4))
 p_distribution_violin <- df_field_long %>%
   ggplot(aes(x = agent, y = valence, fill = agent)) +
   geom_violin(width = 0.6, alpha = 0.7) +
-  geom_jitter(aes(color = agent),
-              width = 0.1,
-              size = 1.2, alpha = 0.3) +
   geom_boxplot(width = 0.2, alpha = 0.5, outlier.shape = NA) +
-  scale_fill_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00"), name = "Agent") +
-  scale_color_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00"), name = "Agent") +
+  scale_fill_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "Agent") +
+  scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "Agent") +
   labs(
     title = "Valence Distribution by Agent",
     x = "Agent",
@@ -367,8 +362,8 @@ ggsave(file.path(GRAPHS_DIR, "valence_distribution_comparison_violin.png"),
 # Field data plot
 p_field <- ggplot(df_field_long, aes(x = valence, fill = agent)) +
   geom_density(alpha = 0.4, color = NA) +
-  scale_fill_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00"), name = "") +
-  scale_color_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00")) +
+  scale_fill_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "") +
+  scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00")) +
   labs(title = "Field Data", x = NULL, y = NULL) +
   theme(
     legend.position = "top",
@@ -378,37 +373,37 @@ p_field <- ggplot(df_field_long, aes(x = valence, fill = agent)) +
 print(p_field)
 
 # Simulated data plot
-p_sim <- ggplot(df_sim_long, aes(x = valence, fill = agent)) +
-  geom_density(alpha = 0.4, color = NA) +
-  geom_vline(data = means_sim,
-             aes(xintercept = mean_val, color = agent),
-             linetype = "dashed", linewidth = 0.8, show.legend = FALSE) +
-  scale_fill_brewer(palette = "Set2", name = "") +
-  scale_color_brewer(palette = "Set2") +
-  labs(title = "Simulated Data", x = NULL, y = NULL) +
-  theme(
-    legend.position = "top",
-    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
-    axis.text = element_text(size = 12)
-  )
+#p_sim <- ggplot(df_sim_long, aes(x = valence, fill = agent)) +
+#  geom_density(alpha = 0.4, color = NA) +
+#  geom_vline(data = means_sim,
+#             aes(xintercept = mean_val, color = agent),
+#             linetype = "dashed", linewidth = 0.8, show.legend = FALSE) +
+#  scale_fill_brewer(palette = "Set2", name = "") +
+#  scale_color_brewer(palette = "Set2") +
+#  labs(title = "Simulated Data", x = NULL, y = NULL) +
+#  theme(
+#    legend.position = "top",
+#    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+#    axis.text = element_text(size = 12)
+#  )
 
 # Combine plots
-combined_plot <- (p_field | p_sim) +
-  plot_annotation(
-    title = "Distribution of Valence Scores: Field vs Simulated Data",
-    theme = theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold"))
-  )
-
+#combined_plot <- (p_field) +
+#  plot_annotation(
+#    title = "Distribution of Valence Scores: Field vs Simulated Data",
+#    theme = theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold"))
+#  )
+#
 # Add axis labels using cowplot
-final_valence_dist <- ggdraw() +
-  draw_plot(combined_plot, 0, 0, 1, 1) +
-  draw_label("Valence Score", x = 0.5, y = 0.02, size = 16) +
-  draw_label("Density", x = 0.02, y = 0.5, angle = 90, size = 16)
+#final_valence_dist <- ggdraw() +
+#  draw_plot(combined_plot, 0, 0, 1, 1) +
+#  draw_label("Valence Score", x = 0.5, y = 0.02, size = 16) +
+#  draw_label("Density", x = 0.02, y = 0.5, angle = 90, size = 16)
 
-print(final_valence_dist)
+#print(final_valence_dist)
 
-ggsave(file.path(GRAPHS_DIR, "valence_distribution_comparison.png"), 
-       final_valence_dist, width = 12, height = 6, dpi = 300)
+#ggsave(file.path(GRAPHS_DIR, "valence_distribution_comparison.png"), 
+#       final_valence_dist, width = 12, height = 6, dpi = 300)
 ```
 
 # 4. Valence Alignment Analysis
@@ -595,7 +590,7 @@ p_probe_sentiment <- df_field %>%
   pivot_longer(cols = c(user_valence, ai_valence),
                names_to = "source", values_to = "valence") %>%
 mutate(
-  source = recode(source, "user_valence" = "User", "ai_valence" = "AI")
+  source = recode(source, "user_valence" = "User", "ai_valence" = "LLM")
 ) %>%
 group_by(conversation_id, source) %>%            # NEW: smooth separately per convo + source
 arrange(turn_index, .by_group = TRUE) %>%        # NEW: make sure order is correct
@@ -608,7 +603,7 @@ ungroup() %>%
 ggplot(aes(x = turn_index, y = valence_smoothed, color = source)) +
   geom_line(size = 1.2) +                                # thicker lines
   geom_point(aes(y = valence), size = 1.2, alpha = 0.5) +# optional: show raw points faintly
-  scale_color_manual(values = c("User" = "#377EB8", "AI" = "#FF7F00")) +
+  scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00")) +
   facet_wrap(~ conversation_id, scales = "free_x") +
   labs(
     title = "Smoothed valence over turns (rolling mean, k = 2)",  # keep this in sync with k
@@ -831,7 +826,7 @@ p_direction_alignment <- df_alignment_long %>%
   scale_color_manual(
     values = c("User_to_AI" = "#377EB8", "AI_to_User" = "#FF7F00"),
     name = "Alignment Direction",
-    labels = c("User → AI (same turn)", "AI → User (previous turn)")
+    labels = c("User → LLM (same turn)", "LLM → User (previous turn)")
   ) +
   labs(
     title = "Directional Valence Alignment in Field Data",
@@ -883,6 +878,42 @@ cor_all %>%
     .groups = "drop"
   ) %>%
   print()
+
+# Test 4: Paired t-test (Directional Asymmetry within Story)
+# We join same and prev correlations by conversation_id to create pairs
+cat("\n=== Paired T-Test: Directional Asymmetry (Same vs Prev) ===\n")
+
+# Prepare Field pairs
+pairs_field <- inner_join(
+  cor_field_same %>% select(conversation_id, rho_same = rho),
+  cor_field_prev %>% select(conversation_id, rho_prev = rho),
+  by = "conversation_id"
+)
+
+# Apply Fisher z-transformation before t-test
+t_test_paired_field <- t.test(atanh(pairs_field$rho_same), atanh(pairs_field$rho_prev), paired = TRUE)
+cat("Field Data: Paired t-test (Fisher z-transformed Same Turn - Previous Turn)\n")
+print(t_test_paired_field)
+
+# Calculate back-transformed means for reporting
+mean_z_same <- mean(atanh(pairs_field$rho_same), na.rm = TRUE)
+mean_z_prev <- mean(atanh(pairs_field$rho_prev), na.rm = TRUE)
+
+cat("\n--- Interpretation (Back-transformed means) ---\n")
+cat("Mean Same-Turn r (User->AI):", round(tanh(mean_z_same), 3), "\n")
+cat("Mean Prev-Turn r (AI->User):", round(tanh(mean_z_prev), 3), "\n")
+
+# Prepare Simulated pairs
+pairs_sim <- inner_join(
+  cor_sim_same %>% select(conversation_id, rho_same = rho),
+  cor_sim_prev %>% select(conversation_id, rho_prev = rho),
+  by = "conversation_id"
+)
+
+# Apply Fisher z-transformation before t-test
+t_test_paired_sim <- t.test(atanh(pairs_sim$rho_same), atanh(pairs_sim$rho_prev), paired = TRUE)
+cat("\nSimulated Data: Paired t-test (Fisher z-transformed Same Turn - Previous Turn)\n")
+print(t_test_paired_sim)
 
 # Save results
 alignment_test_results <- tibble(
@@ -1097,7 +1128,7 @@ print(round(summary(val_model_ai)$coefficients, 4))
 # Combine for plotting
 df_val_plot <- bind_rows(
   df_field_val_long_user %>% mutate(agent = "User"),
-  df_field_val_long_ai %>% mutate(agent = "AI")
+  df_field_val_long_ai %>% mutate(agent = "LLM")
 )
 
 p_val_dist <- df_val_plot %>%
@@ -1155,59 +1186,59 @@ write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
 
 ## 6.1 Starter Interaction Effects
 
-### 6.1.1 Same-Turn Alignment by Starter
+### 6.1.1 Same-Turn Alignment by Starter (Removed for now)
 ```{r starter-same-turn}
 
 lmer_valence_time <- lmer(valence ~ turn + (1 | conversation_id), data = df_field_long)
 print(round(summary(lmer_valence_time)$coefficients, 4))
 
 # Mixed model with starter interaction
-model_starter_same <- lmer(ai_valence ~ user_valence * starter + (1 | conversation_id), 
-                           data = df_field)
+#model_starter_same <- lmer(ai_valence ~ user_valence * starter + (1 | conversation_id), 
+                           #data = df_field)
 
-cat("=== Same-Turn Alignment: Starter Interaction ===\n")
-print(round(summary(model_starter_same)$coefficients, 4))
+#cat("=== Same-Turn Alignment: Starter Interaction ===\n")
+#print(round(summary(model_starter_same)$coefficients, 4))
 ```
 
-### 6.1.2 Previous-Turn Alignment by Starter
+### 6.1.2 Previous-Turn Alignment by Starter (Removed for now)
 ```{r starter-prev-turn}
 # Mixed model with starter interaction
-df_field_lag <- df_field %>% filter(!is.na(ai_valence_lag1))
+#df_field_lag <- df_field %>% filter(!is.na(ai_valence_lag1))
 
-model_starter_prev <- lmer(user_valence ~ ai_valence_lag1 * starter + (1 | conversation_id), 
-                           data = df_field_lag)
+#model_starter_prev <- lmer(user_valence ~ ai_valence_lag1 * starter + (1 | conversation_id), 
+#                           data = df_field_lag)
 
-cat("=== Previous-Turn Alignment: Starter Interaction ===\n")
-print(round(summary(model_starter_prev)$coefficients, 4))
+#cat("=== Previous-Turn Alignment: Starter Interaction ===\n")
+#print(round(summary(model_starter_prev)$coefficients, 4))
 ```
 
-### 6.1.3 Per-Story Correlations by Starter
+### 6.1.3 Per-Story Correlations by Starter (Removed for now)
 ```{r starter-per-story}
 # Same-turn correlations stratified by starter
-cor_starter_same <- df_field %>%
-  filter(!is.na(starter)) %>%
-  group_by(conversation_id, starter) %>%
-  filter(n() >= 3) %>%
-  summarise(
-    rho = cor(user_valence, ai_valence, use = "complete.obs"),
-    n_turns = n(),
-    .groups = "drop"
-  )
+#cor_starter_same <- df_field %>%
+#  filter(!is.na(starter)) %>%
+#  group_by(conversation_id, starter) %>%
+#  filter(n() >= 3) %>%
+#  summarise(
+#    rho = cor(user_valence, ai_valence, use = "complete.obs"),
+#    n_turns = n(),
+#    .groups = "drop"
+#  )
 
-cat("=== Same-Turn Correlations by Starter ===\n")
-cor_starter_same %>%
-  group_by(starter) %>%
-  summarise(
-    mean_rho = mean(rho, na.rm = TRUE),
-    sd_rho = sd(rho, na.rm = TRUE),
-    n_stories = n()
-  ) %>%
-  print()
+#cat("=== Same-Turn Correlations by Starter ===\n")
+#cor_starter_same %>%
+#  group_by(starter) %>%
+#  summarise(
+#    mean_rho = mean(rho, na.rm = TRUE),
+#    sd_rho = sd(rho, na.rm = TRUE),
+#    n_stories = n()
+#  ) %>%
+#  print()
 
 # Test difference
-t_test_starter <- t.test(rho ~ starter, data = cor_starter_same)
-cat("\nT-test (starter effect on same-turn rho):\n")
-print(t_test_starter)
+#t_test_starter <- t.test(rho ~ starter, data = cor_starter_same)
+#cat("\nT-test (starter effect on same-turn rho):\n")
+#print(t_test_starter)
 ```
 
 
@@ -1230,7 +1261,7 @@ p_llm_same <- df_field_llm %>%
   geom_point(alpha = 0.5, size = 1.5) +
   geom_smooth(method = "lm", se = TRUE, size = 1.2) +
   labs(
-    title = "Ai Valence Same Turn by LLM (User -> Ai)",
+    title = "Ai Valence Same Turn by LLM (User -> LLM)",
     x = "User Valence",
     y = "Ai Valence"
   ) +
@@ -1309,17 +1340,17 @@ print(summary(anova_llm))
 
 ### 6.3.1 Valence by Starter
 ```{r valence-starter}
-df_field %>%
-  filter(!is.na(starter)) %>%
-  pivot_longer(cols = c(user_valence, ai_valence),
-               names_to = "agent", values_to = "valence") %>%
-  group_by(starter, agent) %>%
-  summarise(
-    mean_valence = mean(valence, na.rm = TRUE),
-    sd_valence = sd(valence, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  print()
+#df_field %>%
+#  filter(!is.na(starter)) %>%
+#  pivot_longer(cols = c(user_valence, ai_valence),
+#               names_to = "agent", values_to = "valence") %>%
+#  group_by(starter, agent) %>%
+#  summarise(
+#    mean_valence = mean(valence, na.rm = TRUE),
+#    sd_valence = sd(valence, na.rm = TRUE),
+#    .groups = "drop"
+#  ) %>%
+#  print()
 ```
 
 ### 6.3.2 Valence by LLM Type
