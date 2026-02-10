@@ -235,13 +235,19 @@ def compute_transience_scores(df, tokenizer, model, window_size=128):
     
     for i, row in tqdm(df.iterrows(), total=len(df), desc="Computing transience"):
         current_conversation_id = row.get("conversation_id", None)
-        future_ids = gather_future_tokens(i, df, window_size, current_conversation_id)
+        
+        # Future for AI is strictly the subsequent rows (what gather_future_tokens does)
+        future_ids_ai = gather_future_tokens(i, df, window_size, current_conversation_id)
+        
+        # Future for User starts with the AI response in THIS row, then continues to subsequent rows
+        future_ids_user = row["ai_ids"] + future_ids_ai
+        future_ids_user = future_ids_user[:window_size]
         
         # User transience
         u_context = row["user_ids"][-window_size:]
-        if future_ids:
-            avg_fut, _ = calc_sentence_surprisal(u_context, future_ids, model, window_size)
-            avg_base, _ = calc_sentence_surprisal(base_context, future_ids, model, window_size)
+        if future_ids_user:
+            avg_fut, _ = calc_sentence_surprisal(u_context, future_ids_user, model, window_size)
+            avg_base, _ = calc_sentence_surprisal(base_context, future_ids_user, model, window_size)
             # Metric: Cond - Uncond
             user_transience.append(avg_fut - avg_base)
             user_raw.append(avg_fut)
@@ -251,9 +257,9 @@ def compute_transience_scores(df, tokenizer, model, window_size=128):
         
         # AI transience
         a_context = row["ai_ids"][-window_size:]
-        if future_ids:
-            avg_fut_ai, _ = calc_sentence_surprisal(a_context, future_ids, model, window_size)
-            avg_base_ai, _ = calc_sentence_surprisal(base_context, future_ids, model, window_size)
+        if future_ids_ai:
+            avg_fut_ai, _ = calc_sentence_surprisal(a_context, future_ids_ai, model, window_size)
+            avg_base_ai, _ = calc_sentence_surprisal(base_context, future_ids_ai, model, window_size)
             ai_transience.append(avg_fut_ai - avg_base_ai)
             ai_raw.append(avg_fut_ai)
         else:

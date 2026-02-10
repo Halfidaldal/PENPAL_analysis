@@ -75,7 +75,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 ```{r load-data}
 
 # Load Field Data
-df_res_field <- read_csv(here("data/TEXT/processed/novelty_scores_128.csv")) %>%
+df_res_field <- read_csv(here("data/TEXT/processed/novelty_scores.csv")) %>%
   filter(!is.na(user_surprise) & !is.na(ai_surprise)) %>%
   mutate(
     user_resonance = user_surprise - user_transience,
@@ -83,7 +83,7 @@ df_res_field <- read_csv(here("data/TEXT/processed/novelty_scores_128.csv")) %>%
     datatype = "Field"
   ) %>%
   drop_na(user, ai) %>%
-  filter(interaction_count > 1, interaction_count < 10)
+  filter(interaction_count > 1, interaction_count < 10, ai_surprise < 0)
 
 
 ```
@@ -135,7 +135,7 @@ p_novelty_agent <- ggplot(df_res_long, aes(x = agent, y = surprise, fill = agent
     plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
     axis.text = element_text(size = 12)
   )
-#print(p_novelty_agent)
+print(p_novelty_agent)
 ggsave(
   file.path(GRAPHS_DIR, "Surprise_Distributions_Agent.png"),
   p_novelty_agent,
@@ -144,7 +144,7 @@ ggsave(
   dpi = 300
 )
 
-p_transience_agent <- ggplot(df_res_long, aes(x = transience, fill = agent)) +
+p_transience_agent <- ggplot(df_res_long, aes(x = surprise, fill = agent)) +
   geom_density(alpha = 0.4, color = NA) +
   scale_fill_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "") +
   scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00")) +
@@ -184,8 +184,6 @@ p_resonance <- ggplot(df_res_long, aes(x = surprise, y = resonance, color = agen
     x = "Novelty",
     y = "Resonance (Novelty - Transience)"
   ) +
-  xlim(0,8) +
-  ylim(-5,5) +
   theme_minimal(base_size = 14) +
   theme(legend.position = "top")
 
@@ -207,8 +205,6 @@ p_transience <- ggplot(df_res_long, aes(x = surprise, y = transience, color = ag
     x = "Novelty (Surprisal)",
     y = "Transience"
   ) +
-  xlim(0,8) +
-  ylim(2,5) +
   theme_minimal(base_size = 14) +
   theme(legend.position = "top")
 
