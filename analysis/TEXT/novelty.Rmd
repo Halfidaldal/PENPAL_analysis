@@ -144,7 +144,7 @@ ggsave(
   dpi = 300
 )
 
-p_transience_agent <- ggplot(df_res_long, aes(x = surprise, fill = agent)) +
+p_transience_agent <- ggplot(df_res_long, aes(x = transience, fill = agent)) +
   geom_density(alpha = 0.4, color = NA) +
   scale_fill_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "") +
   scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00")) +
@@ -200,6 +200,9 @@ p_transience <- ggplot(df_res_long, aes(x = surprise, y = transience, color = ag
   geom_point(alpha = 0.5, size = 1.5) +
   geom_smooth(method = "lm", se = TRUE, fullrange = TRUE, size = 1.2) +
   scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00")) +
+      geom_vline(data = desc_stats,
+             aes(xintercept = mean_surprise, color = agent),
+             linetype = "dashed", linewidth = 0.8, show.legend = FALSE) +
   labs(
     title = "Transience vs Novelty (Field Data)",
     x = "Novelty (Surprisal)",

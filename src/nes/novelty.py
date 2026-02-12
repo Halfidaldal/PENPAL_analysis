@@ -64,8 +64,18 @@ def calc_sentence_surprisal(context_ids, target_ids, model, window_size=128):
     tuple
         (average_surprisal, total_surprisal)
     """
-    # Trim context to last window_size tokens
-    context_ids = context_ids[-window_size:]
+    # Use larger context for prediction history (up to model max or reasonable limit like 1024)
+    # The 'window_size' parameter will now strictly control the FUTURE/TARGET evaluation window size
+    prediction_history_limit = 1024 
+    context_ids = context_ids[-prediction_history_limit:]
+    
+    # We only care about the target tokens being predicted
+    # If target is longer than window_size, we crop it (for Transience consistency)
+    # For Novelty, target_ids is the full turn, so we usually want the full turn.
+    # To support both, we'll respect the passed target_ids length, but caller should trim if needed.
+    # But wait, for Transience dilution check, we want to limit target_ids to say 40.
+    # Let's handle trimming in the caller functions instead of here for flexibility.
+    
     combined_ids = context_ids + target_ids
     
     if len(combined_ids) < 2 or not target_ids:
@@ -81,6 +91,9 @@ def calc_sentence_surprisal(context_ids, target_ids, model, window_size=128):
     total_nll = 0.0
     for idx, token_id in enumerate(target_ids):
         pos = len(context_ids) + idx - 1
+        # Safety check for index
+        if pos >= logits.shape[1]:
+             break 
         dist = logits[0, pos]
         log_probs = torch.nn.functional.log_softmax(dist, dim=-1)
         log2p = log_probs[token_id] / math.log(2)
@@ -187,7 +200,7 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     return df
 
 
-def compute_transience_scores(df, tokenizer, model, window_size=128):
+def compute_transience_scores(df, tokenizer, model, window_size=40):
     """
     Compute transience scores for user and AI utterances.
     
@@ -202,7 +215,7 @@ def compute_transience_scores(df, tokenizer, model, window_size=128):
     model : transformers.PreTrainedModel
         Causal language model
     window_size : int
-        Context window size
+        Evaluation window size (default 40 to match approx one turn length)
         
     Returns
     -------
@@ -237,13 +250,19 @@ def compute_transience_scores(df, tokenizer, model, window_size=128):
         
         # Future for AI is strictly the subsequent rows (what gather_future_tokens does)
         future_ids_ai = gather_future_tokens(i, df, window_size, current_conversation_id)
+        # Limit AI future to window_size to avoid dilution
+        future_ids_ai = future_ids_ai[:window_size] 
         
         # Future for User starts with the AI response in THIS row, then continues to subsequent rows
         future_ids_user = row["ai_ids"] + future_ids_ai
+        # Limit User future to window_size to avoid dilution
         future_ids_user = future_ids_user[:window_size]
         
-        # User transience
-        u_context = row["user_ids"][-window_size:]
+        # User transience (Predictor is just the current turn)
+        # We assume Transience context is just the immediate past turn (no full history), 
+        # as defined in Barron approx.
+        u_context = row["user_ids"] # Use full user turn as context
+        
         if future_ids_user:
             avg_fut, _ = calc_sentence_surprisal(u_context, future_ids_user, model, window_size)
             avg_base, _ = calc_sentence_surprisal(base_context, future_ids_user, model, window_size)
@@ -255,7 +274,7 @@ def compute_transience_scores(df, tokenizer, model, window_size=128):
             user_raw.append(0.0)
         
         # AI transience
-        a_context = row["ai_ids"][-window_size:]
+        a_context = row["ai_ids"] # Use full AI turn as context
         if future_ids_ai:
             avg_fut_ai, _ = calc_sentence_surprisal(a_context, future_ids_ai, model, window_size)
             avg_base_ai, _ = calc_sentence_surprisal(base_context, future_ids_ai, model, window_size)
