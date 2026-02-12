@@ -199,6 +199,7 @@ df_field <- df_field %>%
     cosine_sim_same = cosine_sim(user_embedding, ai_embedding),
     cosine_sim_prev = cosine_sim(user_embedding, ai_embedding_prev)
   ) %>%
+  select(-user_embedding, -ai_embedding, -ai_embedding_prev) %>%
   ungroup()
 
 # Add lagged AI valence for simulated data

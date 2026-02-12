@@ -4,17 +4,17 @@ subtitle: "Analysis of Novelty, Transience, and Resonance"
 author: "PENPAL Project"
 date: "`r Sys.Date()`"
 output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
   html_document:
     toc: true
     toc_float: true
     toc_depth: 3
     code_folding: hide
     theme: united
-  pdf_document:
-    toc: true
-    toc_depth: 3
-    number_sections: true
-    latex_engine: xelatex
 ---
 
 ## Summary

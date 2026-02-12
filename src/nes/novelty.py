@@ -130,13 +130,12 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     bos_token_id = tokenizer.bos_token_id
     if bos_token_id is None:
         bos_token_id = tokenizer.eos_token_id
-    # If still None, we might face issue with unconditional calc, but usually one exists.
-    # Fallback to empty list will skip first token in calc_sentence_surprisal logic (corrected below) check?
-    # Actually, let's enforce a dummy BOS if needed, but model might not like it.
-    # We will assume a valid ID or empty list.
     base_context = [bos_token_id] if bos_token_id is not None else []
     
-    context_buffer = []
+    # Initialize context buffer with BOS token to ensure first turn works correctly
+    # Otherwise calc_sentence_surprisal can have negative index issue on first turn (context=[])
+    context_buffer = [bos_token_id] if bos_token_id is not None else []
+    
     last_client = None
     user_novelty, user_raw, user_entropy = [], [], []
     ai_novelty, ai_raw, ai_entropy = [], [], []
@@ -146,7 +145,7 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
         
         # Reset context at new session
         if last_client is None or (client is not None and client != last_client):
-            context_buffer = []
+            context_buffer = [bos_token_id] if bos_token_id is not None else []
             last_client = client
         
         # User novelty
