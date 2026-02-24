@@ -27,7 +27,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = FALSE,
+  echo = TRUE,
   warning = FALSE,
   message = FALSE,
   fig.width = 10,
@@ -75,7 +75,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 ```{r load-data}
 
 # Load Field Data
-df_res_field <- read_csv(here("data/TEXT/processed/novelty_scores.csv")) %>%
+df_res_field <- read_csv(here("data/TEXT/processed/novelty_scores_40.csv")) %>%
   filter(!is.na(user_surprise) & !is.na(ai_surprise)) %>%
   mutate(
     user_resonance = user_surprise - user_transience,
@@ -91,13 +91,20 @@ df_res_field <- read_csv(here("data/TEXT/processed/novelty_scores.csv")) %>%
 ## 1.2 Reshape Data
 
 ```{r reshape-data}
+# Compute word counts for each agent's turn
+df_res_field <- df_res_field %>%
+  mutate(
+    user_nwords = str_count(user, "\\S+"),
+    ai_nwords = str_count(ai, "\\S+")
+  )
+
 df_res_long <- df_res_field %>%
   pivot_longer(
-    cols = c(user_surprise, user_transience, ai_surprise, ai_transience),
+    cols = c(user_surprise, user_transience, user_nwords,
+             ai_surprise, ai_transience, ai_nwords),
     names_to = c("agent", "metric"),
-    names_pattern = "(user|ai)_(surprise|transience)"
+    names_pattern = "(user|ai)_(surprise|transience|nwords)"
   ) %>%
-  
   pivot_wider(names_from = metric, values_from = value) %>%
   mutate(
     resonance = surprise - transience,
@@ -119,6 +126,8 @@ desc_stats <- df_res_long %>%
     mean_resonance = mean(resonance, na.rm = TRUE),
     sd_resonance = sd(resonance, na.rm = TRUE)
   )
+
+print(desc_stats)
 
 knitr::kable(desc_stats, caption = "Descriptive Statistics for Novelty Metrics by Agent", digits = 3)
 ```
@@ -222,19 +231,27 @@ ggsave(file.path(GRAPHS_DIR, "novelty_transience_vs_novelty.png"),
 ## 3.1 Resonance Model
 
 ```{r resonance-model}
-
+# Model without length control
 model_resonance <- lmer(resonance ~ surprise * agent + (1 | conversation_id), data = df_res_long)
 cat("=== Resonance Model ===\n")
 print(summary(model_resonance)$coefficients)
 
-# Compare slopes
 cat("\n=== Slope Comparison (Resonance) ===\n")
 print(emtrends(model_resonance, specs = "agent", var = "surprise"))
+
+# Model WITH length control
+model_resonance_len <- lmer(resonance ~ surprise * agent + nwords + (1 | conversation_id), data = df_res_long)
+cat("\n=== Resonance Model (controlling for turn length) ===\n")
+print(summary(model_resonance_len)$coefficients)
+
+cat("\n=== Slope Comparison (Resonance, length-controlled) ===\n")
+print(emtrends(model_resonance_len, specs = "agent", var = "surprise"))
 ```
 
 ## 3.2 Transience Model
 
 ```{r transience-model}
+# Model without length control
 model_transience <- lmer(transience ~ surprise * agent + (1 | conversation_id), data = df_res_long)
 
 cat("=== Transience Model ===\n")
@@ -243,7 +260,21 @@ print(summary(model_transience)$coefficients)
 cat("\n=== Slope Comparison (Transience) ===\n")
 print(emtrends(model_transience, specs = "agent", var = "surprise"))
 
+# Model WITH length control
+model_transience_len <- lmer(transience ~ surprise * agent + nwords + (1 | conversation_id), data = df_res_long)
+
+cat("\n=== Transience Model (controlling for turn length) ===\n")
+print(summary(model_transience_len)$coefficients)
+
+cat("\n=== Slope Comparison (Transience, length-controlled) ===\n")
+print(emtrends(model_transience_len, specs = "agent", var = "surprise"))
 ```
+
+
+
+
+# Create summary table of main findings
+
 
 # 4. Session Information
 

@@ -39,7 +39,8 @@ pacman::p_load(
   patchwork,    # Combine plots
   cowplot,      # Additional plot utilities
   afex,          # ANOVA
-  here
+  here,
+  emmeans
 )
 
 # Set project root
@@ -195,6 +196,7 @@ df_field <- df_field %>%
     cosine_sim_user_self = cosine_sim(user_embedding, user_embedding_prev),
     cosine_sim_ai_self = cosine_sim(ai_embedding, ai_embedding_prev)
   ) %>%
+  select(-user_embedding, -ai_embedding, -user_embedding_prev, -ai_embedding_prev) %>%
   ungroup()
 
 # Add lagged AI valence for simulated data
@@ -337,40 +339,44 @@ print(round(summary(valence_difference_mixed_model)$coefficients, 4))
 ```{r valence-distribution, fig.width=12, fig.height=6}
 # Prepare data for plotting
 
-p_distribution_violin <- df_field_long %>%
-  ggplot(aes(x = agent, y = valence, fill = agent)) +
-  geom_violin(width = 0.6, alpha = 0.7) +
-  geom_boxplot(width = 0.2, alpha = 0.5, outlier.shape = NA) +
+# Calculate KS distance and means
+ks_test <- ks.test(df_field_long %>% filter(agent == "User") %>% pull(valence),
+           df_field_long %>% filter(agent == "LLM") %>% pull(valence))
+
+means_field <- df_field_long %>%
+  group_by(agent) %>%
+  summarise(mean_val = mean(valence, na.rm = TRUE), .groups = "drop")
+
+# Overlapping density plot with means and KS distance
+p_field <- ggplot(df_field_long, aes(x = valence, fill = agent, color = agent)) +
+  geom_density(alpha = 0.4, linewidth = 1.2) +
+  geom_vline(data = means_field,
+       aes(xintercept = mean_val, color = agent),
+       linetype = "dashed", linewidth = 1.2, show.legend = FALSE) +
   scale_fill_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "Agent") +
   scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "Agent") +
   labs(
-    title = "Valence Distribution by Agent",
-    x = "Agent",
-    y = "Valence Score"
+  title = "Valence Distribution: Field Data",
+  subtitle = sprintf("Kolmogorov-Smirnov D = %.3f, p-value = %.4f", 
+             ks_test$statistic, ks_test$p.value),
+  x = "Valence Score",
+  y = "Density"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    legend.position = "top",
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
+  legend.position = "top",
+  plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+  plot.subtitle = element_text(hjust = 0.5, size = 12, color = "grey40")
   )
 
-print(p_distribution_violin)
-
-ggsave(file.path(GRAPHS_DIR, "valence_distribution_comparison_violin.png"), 
-       p_distribution_violin, width = 12, height = 6, dpi = 300)
-
-# Field data plot
-p_field <- ggplot(df_field_long, aes(x = valence, fill = agent)) +
-  geom_density(alpha = 0.4, color = NA) +
-  scale_fill_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "") +
-  scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00")) +
-  labs(title = "Field Data", x = NULL, y = NULL) +
-  theme(
-    legend.position = "top",
-    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
-    axis.text = element_text(size = 12)
-  )
 print(p_field)
+
+ggsave(file.path(GRAPHS_DIR, "valence_distribution_comparison_density_ks.png"), 
+     p_field, width = 10, height = 6, dpi = 300)
+
+# Print KS test results
+cat("\n=== Kolmogorov-Smirnov Test: User vs LLM Valence Distribution ===\n")
+print(ks_test)
 
 # Simulated data plot
 #p_sim <- ggplot(df_sim_long, aes(x = valence, fill = agent)) +
@@ -783,31 +789,57 @@ df_alignment_long %>%
   ) %>%
   print()
 ```
+
+
 ```{r}
 
-# standardize within the direction groups to ensure beta = correlation
-df_alignment_std <- df_alignment_long %>%
-  group_by(conversation_id, alignment_direction) %>%
+df_std <- df_alignment_long %>%
+  group_by(conversation_id, alignment_direction) %>%   # <-- KEY choice
   mutate(
     predictor_z = as.numeric(scale(predictor_valence)),
-    response_z = as.numeric(scale(response_valence))
+    response_z  = as.numeric(scale(response_valence))
   ) %>%
   ungroup()
 
+df_std$alignment_direction <- factor(df_std$alignment_direction,
+                                     levels = c("User_to_AI","AI_to_User"))
+contrasts(df_std$alignment_direction) <- contr.sum(2)
 
+m <- lmer(response_z ~ predictor_z * alignment_direction + (1 + predictor_z | conversation_id),
+          data = df_std)
 
-model_direction <- lmer(
-  response_z ~ predictor_z * alignment_direction + (1 | conversation_id),
-  data = df_alignment_std
-)
-cat("=== Mixed Effects Model (Standardized): Directional Alignment (User -> AI vs AI -> User) ===\n")
-## === Mixed Effects Model: Directional Alignment (User -> AI vs AI -> User) ===
-direction_summary <- summary(model_direction)
-print(round(direction_summary$coefficients, 4))
+summary(m)
 
+# slopes per direction + difference test
+slopes <- emtrends(m, specs="alignment_direction", var="predictor_z")
+slopes
+contrast(slopes, method="revpairwise")
 ```
 
 ```{r}
+#general alignment
+p_general_alignment <- df_alignment_long %>%
+  ggplot(aes(x = predictor_valence, y = response_valence)) +
+  geom_point(alpha = 0.25, size = 1.2) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.1) +
+  labs(
+    title = "Valence Alignment (Pooled Across Directions)",
+    subtitle = "Single regression line fitted to all predictor–response pairs (direction ignored)",
+    x = "Predictor valence",
+    y = "Response valence"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+print(p_general_alignment)
+
+ggsave(
+  file.path(GRAPHS_DIR, "directional_valence_alignment_field.png"),
+  p_direction_alignment,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
 # 3) Visualise directional alignment with separate regression lines
 
 p_direction_alignment <- df_alignment_long %>%
@@ -1328,17 +1360,20 @@ print(wilcox_test)
 
 ```{r summary-table}
 # Create summary table
+slopes_summary <- as.data.frame(slopes)
+beta_user_to_ai <- slopes_summary[slopes_summary$alignment_direction == "User_to_AI", "predictor_z.trend"]
+beta_ai_to_user <- slopes_summary[slopes_summary$alignment_direction == "AI_to_User", "predictor_z.trend"]
+
 summary_results <- tribble(
-  ~Metric, ~Field_Data, ~Simulated_Data,
-  "N Stories", n_distinct(df_field$conversation_id), n_distinct(df_simulated$conversation_id),
-  "Mean User Valence", mean(df_field$user_valence, na.rm = TRUE), mean(df_simulated$user_valence, na.rm = TRUE),
-  "Mean AI Valence", mean(df_field$ai_valence, na.rm = TRUE), mean(df_simulated$ai_valence, na.rm = TRUE),
-  "Same-Turn Alignment (ρ)", mean(cor_field_same$rho, na.rm = TRUE), mean(cor_sim_same$rho, na.rm = TRUE),
-  "Previous-Turn Alignment (ρ)", mean(cor_field_prev$rho, na.rm = TRUE), mean(cor_sim_prev$rho, na.rm = TRUE)
+  ~Metric, ~User, ~LLM,
+  "Mean Valence", mean(df_field$user_valence, na.rm = TRUE), mean(df_field$ai_valence, na.rm = TRUE),
+  "Sentiment Alignment (β)", beta_user_to_ai, beta_ai_to_user,
+  "Alignment Frequency (%)", alignment_frequency$prop_aligned[alignment_frequency$direction == "is_aligned_prev"] * 100, alignment_frequency$prop_aligned[alignment_frequency$direction == "is_aligned_same"] * 100,
+  "Mean Alignment Duration (turns)", duration_stats$mean_duration[duration_stats$direction_label == "AI -> User (Next Turn)"], duration_stats$mean_duration[duration_stats$direction_label == "User -> AI (Same Turn)"],
+  "Semantic Alignment (Cosine)", mean(df_field_cosine_long_prev_self$cosine_sim[df_field_cosine_long_prev_self$direction == "Interlocutor"], na.rm = TRUE), mean(df_field_cosine_long$cosine_sim[df_field_cosine_long$direction == "Same Turn"], na.rm = TRUE)
 ) %>%
   mutate(
-    Field_Data = round(Field_Data, 3),
-    Simulated_Data = round(Simulated_Data, 3)
+    across(c(User, LLM), ~round(., 3))
   )
 
 print(summary_results)
