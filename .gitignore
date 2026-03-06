@@ -10,3 +10,5 @@ renv/staging/
 .RData
 .Rproj.user/
 git_cred.sh
+.RDataTmp
+environment

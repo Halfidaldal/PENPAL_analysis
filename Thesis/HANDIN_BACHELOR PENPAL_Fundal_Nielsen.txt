@@ -1,0 +1,747 @@
+﻿PENPAL 
+Person-Entity Narrative Production and Language
+
+
+
+
+Bachelor’s Thesis in Cognitive Science 
+
+
+Authors: 
+Frederik Laursen Nielsen (FN) (202308705) au723879@uni.au.dk
+Halfdan Nordahl Fundal (HF) (202306971) au753838@uni.au.dk 
+
+
+Aarhus University, School of Communication and Culture
+Jens Chr. Skous Vej 2, 8000 Aarhus C, Denmark
+
+
+Supervisors: Rebekah Baglini, Sara Kolding 
+Characters: 85,596
+________________
+
+
+Abstract
+This study explores psycholinguistic asymmetries in collaborative human-LLM storytelling under constrained authorship. We introduce a novel platform that facilitates human-AI dyadic storytelling, designed to level out role privileges by matching constraints and instructions across human-AI agents. Data was collected from 87 participants who co-authored short narratives with one of four large language models: GPT-4.1, Claude Sonnet 4.5, Llama 3.3 70B, Qwen 2.5 72B, across 10 interactions. We apply four complementary analysis approaches: (RQ1) linguistic structure and complexity using readability, dependency distance, lexical entropy, and part-of-speech distributions. (RQ2) emotional tone through valence calculation. (RQ3) semantic and emotional alignment between agents and themselves using embedding-computed similarity and directional pairing. (RQ4) informational influence using surprisal-based novelty, transience, and resonance. Results indicate asymmetry rather than convergence. LLM contributions show significantly higher complexity across most metrics. LLMs furthermore exhibit an informational writing profile, whereas human text exhibits markers of involved narrative production. We observe evidence of bidirectional emotional alignment. However, results show less emotional contagion and stronger self-alignment in semantic content, indicating directional differences and stronger human autonomy in the task. Lastly, users introduce more novel content and show a stronger innovation bias, with surprising human input having stronger resonance on subsequent narrative development. Similar transience distributions suggest that these asymmetries reflect a process of evaluation and uptake rather than simple leader-follower dynamics.
+Keywords: natural language processing, human-LLM interaction, co-creative writing, emotional alignment, information-theory, linguistic complexity 
+________________
+Table of Contents
+1. Introduction (FN)        1
+2. Background and conceptual framework        3
+2.1 Theories of linguistic complexity (FN)        3
+2.2 Emotional Contagion and Alignment (HF)        5
+2.3 Novelty, resonance and, transience (HF)        7
+2.4 Computational representations of language, meaning and affect (FN)        9
+2.4.1 Measuring linguistic structure and processing demands (FN)        10
+2.4.2 Embeddings (HF)        12
+2.4.3 Sentiment analysis (HF)        13
+2.4.4 Surprisal in LLMs (HF)        15
+3. Research Questions (FN)        16
+4. Methods        17
+4.1 Experiment design (HF)        17
+4.2 Development of experiment platform (HF)        20
+4.3 Data Acquisition (FN)        21
+4.3.1 Participants (FN)        21
+4.4 Cleaning (FN)        22
+4.5 Measures        22
+4.5.1 Linguistic Complexity (FN)        23
+4.5.2 Embeddings computation (FN)        24
+4.5.3 Sentiment computation (HF)        25
+4.5.3.1 Derived interaction-level measures of alignment and directionality (HF)        25
+4.5.4 Novelty, transience and resonance computation (HF)        27
+4.6 Statistical Modelling        28
+4.6.1 RQ1 models: Descriptive and Syntactical Metrics (FN)        28
+4.6.2 RQ2-RQ3 models: Alignment models (HF)        28
+4.6.3 RQ4 models: Novelty, transience and resonance models (HF)        30
+5. Results        31
+5.1 Surface-level linguistic differences (RQ1)        31
+5.1.1 Readability (FN)        31
+5.1.2 Dependency Distance (FN)        31
+5.1.3. Lexical Entropy (FN)        32
+5.1.4. Part-of-Speech Distribution (FN)        33
+5.2 Affective and semantic alignment (RQ2-RQ3)        35
+5.2.1 Valence distributions (HF)        35
+5.2.2 Directional valence (HF)        36
+5.2.3 Directional semantic similarity (HF)        37
+5.2.4 Alignment with self vs interlocutor (HF)        39
+5.3 Novelty, transience, resonance (RQ4) (HF)        40
+6. Discussion        42
+6.1 Interpretation (FN)        42
+6.1.1 Surface complexity and writing profile (FN)        42
+6.1.2. Semantic and affective distribution (HF)        44
+6.1.3. Novelty, transience and resonance (HF)        45
+6.2 Limitations (HF)        46
+6.3 Future directions        49
+6.3.1 Neurological basis of psycholinguistic measures (HF)        49
+6.3.2 Incorporating survey data (FN)        50
+6.3.3 Including analyses of temporal dynamics (HF)        50
+7. Conclusion        52
+8. References        54
+
+
+1. Introduction (FN)
+The field of Generative AI is experiencing unprecedented attention, even within disciplines already accustomed to rapid technological advancement, such as computer science and natural language processing. At the center of this development are large language models (LLMs), a family of systems built primarily on transformer-based neural architectures introduced in the influential “Attention Is All You Need” paper (Vaswani et al., 2017). As these architectures have scaled in size and complexity, they increasingly exhibit capabilities that extend beyond their original training, leading Bommasani et al. (2021) to characterize them as “foundation models”. These models have become an integrated part of everyday life, used as tools in tasks ranging such as information retrieval, text generation, programming assistance, and decision-making. Their extensive use has reshaped how individuals interact with computational systems, making LLM-mediated language production increasingly ordinary across both professional and personal domains (Teubner et al., 2023). Despite their impressive abilities Bommasani et al. (2021, p. 1) argue that “we currently lack a clear understanding of how they work, when they fail, and what they are even capable of due to their emergent properties”. While a large amount of modern research concerns the functional capabilities of isolated LLM output, the interpersonal, social dynamics that emerge in human-LLM linguistic interactions remain underexplored. Furthermore, the nature of modern platforms used in human-LLM interactions, such as ChatGPT, are often tailored towards a question-answer format that might constrain the structure of the interaction and the subsequent analysis of its dynamics (M. X. Liu et al., 2024). 
+
+
+However, this transactional format is not necessarily the most advantageous, especially when exploring open-ended and creative tasks, such as storytelling. Serving as a core value of human culture, storytelling remains a tool for understanding the world around us, mirroring our societies, identities and inner lives (Dunbar, 2008; Mellmann, 2012). The art of creating meaningful narratives that resonate with other humans has until recently been viewed as a uniquely human trait, but as LLMs make their way into cultural production, this is increasingly being challenged. While LLMs can mimic human-like narratives eloquently, their capability for true originality remains a debated topic. Studies continue to highlight their limitations in generating diverse and dynamically evolving narratives (Tian et al., 2024). However, most evaluations treat LLM output as isolated products, in spite of most real uses being iterative and relational, where the relevant unit is not the output but the interaction. Assessing the interaction between human and LLM thus encompasses a broader account of the conversational and cumulative nature of LLM usage.
+
+
+Human-LLM interaction has shown impressive outcomes across domains from scientific hypothesis generation to clinical reasoning and cultural production. In many contexts, the best performance emerges not from people or models, but their combination, highlighting complementarity as a core benefit of human-LLM paradigms. That said, a recent meta-analysis indicates that these advantages are not consistent across tasks, suggesting that human-LLM interaction across tasks rarely outperforms the best individual model or human, but they do show clearer advantages in open-ended tasks and creative work, where iterative exchange supports division of labour and mutual error correction (Vaccaro et al., 2024). Evidence on LLM-supported creativity remains mixed and is often evaluated at summary level output. On standard divergent and convergent thinking measures, LLMs often match or exceed average human performance (Arora et al., 2025).
+
+
+This debate matters increasingly when LLM systems emerge as agents that affect how humans communicate. As we begin to interact with them as social partners, understanding the dynamics and differences that evolve, becomes increasingly important when implementing LLMs in critical infrastructure. This raises the question of whether there is a psycholinguistic asymmetry between human-LLM partners when interacting with each other. Assessing this requires an interaction-based paradigm, with a common structure where humans and LLMs can iteratively interact on equal terms to reach a shared goal. The present study tries to address this by investigating the interpersonal dynamics that emerge between humans and LLMs when collaboratively constructing narratives within a novel story-writing paradigm. We treat the human-LLM storytelling task as a dyadic system that enables us to quantify asymmetry and mutual influence using cognitive psycholinguistic proxies. Concretely, we assess the system via surface level linguistic complexity (RQ1), affective tone (RQ2), directional alignment (RQ3), and informational uptake (RQ4).
+
+
+2. Background and conceptual framework 
+2.1 Theories of linguistic complexity (FN)
+Linguistic complexity is commonly understood in relation to the cognitive demands associated with language processing. This effectively makes the topic an interdisciplinary endeavor with applications in fields such as psychology, cognitive science and education (Biber, 1992a). The production and comprehension of language are complex processes, engaging multiple cognitive subdomains, including working memory, attention and prediction, with more complex linguistic structures requiring greater computational resources to understand (Gibson, 2000). 
+
+
+Naturally, there exists a plethora of theories of what constitutes complex language. These theories differ not only in terms of strictly linguistic characteristics but also in terms of production, i.e., which social group produces the text (Bernstein, 1962, 2005) or which communicative situation it arises in (Biber, 1991, 1992a). Readability research generally recognizes that lexical factors (relating to vocabulary) and structural factors (relating to syntax or grammar) constitute separate contributions to the overall complexity of a text (Frazier, 1988). One way of describing the structure of language is to decompose the words into their respective parts-of-speech (POS). Hudson (1994) established baseline frequencies for English, finding that common nouns constitute 26% of all words in informational corpora while pronouns constitute 6%. However, these distributions shift across registers with imaginative (fictional) corpora consisting of 19% common nouns and 14% pronouns, reflecting a character-driven focus. The distribution of POS thus serves as a measurable indicator of text type and, by extension, the cognitive demands placed on readers. 
+
+
+There are different approaches that leverage this information to classify text complexity and genre. One influential framework is Biber’s (1991, 1992a, 1992b) Multidimensional Analysis (MDA) approach to register variation. This corpus-based methodology identifies systematic patterns in how linguistic features cluster together across different text types. MDA reveals that linguistic complexity is not unidimensional but varies along multiple independent dimensions, each reflecting different underlying communicative functions. Of particular relevance to the present study is Biber’s Dimension 2, which distinguishes “Narrative versus Non-Narrative” production and Dimension 1, which contrasts “Informational versus Involved” production. Narrative discourse, according to Biber’s analysis, is characterized by higher frequencies of verbs (describing events) and pronouns (referring to characters), reflecting the fundamental communicative purpose of narrative, i.e., recounting events involving specific characters. In contrast, informational text is characterized by a higher use of nouns (referring to entities and concepts), prepositions (providing contextual detail), adjectives (providing descriptive detail) longer words, and greater lexical diversity (type-token ratio). These features support the communicative purpose of informational text, i.e. conveying factual content. Understanding the distributional patterns of POS thus provides a foundation for assessing the stylistic profile of narrative texts as well as their structural complexity.
+
+
+These components of text constitute one element of conventional complexity, but another central aspect of creating a compelling narrative is the affective content conveyed over the course of a story. Unlike narratives produced by a single author, the narratives generated in this experiment emerge from collaborative co-creation between a human participant and an LLM. This dyadic context introduces a social-emotional dimension to the writing process, i.e. the two agents must coordinate not only on structural and semantic elements but also on the emotional trajectory of the narrative. Understanding how such coordination occurs requires examining the mechanisms through which humans typically align emotionally with collaborators to achieve common goals in group settings.
+
+
+2.2 Emotional Contagion and Alignment (HF)
+Emotional contagion (EC) refers to the automatic imitation and synchronization of speech patterns and nonverbal behaviors between agents, leading to alignment of affective states (Michalec et al., 2025). Empirical evidence indicates that EC considerably influences group dynamics, specifically, emotional alignment during social tasks has been associated with greater willingness to cooperate, reduced interpersonal conflict, and improved task performance (Barsade, 2000). Shamay-Tsoory et al. (2019) proposed a predictive coding framework to account for neurological EC mechanisms, hypothesizing a three-part feedback loop comprising an error-monitoring system responsive to misalignment, an alignment system, and a reward system that is activated when alignment is achieved. This framework finds theoretical support in the “shared reality” paradigm, which considers dyadic interactions as integrated units characterized by mutual affective experiences, behavioral coordination, and collective identity formation (Rossignac-Milon & Higgins, 2018). In dyadic conversational paradigms, emotional contagion occurs as a temporal coupling, measured as a co-occurrence of affective states between interlocutors. Here, sentiment of utterances provides a semantic affect signal that can be used for evaluating shared states. Varni et al. (2020) introduced a comprehensive framework for quantifying it in conversations between humans, utilizing a Cross Recurrence Analysis that incorporates both semantics and facial expressions. Here, they define sentiment contagion both on short term and long term as matches between interlocutor time series polarity states (positive, negative, neutral), and quantify it by looking at frequency and duration of co-occurring emotional states. 
+
+
+These methods provide a solid foundation for measuring emotional contagion in dyadic interactions, but also define alignment as a categorical measure of equal emotional state between agents. In collaborative tasks, emotion is often implicit and graded, making categorical measures insufficient for subtle probing of alignment. However, the rapid advance of Natural Language Processing methods supports more nuanced analyses of alignment as a continuous coupling between interlocutors’ valence trajectories. Finally, while Varni et al. model conversational interactions between humans, the question of systematic linguistic emotional contagion on interaction-level between human and LLM partners has not been systematically examined. We aim to use covariation and correlation of sentiment scores on an interaction-level to probe patterns of emotional contagion as a coupling signal between partners in human-LLM dyadic systems.
+
+
+2.3 Novelty, resonance and, transience (HF)
+Conversation dynamics are not only made up of the linguistic features of sentences and their valence, but are also formed by how information is introduced, reinforced and displaced across turns. Ideas that gain uptake constrain what becomes likely next, while ideas that fade contribute less to the subsequent conversational trajectory. While the concept of this dynamic is intuitive, quantifying it is challenging, as it requires a method for assessing temporal semantic deviations from the norm, and whether a deviation has lasting influence on the succeeding language. 
+
+
+In their paper “Individuals, institutions, and innovation in the debates of the French Revolution”, Barron et al. (2018) presented an illustrative approach to evaluate the influence of novel ideas on subsequent discourse, introducing the measures of novelty, transience, and resonance. Using a corpus of speeches during the French Revolution, they map each speech as a distribution of topics and operationalize surprisal as the Kullback-Leibler Divergence (KLD) between topic distributions. Novelty is defined as the average KLD between the current speech and the preceding window of size w, capturing deviation from recent discourse. On the other hand, transience applies the same idea forward in time, comparing the current speech to the subsequent window of size w. High transience indicates low uptake, because what follows does not align with the introduced pattern. Lastly, they define resonance as novelty minus transience, capturing deviation that is retained rather than washed out by future discourse. In this framework, an innovation bias is present when higher novelty systematically predicts higher resonance, meaning that more surprising contributions are more likely to shape what comes next.
+
+
+While statistical language modelling has long been feasible for long-form text, estimating the linguistic regularities that govern natural conversation is harder, as it requires one to model the conditional probability of token sequences given their context. However, causal language models estimate these probabilities directly, enabling token-level estimates of surprisal that can be aggregated to the utterance level. Psycholinguistic surprisal theory links processing difficulty to the unexpectedness of linguistic input, measured as conditional surprisal given context. A central claim in surprisal-based psycholinguistics is that the conditional surprisal of a word is directly related to the cognitive load of processing or producing it. Empirical work links conditional surprisal to human reading times suggesting a clear relation to cognitive sentence processing (de Varda & Marelli, 2023). Bergey and DeDeo (2024) demonstrate that this approach can be applied to dyadic conversation, for example by predicting backchannels from word-level surprisal. This adds to the understanding of lexical diversity and complexity as a psycholinguistic measure, but includes a fine-grained modelling approach that goes beyond isolated surface-level measures by incorporating context dependency. These methods present an underexplored territory for quantifying how predictability relates to interpersonal coordination and turn-taking behavior between conversational partners. Here the relevant context is the evolving dialogue history and influence can be analysed directionally between interlocutors.
+
+
+In our paradigm, we apply novelty, transience, and resonance on an interaction-level basis by combining the methodological frameworks from Barron et al. (2018) and Bergey & DeDeo (2024). Using the discourse window from Barron et al. with token-based surprisal estimation in conversational modelling, we quantify interaction-level measures that capture both deviation and uptake over time. This approach enables a unified account of conversational dynamics through a probabilistic approach, grounded in predictability given context. Using these measures, we test how surprisal and predictability drive narrative development, and whether patterns differ between human and LLM interlocutors.
+
+
+2.4 Computational representations of language, meaning and affect (FN)
+Having established some of the theoretical dimensions along which narratives vary, namely structural patterns (POS distributions), emotional content (affective alignment), and conceptual dynamics (novelty, resonance and transience), we now turn to the computational methodologies of these constructs. As with all operationalizations, the metrics obtained are distillations of complex linguistic, semantic, and affective phenomena. Consequently, the metrics are not directly inferable as psychological or cognitive states, but are proxies with varying accuracies of the phenomena of interest (Nguyen et al., 2020). This section addresses how these properties can be quantified and measured in text. 
+
+
+2.4.1 Measuring linguistic structure and processing demands (FN)
+Computational measures of linguistic complexity serve as proxies for cognitive processing demands, quantifying the extent to which certain linguistic features tax readers’ processing capacity. These measures have proven valuable in various research domains. In clinical contexts, alterations in linguistic complexity can signal cognitive decline in neurodegenerative conditions such as Alzheimer’s disease (Gao & He, 2024) and serve as markers of speaker stress levels (Saslow et al., 2014). Beyond clinical research, complexity measures are also employed to determine the accessibility of informational texts, i.e. in public healthcare, where analyses have shown that much written material is too difficult to comprehend for large segments of the population (Ley & Florio, 1996). At the theoretical level, complexity metrics inform cross-linguistic research examining universal constraints on language and sentence processing (H. Liu, 2008). 
+
+
+Beyond the presented MDA framework, three complementary approaches prove particularly relevant for assessing linguistic complexity in human-LLM co-created texts. First, syntactic dependency distance, which is the linear distance between syntactically related words. This metric provides a direct measure of processing difficulty, as longer dependencies impose greater demands on working memory during comprehension (Gibson, 2000). Second, measures of lexical and sequential entropy capture the predictability versus surprisal of linguistic choices, indexing both lexical diversity and the information-theoretic structure of text. Third, established readability metrics synthesize the surface-level features of word and sentence length as well as syllable counts, to estimate overall comprehension difficulty. 
+
+
+Together, these applications underscore that linguistic complexity measures capture fundamental properties of language that are closely tied to human cognition, communication efficiency, and structural constraints on language use. As such, they provide a theoretically grounded framework for examining whether and how artificial text generation deviates from human linguistic behavior. This question has become increasingly prominent with the emergence of LLMs, whose outputs often appear fluent and human-like when taken at face value. To establish a comparative baseline for the analyses that follow, it is therefore useful to briefly summarize complexity-related differences identified in previous research. 
+
+
+Although text produced by artificial systems has historically differed substantially in quality from that of humans, modern systems have improved considerably with recent research showing that distinguishing LLM-generated text from human-authored text can, in fact, be quite challenging. Even experts with literary backgrounds misidentified the source roughly one-third of the time when examining GPT-2 outputs, which is a fairly simple model by today’s standards (Gunser et al., 2021). Nevertheless, recent research indicates that LLM-generated text exhibits systematic differences from its human written counterpart. For example, Muñoz-Ortiz et al. (2024) identified several distinguishing features: human text exhibits greater variability in sentence length and lexical diversity, along with shorter syntactic dependencies. Complementary findings by Zanotto and Aroyehun (2024) further demonstrate that human-authored text is richer in semantic and affective content, while also showing that these discrepancies are especially prevalent in text genres where stylistic constraints are more flexible such as fiction. Research investigating the readability of LLM output remains limited, but Marulli et al. (2024) analysed the text produced by models of different sizes when prompted to write in different genres and lengths. They found news and tech-related text to be approximately twice the reading difficulty (Flesch-Kincaid grade levels 13-20) compared to story content (grade levels 6-11), with little variation across text lengths. These presented differences suggest that apparent surface-level fluency may mask underlying differences in how linguistic information is structured and distributed. 
+
+
+From a mechanistic perspective, LLMs operate as probabilistic next-token predictors, optimised to generate high-likelihood text sequences (Farquhar et al., 2024; Mao et al., 2025; Trauger & Tewari, 2025). However, examining how these models represent, abstract and manipulate linguistic information beyond surface statistics requires consideration of their internal representation of meaning. A central mechanism in this abstraction is the concept of vector embeddings.
+
+
+2.4.2 Embeddings (HF)
+At the foundation of modern LLMs and their ability to process and generate text lies the concept of vector embeddings. A vector embedding is the transformation of text into a numerical vector representation in a latent high-dimensional space that encapsulates its semantic content (Camacho-Collados & Pilehvar, 2018). While the concept of vector embeddings is not new, the introduction of the transformer model revolutionized the generation and use of vector embeddings, by applying self-attention mechanisms to model contextual relationships between words/tokens. A key component in this process is the computation of relative semantic similarity between words or sentences, typically measured by the cosine similarity between their vector representations. The cosine similarity can be expressed as: 
+  
+
+
+
+In the field of text analyses, cosine similarity serves as a mathematical measure of semantic resemblance that can be used to quantify linguistic patterns, such as alignment between interlocutors in conversation or shifts in topic and style over time (Menon et al., 2018). The subtle structure of these vector representations has furthermore been utilized to assess the emotional tone of text, commonly referred to as sentiment analysis (SA). While generally being sufficient in capturing semantic nuances, different embedding models produce different results, and the fine-grained interpretations can therefore depend on the model choice. Furthermore, representation quality and topical mixing vary with length, why big differences in length of documents can influence quality of cosine similarity computation. In this study, we operationalize semantic similarity and alignment using embedding-based cosine similarity at the interaction-level, expanding the concept of emotional contagion from Varni et al., (2020).
+
+
+2.4.3 Sentiment analysis (HF)
+Sentiment analysis has become one of the most widely used methods for assessing evaluative and affective qualities of text. This method estimates the emotional valence expressed in text, with operationalizations ranging from simple polarity detection (negative, neutral, and positive) to fine-grained, continuous affective scoring (Medhat et al., 2014). Its appeal lies in its scalability, reproducibility, and ability to quantify subjective expressions in ways that allow comparison across speakers and contexts, which has made it a frequently employed tool in corporate contexts for investigation of customer reviews and product analysis (Wankhade et al., 2022). 
+Sentiment analysis figures as an umbrella term that encompasses multiple methodological approaches. Rule-based methods (also called dictionary-based) have demonstrated reasonable performance across most domains, as exemplified by VADER (Hutto & Gilbert, 2014), though they still struggle with out-of-domain contexts (Elsahar & Gallé, 2019). In recent times however, transformer-based approaches seem to generalize even better, although they too possess shortcomings (Tabinda Kokab et al., 2022). One particularly challenging domain for SA is fiction. In fictional contexts such as storytelling, the sentiment of a passage may depend on subtle nuances or a large narrative context, that is typically absent from the reviews and online text on which most highly ranked sentiment models are trained on (Bizzoni & Feldkamp, 2023; Feldkamp et al., 2024; Lyngbaek et al., 2025). This makes literary texts particularly valuable for testing SA methods (Chun, 2021), since they are typically written to evoke rather than explicitly communicate sentiment, and often function at several different narrative levels (Rosenblatt, 1982). 
+
+
+Addressing this gap, Lyngbaek et al. (2025) introduce a novel method for continuous sentiment scoring that directly addresses this issue, achieving state-of-the-art performance on multilingual literary corpora. The method is grounded in the linear representation hypothesis (Park et al., 2024), proposing that concepts are represented linearly as a direction in embedding space, and the further you move in a direction, the stronger the concept is represented. Consequently, sentiment will have its own direction, in which a concept vector encodes a measure of polarity and intensity of sentiment. This concept vector can be derived from embedding varying levels of predefined positive and negative documents. Projecting any other sentence embedding onto the concept vector effectively reduces the sentence embedding to a one-dimensional sentiment score ranging from -1 to 1, with the former being the most negative score, and the latter the most positive score.
+
+
+Utilizing continuous sentiment scoring, previous studies have shown how SA can be used to track the emotional trajectory of a story. Reagan et al., (2016) use sliding-window scoring on novels to map the peaks and valleys of affective progression in story arcs, treating sentiment scores as a proxy for temporal narrative structures, allowing systematic comparison across genres, lengths, and languages. By contrast, the use of sentiment analysis to capture turn-by-turn emotional contagion in dyadic interactions remains relatively sparse, particularly in tasks where interlocutors co-construct longer narratives. We propose a novel approach that combines the results of concept vector projection with a dyadic emotional contagion analysis between human-LLM conversational partners. We estimate continuous valence for each interaction and use it to quantify affective alignment between interlocutors (see Measures).
+
+
+2.4.4 Surprisal in LLMs (HF)
+LLM-based token-level surprisal is quantified as the negative log-probability of a token given its preceding context: 
+  
+
+Because causal LLMs output next-token distributions  they provide token-level surprisal directly from left to right, conditioned only on preceding context. These surprisal scores are model-based estimates that quantify predictability under a particular language model rather than an observable ground-truth notion of surprisal that matches human processing of surprisal (Giulianelli et al., 2024). The estimates therefore depend on the model, tokenization and context definition. In psycholinguistics, surprisal is often modelled as a processing proxy of cognitive load, but can also be used as an information-theoretic measure of predictability in analyses of language. Aggregating token-level surprisal scores of an input, provides a sequence-level estimate of the predictability given prior context. Because surprisal is conditional on context, varying the window tunes surprisal between local and global predictability landscapes. This allows us to define novelty as mean surprisal given preceding context, transience as mean surprisal relative to following context, and resonance as the retained component, defined as novelty minus transience. 
+
+
+3. Research Questions (FN)
+Based on the preceding section we now present our research questions that aim to dissect differences in linguistic characteristics, role privileges and alignment relationships between human and LLMs in collaborative storytelling paradigms. 
+ 
+RQ1: Do humans and LLMs differ in linguistic structure and complexity (POS, readability, dependency distance, and entropy)?
+RQ2: Do humans and LLMs differ in valence distributions?
+RQ3: Do humans and LLMs differ in emotional and semantic alignment with their counterpart and with themselves? 
+RQ4: Do surprisal-based novelty and transience in information differ between humans and Large Language Models, and does this difference affect the resonance of the information?
+________________
+4. Methods
+4.1 Experiment design (HF)
+In its simplest form, the task consisted of a dyadic interaction. Each agent contributed to the story from where the other had left off, for a total of 10 interaction steps, each comprising one user turn and one LLM turn (Ut, At) yielding 20 turns per story. See figure 1 (below) for a visualization of task flow. This resulted in four levels of units: 
+1. token (model level): 
+2. turn (one agents input at turn t):  which can be subgrouped as either user turn  or LLM turn 
+   1. interaction (paired turns at the same turn ): 
+   2. story (sequence of 10 interactions for session i): 
+  
+
+Figure 1: Dyadic task flow, visualizing how the participant and LLM take turns adding to the narrative.
+
+
+With the given research questions it became a key part of the design to minimize the often inherent asymmetry between the human and LLM agents in user interfaces. To level out the differences as much as possible, we (1) built a user interface around narrowing the users’ restrictions in the task down to match the restrictions that are inherently the reality for a LLM, and (2) designed the backend prompt engineering pipeline for the model, in a way that gave it the same prerequisites and information as the user, as to not give them different instructions. Lastly (3) we tailored the experiment experience towards a creative setting by creating a simple, page-turning book interface. The LLM output was highlighted with a bolded font, to clearly distinguish agent input for the user and to match the way the LLM receives input in a format that clearly distinguishes between roles. Furthermore, as the nature of the experiment requires that the LLM only generates a specific amount of tokens, it will naturally be halted in the middle of sentences in a vast majority of cases. Therefore, to reduce turn-length asymmetries and difference in input-privilege a similar rule was employed for the participants, where a small, random amount of words (1-6 words) were truncated from their input string post-submission. The intended result of this was to disallow the participant to conclusively end text clauses, e.g. with punctuation, when this was not a possibility for the LLM. These constraints standardized agent differences but may have introduced artifacts in punctuation and syntactic closure. Furthermore, participants were only able to submit an input to the story if it was between 120 and 180 characters, roughly corresponding to the set hyperparameter of 40 maximum output tokens given to the model.  
+
+
+Lastly, the user interface included a progress bar and a supplementary “x/10” which updated itself on each interaction to inform users on their progress. On the backend side, the LLM was given the exact same instructions as the participant in order to give both agents a theoretically equal amount of agency in the process. The LLM was similarly notified of the experiment progress at every interaction turn. At experiment onset, participants were paired with a random LLM chosen from a selection of four models (two proprietary and two open-source) being Open-AI’s GPT-4.1-2025-04-14 (OpenAI, 2024) and Claude Sonnet-4.5-2025-09-29 (Anthropic, 2024) as well as Llama-3.3-70B-Instruct (Meta, 2024) and Qwen 2.5-72B-Instruct (Alibaba Cloud, 2024). They were not informed which model they were paired with. Furthermore, it was randomized which agent began the story, as this was theorized to have an impact on the subsequent content and dynamics of the story. The first input sets the setting of the story, which often functions as a baseline for the rest of the story.
+
+
+The following instructions were given to both participants and LLMs:
+“You are an author taking part in a collaborative storytelling game activity with another author. Together, you will create a story by taking turns adding to it. Your goal is to continue from where your partner has left off. If there's no story, please begin the story. You have 10 interactions to write the story. Your input may get slightly truncated with a random character amount.”
+
+
+The constraints, instructions and UI design imposed restrictions on both interlocutors, preventing complete freedom in their writing. While tempting to conceptually interpret the stories as a product of free writing, it is important to note that the study investigates this as coordination under constrained authorship. The restrictions have implications for sentence structure, which in turn shape the interpretation of complexity metrics later.
+
+
+With regards to ethics, participants were introduced to a short paragraph as the first thing, explaining data handling, consent, and the responsible individuals of the experiment. By clicking Next, participants consented to take part in the experiment, and to get their anonymous data used.
+4.2 Development of experiment platform (HF)
+In order to deploy the platform as a fully scalable, public web-app, the pipeline of building it required a full implementation of DevOps practices, that automatically deployed updates of the platform, triggered by pushes to the deploy-branch of the platform’s GitHub repository (What Is DevOps?, 2025). The platform was written in Javascript (Js) with the React framework for the frontend (Meta Open Source, 2024), CSS for style and format (World Wide Web Consortium, 2024), and the type annotated version of Javascript, Typescript (Ts), for the backend (Microsoft, 2024). The web-app was deployed using Google Cloud-Run (Google Cloud, 2024b) and resulting narrative experiment data was stored in the cloud-hosted NoSQL database Firestore (Google Cloud, 2024a). The subjective experience of participants was further collected through a post-questionnaire, built in SurveyXact and implemented in the experiment pipeline, to couple participants' stories with their questionnaire answers. This matters, as the concrete implementation defined the experience of participants with the goal of running an immersive storytelling pipeline that felt like co-writing with another author. The development of the platform allowed us to control randomization, enforcement of experiment constraints and logging automatically, all without manual intervention, which in turn facilitated effortless participant recruitment. 
+  
+
+Figure 2: The user interface of the platform used in the experiment with their instructions.
+4.3 Data Acquisition (FN)
+Data for this study was sourced from people voluntarily completing the experiment pipeline. The number of participants totalled 87 with a balanced gender (male = 40, female = 46, other = 1) and age distribution (M = 24, SD = 10.4). Participants were not compensated financially for taking part in the experiment. 
+
+
+4.3.1 Participants (FN)
+The only strict requirement issued for participants was a fluency in English and an age requirement of 18 years as well as the ability to complete the experiment on a computer or a tablet as mobile support was deemed to break experiment design assumptions of equal experience, for instance by allowing for automatic word suggestions, which could bias human word selection. Participants were recruited through various sources but mainly through public posts on social media, e.g. Facebook and Reddit as well as through channels of communication in different parts of the education system, e.g. through contacts in some Danish high school associations.  
+4.4 Cleaning (FN)
+To ensure accurate downstream analysis, a cleaning pipeline was applied to all text data. First, incomplete stories, classified as stories with fewer than ten total interactions, were excluded. User-generated text was then spell-corrected using GPT-4o-mini (temperature = 0) via API, with instructions to preserve original meaning and correct only spelling errors. LLM-generated text required no cleaning as it contained no spelling errors. To ensure corrections did not substantially alter the original text, Levenshtein edit distance was calculated between original and corrected versions, and stories with user text exceeding an edit distance of 100 (representing approximately 10% character-level changes) were excluded. Manual post-hoc inspection of spell-corrected user text confirmed minimal syntactic, semantic, or complexity-altering changes were made in the cleaning process. 
+
+
+4.5 Measures
+RQ1 targets stylistic baselines and is therefore computed on story-level concatenations to stabilize estimates. RQ2–RQ4 target interaction dynamics and are computed turn-wise to preserve temporal directionality.
+
+
+4.5.1 Linguistic Complexity (FN)
+Analysis was conducted at the story-level (N = 87 stories), such that all contributions by the participant within each story were concatenated and analysed as a single text, and likewise for all LLM contributions within that story. This aggregation approach allowed us to capture overall stylistic patterns while maintaining story-specific contexts. Linguistic features for both user and LLM-generated text were computed using the TextDescriptives package (Hansen et al., 2023), which in turn builds on the spaCy module (Honnibal et al., 2020) in Python. For this analysis, the medium sized en_core_web_md spaCy model was selected for its balance of accuracy and computational efficiency, achieving perfect tokenization scores and high accuracy on part-of-speech (POS) tagging. Beyond POS labeling, we focused on three metrics indicative of linguistic complexity: readability, Shannon entropy, and dependency distance. These metrics were chosen as they capture distinct dimensions of text complexity that may differentiate user and LLM authorship patterns in collaborative narrative contexts. Each metric is defined below. 
+
+
+POS: Categories (e.g. nouns, verbs, etc.) used to characterize the grammatical composition of texts. Distributions of POS categories provide an index of morphosyntactic preferences and stylistic differences between agents (Biber, 1992a; Hudson, 1994; Schulman & Barbosa, 2018). 
+Readability: How difficult a document is to read and understand, operationalised using the Flesch-Kincaid Grade Level formula (Kincaid et al., 1975), which estimates the U.S. school grade level required to comprehend a text based on sentence length and the average syllable count per word. 
+Syntactic dependency: Represents grammatical relations between words in a sentence. 
+      * Mean dependency: The average linear distance (in words) between syntactically linked heads and dependents across a text (Oya, 2011). Higher values indicate greater complexity (H. Liu, 2008).
+      * Adjacent dependency: Proportion of dependency relations where the head and dependent are immediately adjacent in a sentence. Higher proportions reflect more local syntactic structures (Chen et al., 2022). 
+Entropy: The Shannon entropy (Shannon, 1948) of a text is a measure of lexical unpredictability, representing diversity of words. Higher entropy indicates a more uniform word distribution, i.e. less repetition, usually interpreted as greater text complexity. 
+
+
+4.5.2 Embeddings computation (FN)
+
+
+Embeddings were computed on the turn-level using the Qingzhou contextual text embedding model “QZhou-Embedding”, built on the Qwen2.5-7B-Instruct foundation model (Yu et al., 2025). The model choice was based on its ranking in the Multilingual Text Embedding Benchmark (MTEB), where it had the highest mean score across tasks in English understanding at the time of evaluation. Particularly, it had the highest score in Semantic Textual Similarity (STS), indicating a good fit for downstream assessment of cosine similarities. Embeddings were computed for each agent input. 
+  
+
+
+
+4.5.3 Sentiment computation (HF)
+For the computation of sentiment scores on the turn-level, we initially utilized traditional transformer-based and rule-based approaches of continuous sentiment scoring. However, both resulted in very narrow, skewed distributions of compressed variance, not matching the desired nuance of the scoring. This led us to complement the analysis with a concept of vector projection approach, using the precomputed sentiment vector from the original GitHub pipeline (Lyngbaek et al., 2025). The turn-documents were then converted into multi-dimensional vector embeddings using the paraphrase-multilingual-mpnet-base-v2 model, in order to match the model used for computing the concept vector (Reimers & Gurevych, 2019). Lastly we performed scalar projection by calculating the dot product between the normalized concept vector and the text embeddings, yielding a distribution of sentiment scores for each agent:
+  
+
+
+
+4.5.3.1 Derived interaction-level measures of alignment and directionality (HF)
+For the analysis, we use the following derived measures for computing alignment and directionality.
+  
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+Directional pairing rules:
+      * User→LLM (same turn interaction), predictor , response    
+      * LLM→User(lag-1 turn interaction),  predictor , response   , only defined for t  2.
+Formally, this is written as:
+  
+
+  
+
+
+
+Self-pairings (lag-1)
+         * User self-alignment, User→User: 
+         * LLM self-alignment, LLM→LLM: 
+The difference in directional pairing (the first two pairing rules) are illustrated in figure 3.
+Semantic similarity:  under each pairing rule.
+Valence coupling:  correlated under each pairing rule.
+
+
+  
+
+Figure 3: The two direction perspectives.
+
+
+4.5.4 Novelty, transience and resonance computation (HF) 
+We build on the methodological framework of word-use patterns in Barron et al. (2018), but utilize a causal language model to concentrate the level of computation down to a token-level estimate of surprisal, inspired by the study by Bergey and DeDeo (2024). We treat surprisal as an analogue of Barron et al.'s surprise term, enabling turn-level novelty/transience/resonance in dialogue. In our framework, we evaluate how humans and LLMs introduce and influence the narrative development of the story differently. 
+
+
+The surprisal scores for token-level text were computed using the open-source model (Meta-Llama/Llama-3.3-8B-Instruct · Hugging Face, 2024). For novelty, we calculated the aggregated surprisal score of each agent input given a context window w of the preceding 128 tokens, effectively modelling the novelty of a contribution compared to the last couple of interactions. The window of 128 is chosen based on the use of surprisal in conversations by Bergey and DeDeo, and its correspondence to 4-5 interactions in our paradigm. The single surprisal score can be expressed as: 
+  
+
+And the mean surprisal scores of a turn:
+  
+
+Then, the novelty equals the mean surprisal scores given the preceding context window. 
+  
+
+
+
+For transience we applied a time-reversed pipeline, calculating the aggregated surprisal score of the next 128 tokens given the current input as context.
+  
+
+
+
+Finally, resonance was computed by subtracting transience from novelty.
+  4.6 Statistical Modelling 
+
+
+4.6.1 RQ1 models: Descriptive and Syntactical Metrics (FN)
+Linear mixed-effects models were fitted to examine differences in readability, dependency distance, entropy and POS proportions between LLM-generated and user-generated text, with story_id included as a random intercept to account for within-conversation variance.
+4.6.2 RQ2-RQ3 models: Alignment models (HF)
+For valence difference, we fitted a linear mixed-effects model on valence with agent as a predictor, and story_id as random intercept: 
+  
+
+Several models were used for directional alignment assessment. For valence directional alignment, we implemented a linear mixed-effects model that aggregated predictor-turn valence as the independent variable and response valence as the dependent variable across direction. Directional difference was evaluated with an interaction effect between  and  as defined earlier, which models both general alignment between agents and the directional difference.
+
+
+
+
+This was backed up by a separate analysis that modelled alignment for each direction as a Pearson's correlation between user and LLM for each story. Correlation coefficients were Fisher z-transformed prior to hypothesis testing. A t-test was conducted to estimate differences between correlation coefficients of directions.
+To broaden the scope to general semantic alignment, we additionally tested the difference of cosine similarity between directions using a mixed-effect model with the same structure.
+
+
+Finally, assessing differences between self-alignment compared to interlocutor alignment was conducted using two mixed-effect modelling valence and semantic correlation respectively on each of the self-pairing rules and , .
+  
+
+Figure 4: An example of three different stories and their respective agent valence scores across turns.
+
+
+
+
+4.6.3 RQ4 models: Novelty, transience and resonance models (HF)
+For modelling the relationship between novelty and resonance, we fit a linear mixed-effects model, that evaluates an innovation bias by having novelty predict resonance with agent as an interaction effect:
+  
+
+
+
+A summary of the conducted analyses, measures and models used are presented below in Table 1.  
+
+
+RQ
+	Unit of analysis
+	Measure(s)
+	Model / Tool
+	RQ1
+	Story (concatenated turns per agent within story)
+	Linguistic complexity profile: 
+POS proportions, readability (Flesch–Kincaid Grade Level), dependency distance (mean + adjacent proportion), lexical entropy
+	spaCy pipeline (via TextDescriptives; en_core_web_md)
+	RQ2
+	Turn , 
+	Valence distributions (continuous sentiment scores per turn)
+	paraphrase-multilingual-mpnet-base-v2 (sentence embeddings) + sentiment concept vector projection (Lyngbaek et al.)
+	RQ3
+	Directional pairings: 
+ and (, )
+Self-lag: , () 
+	Directional alignment: (i) valence coupling (slope / correlation), (ii) semantic alignment (cosine similarity under pairing rules)
+	paraphrase-multilingual-mpnet-base-v2 (valence embedding) and QZhou-Embedding (semantic embeddings)
+	RQ4
+	Token  with conditional context (aggregated to turn level)
+	Surprisal-based novelty, transience, resonance (informational deviation + uptake)
+	Llama-3.1-8B-Instruct (token probabilities → surprisal)
+	Table 1: Summary of the employed unit of analysis, measures and models for each research question.  
+
+
+
+
+5. Results
+5.1 Surface-level linguistic differences (RQ1)
+5.1.1 Readability (FN)
+Results for readability (Flesch-Kincaid Grade Level) revealed a significant main effect of agent type (β = 2.83, SE = 0.30, t(87) = 9.46, p < .001). LLM-generated text exhibited significantly higher reading difficulty scores (M = 6.02, SD = 3.06) compared to user text (M = 3.19, SD = 1.56), indicating that LLM text required approximately 2.8 grade levels more education to comprehend. 
+
+
+5.1.2 Dependency Distance (FN)
+Two models were constructed for dependency distance, one accounting for mean dependency distance across sentences and one for the proportion of adjacent dependency. 
+
+
+The first model analysed mean dependency distance across sentences, revealing a significant main effect of text type (β = 0.33, SE = 0.05, t(87) = 6.00, p < .001). LLM-generated text exhibited significantly longer mean dependency distances (M = 2.54, SD = 0.49) compared to user text (M = 2.21, SD = 0.29), indicating greater syntactic complexity with more words separating grammatically related elements.
+The second model examined the proportion of adjacent dependency relations (i.e., dependencies between immediately neighboring words). Results showed a significant effect of agent type (β = 0.014, SE = 0.004, t(87) = 4.05, p < .001). Although the raw difference was modest in absolute terms (1.4 percentage points), LLM text demonstrated a higher proportion of adjacent dependencies (M = 0.445, SD = 0.022) compared to user text (M = 0.431, SD = 0.026). 
+
+
+5.1.3. Lexical Entropy (FN)
+Shannon entropy also differed significantly between text types (β = 2.15, SE = 0.34, t(87) = 6.27, p < .001). LLM-generated text demonstrated higher entropy values (M = 12.24, SD = 2.78) compared to user-generated text (M = 10.12, SD = 1.70), suggesting greater lexical diversity and complexity in LLM responses. 
+Distributions of the examined variables are presented in Figure 5 and additional statistics for the models presented above, are provided in Table 2 below: 
+Metric 
+	Cohen's d
+	Effect Size
+	Marginal R2
+	Conditional R²
+	F-K Grade
+	1.16
+	Large
+	0.25
+	0.50
+	Entropy
+	0.90
+	Large
+	0.17
+	0.24
+	Mean Dep. Distance
+	0.80
+	Large
+	0.14
+	0.33
+	Adjacent Dep. Prop.
+	0.57
+	Medium
+	0.08
+	0.19
+	Table 2: Effect Sizes and Variance Components for Linguistic Metrics. Note. Cohen's d = standardized mean difference; Marginal R² = variance explained by agent type; Conditional R² = total variance explained including conversation clustering. 
+  
+
+Figure 5: Violin and boxplots showing distributions of A) Readability, B) Entropy, C) Mean Dependency Distance and D) Adjacent Dependency Proportion for User and LLM-generated story contributions. 
+5.1.4. Part-of-Speech Distribution (FN)
+A series of linear mixed-effects models examined proportional differences in part-of-speech usage between LLM and user text across 13 of the 17 grammatical categories[1] as defined by the UPOS standard (Nivre et al., 2016). Significant differences emerged for 8 out of 13 categories. Table 3 presents the complete results of the POS analysis and visualizations of the distributions are provided in Figure 6 below.
+POS Category 
+	User 
+M
+	LLM
+M
+	β
+	SE
+	t(87) 
+	p 
+	Direction
+	Cohen's d
+	Noun
+	.158
+	.190
+	0.032
+	0.003
+	11.18
+	< .001***
+	LLM > User
+	1.35***
+	Pronoun
+	.109
+	.089
+	-0.020
+	0.003
+	-7.56
+	< .001***
+	User > LLM
+	1.23***
+	Auxiliary
+	.053
+	.032
+	-0.022
+	0.002
+	-10.13
+	< .001***
+	User > LLM
+	1.08***
+	Adverb
+	.049
+	.034
+	-0.015
+	0.002
+	-8.28
+	< .001***
+	User > LLM
+	0.76**
+	Punctuation
+	.142
+	.155
+	0.014
+	0.004
+	3.83
+	< .001***
+	LLM > User
+	0.46*
+	Determiner
+	.091
+	.098
+	0.008
+	0.002
+	3.34
+	.001**
+	LLM > User
+	0.44*
+	Adjective
+	.056
+	.063
+	0.007
+	0.002
+	2.75
+	.007**
+	LLM > User
+	0.37*
+	Sub. Conj.
+	.023
+	.019
+	-0.004
+	0.001
+	-3.04
+	.003**
+	User > LLM 
+	0.32*
+	Adposition
+	.091
+	.094
+	0.003
+	0.002
+	1.17
+	.247
+	—
+	0.14
+	Coord. Conj.
+	.034
+	.034
+	< 0.001
+	0.002
+	-0.13
+	.897
+	—
+	0.11
+	Particle
+	.025
+	.024
+	-0.001
+	0.002
+	-0.81
+	.420
+	—
+	0.02
+	Proper Noun
+	.034
+	.035
+	< 0.001
+	0.003
+	0.19
+	.853
+	—
+	0.01
+	Verb
+	.127
+	.128
+	< 0.001
+	0.003
+	0.18
+	.860
+	—
+	0.00
+	Table 3: Linear Mixed-Effects Models Predicting POS Proportions by Agent Type. Note. M = mean proportion; β = unstandardized coefficient for LLM vs. User contrast; SE = standard error. Significant results are bolded by asterisks: ***p < .001, **p < .01. Direction indicates which text type showed higher usage for significant effects. Cohen’s d effect sizes are bolded by asterisks: ***large, **medium, *small. 
+
+
+  
+
+Figure 6: A) Ridge plots showing distribution of POS proportions in User and LLM experiment text. B) Bar plot of sorted differences in POS proportions between User and LLM text. Error bars indicate standard error. 
+
+
+5.2 Affective and semantic alignment (RQ2-RQ3)
+5.2.1 Valence distributions (HF)
+The distributions of valence showed lower mean user valence compared to LLM valence . A linear mixed-effects model predicting valence from agent type showed a significantly higher mean valence for LLM turns (β = 0.09, p < .001). This coefficient reflects the estimated mean difference between LLM and user turns.  
+Figure 7: Violin and boxplots showing distributions of valence scores for each agent.
+5.2.2 Directional valence (HF)
+Directional valence alignment was assessed using a mixed-effects slope model relating predictor-turn valence to response-turn valence across two pairings: same-turn  and lagged . The model showed a strong positive relationship in the same-turn direction, with  The direction-by-predictor interaction indicated that alignment was significantly weaker in the lagged direction, with an interaction term  Figure 8 visualizes the fitted relationships by direction.
+  
+
+Figure 8: Linear regression of response valence as a function of predictor valence, with color coded regression slopes for the two directions, blue: , and orange .
+
+
+This was supported by a Pearson correlation analysis computed within each story. Mean correlation was higher for  than for . One-sample tests against zero indicated that both correlations were reliably above zero, with a stronger effect for . 
+For : t = 5.87, p <.001.; for : t = 2.24, p = .0279.
+
+
+5.2.3 Directional semantic similarity (HF)
+Directional semantic alignment was evaluated using embedding-based cosine similarity under the same two pairing rules:  and . The mixed-effects model showed that cosine similarity was lower for  relative to , but this difference did not reach significance (β = -0.0156, p = .08). Overall, the pattern matched the valence results directionally, but with a weaker and less reliable directional contrast.
+
+
+  
+
+Figure 9: Violin and boxplots showing distributions of A) Distribution of valence alignment correlations of interactions for each direction, B) Distribution of cosine similarity of interactions for each direction.
+5.2.4 Alignment with self vs interlocutor (HF)
+The models on difference in self-alignment compared to interlocutor alignment for users: compared to  and LLM:  compared to  showed no significant difference in either valence nor cosine similarity, except the cosine similarity model on user self-alignment  , indicating lower interlocutor alignment than self-alignment for users. Distributions can be seen in Figure 10.  
+Figure 10: Violin and boxplots showing distributions of self-alignment compared to interlocutor alignment for users, measured as semantic alignment with cosine similarity. 
+
+
+5.3 Novelty, transience, resonance (RQ4) (HF)
+User turns showed higher novelty than LLM turns (User: M = 4.661, SD = 0.991; AI: M = 2.963, SD = 0.860). User turns also showed slightly higher transience (User: M = 4.253, SD = 0.622; AI: M = 4.085, SD = 0.603). As a result, mean resonance was higher for user turns (User: M = 0.407, SD = 0.985) than for LLM turns (AI: M = -1.121, SD = 0.855).
+
+
+Both agents showed a strong positive novelty-resonance relationship (innovation bias), indicating that more surprising turns tend to stick. In the resonance model, novelty had a strong positive effect (β = 1.041, p < .001). Furthermore, the novelty-resonance slope was significantly weaker for LLMs than users (β = –0.051, SE = 0.019, p = .04), indicating a slightly weaker innovation bias for LLMs than users. This relationship can be seen in Figure 12.  
+Figure 11: Violin and boxplots showing distributions of surprisal (novelty) for each agent
+  
+
+Figure 12: Linear regression of resonance as a function of novelty, with color coded regression slopes for agent (blue = user, orange = LLM). Dotted lines indicate mean novelty for each agent.
+________________
+6. Discussion
+
+
+6.1 Interpretation (FN)
+Below, we interpret the findings through the lens of dyadic asymmetry: differences in linguistic complexity, directional alignment differences in emotional and semantic measures, and influence differences through informational uptake. Our results identify several central distinctions in human-LLM writing that highlight the inherent asymmetry in roles and privileges when humans and LLMs co-create. 
+
+
+6.1.1 Surface complexity and writing profile (FN)
+In terms of complexity, our results suggest that human-LLM co-creation involves the integration of fundamentally distinct linguistic styles rather than convergence toward a common voice. LLM contributions consistently show higher linguistic complexity across nearly all examined metrics. The large effect for readability indicates that LLM text consists of both longer words and sentences and requires nearly three additional grade levels of education to comprehend compared to user text. This finding aligns with those of Marulli et al. (2024) but reveals important nuances in collaborative contexts. The observed readability values for LLM contributions fell at the lower end of Marulli et al.'s story genre range, while human contributions scored well below it, suggesting that conversational, turn-by-turn storytelling produces more accessible text than continuous narrative generation. 
+
+
+The complexity in LLM-produced text manifests not only as a lexical aspect, as evidenced by the large effect size for entropy, indicating high information density, but also as syntactic complexity with LLMs producing significantly longer dependency distances. These findings echo results of previous research documenting LLM’s tendency toward formal and information-dense prose styles (Muñoz-Ortiz et al., 2024; Zanotto & Aroyehun, 2024). Interestingly, LLMs exhibit both longer mean dependency distances and significantly higher rates of adjacent dependencies. Rather than being contradictory, this pattern suggests that LLM-generated text contains greater syntactic variability, by combining more complex, long-distance dependencies with simple, adjacent structures. Supporting this interpretation, LLM text shows substantially higher variance in dependency distances compared to human text (see Figure 5c), indicating less consistency in syntactic complexity across sentences.
+
+
+The structural part-of-speech distributions reveal systematic differences in linguistic profiles that align with Biber's (1992a, 1992b) Multidimensional Analysis framework and Hudson's (1994) corpus-level genre differences. For Dimension 1, LLM text exhibits markers of informational production with significantly higher proportions of nouns, determiners, and adjectives. This pattern reflects descriptive language that focuses on entities and their attributes, characteristic of texts aiming to convey factual content. In contrast, user contributions show markers of involved production, most notably through significantly elevated pronoun usage, which facilitates references to characters and objects.
+Regarding Biber's Dimension 2 (Narrative versus Non-Narrative), the results present a more puzzling picture. While user text shows the expected narrative marker of elevated pronouns, verb usage shows no significant difference between agents, despite verbs being a core feature of narrative discourse in Biber's framework. This suggests that LLMs may be producing a hybrid register, maintaining narrative-appropriate verb frequencies while keeping informational features through nominal density. 
+
+
+6.1.2. Semantic and affective distribution (HF) 
+The emotional asymmetry in valence distributions quantifies a fundamental characteristic of LLMs; their responses tend to drift towards a positive baseline. This is often attributed to the removal of strong negative and profane data during training and fine-tuning of the models. While this has been established for isolated LLM output (Muñoz-Ortiz et al., 2024; Zanotto & Aroyehun, 2024), our paradigm tests the autonomy of LLM positivism, by having it iteratively react to potentially more negative and varying input from human interlocutors, that might force the sentiment of the story into a negative drift and vice versa for human partners having to adapt to positive LLM contributions. This could partly explain the relatively small difference observed in valence distributions, as each partner is faced with a decision to converge emotionally with the counterpart. 
+
+
+It is in fact this question of emotional adaptation that drives the subsequent analysis of interaction-level affective alignment. Both directions of emotional contagion  and  show highly significant positive linear relationships between predictor valence and subsequent response valence. Both LLM and user adopt immediate emotional tone from the counterpart from turn-to-turn, suggesting a convergence of emotional states, at least on interaction-level. However, the asymmetry persists, and users show general lower immediate alignment to their LLM counterparts than the other way around. This suggests that humans maintain a stronger level of emotional autonomy in the co-writing process, resisting full emotional convergence with LLM responses. This is additionally highlighted by the significantly stronger self-alignment of users, where they seem to semantically align more with their own preceding input than the LLM input, adopting less of the semantic profile from the LLM counterpart. While this asymmetry can be framed as misalignment between interlocutors it is also valuable to consider the emotional autonomy of interlocutors as a preservation of diverse perspectives that facilitates productive, creative collaboration. 
+
+
+6.1.3. Novelty, transience and resonance (HF)
+We further extend the framework of agent asymmetry through an information theoretic lens that quantifies the introduction of new ideas and their directional force on narrative evolution between human and LLM agents. Our findings show a clear innovation bias in the task, where more novel concepts have stronger uptake in the subsequent text, effectively controlling the narrative trajectory through high resonance. Generally, users introduce more surprising content yielding higher novelty, thus also employing more control of the future narrative. Importantly, this cannot be attributed to the sycophantic tendencies of the LLM alone, as the transience between the two are almost identical. If the dynamic consisted of a pure leader-follower relationship, the LLM transience would be high, as it would have no impact on the subsequent narrative by virtue of its follower role. Instead, user transience is slightly higher, indicating a more nuanced process, where the decision of what gets to steer the future narrative is less based on inherent differences in roles, but the evaluation of creative contributions. Lastly, we observe a difference in novelty-resonance slope, showing a stronger innovation bias for user input. The effect of very surprising input on future discourse is slightly stronger for users, indicating a writing privilege, where humans get their novel contributions through with more “power” than equally novel LLM input.
+
+
+6.2 Limitations (HF) 
+A primary limitation for interpreting our results as a scientific rigid dissection of human-LLM interaction as a whole, is the lack of a human-human condition. While the results clarify the asymmetry of roles and linguistic patterns in human-LLM storytelling, a contrast analysis with human-human storytelling would highlight the intrinsic differences between interacting with an artificial partner, compared to a human partner. Such an analysis enables us to isolate patterns of general dyadic storytelling dynamics from specific human-LLM dynamics, and prevent conflation of the two. In turn, this would shift the focus to the human process of writing with an artificial partner, while still informing the assessment of LLM behaviour in creative tasks and the shared product thereof.
+
+
+Another limitation concerns the interpretation of linguistic complexity measures, particularly those sensitive to differences in proportional text contribution between agents. In most cases, the LLM contributed approximately 20% more words and 30% more characters, but 9% fewer sentences than users. Despite character constraints, differences emerged due to tokenization, difference in truncation, sentence boundary formation and a tendency for users to sit in the low end of the character window of 120-180. These imbalances might hinder the analytic basis of several complexity metrics, including entropy. While entropy is often treated as a measure of lexical unpredictability or diversity, its relationship to text length remains contested. Some accounts suggest that longer texts increase the likelihood of incorporating rarer or more complex lexical items, thereby inflating entropy estimates (Rajput et al., 2018), whereas other empirical work reports relative independence of entropy values from text length (Popescu, 2009). As a result, observed differences in entropy between users and LLM-generated text may partially reflect unequal text production rather than genuine differences in linguistic complexity. 
+Additionally, our part-of-speech analysis represents a simplification of Biber's Multidimensional Analysis, which incorporates dozens of linguistic features beyond the 13 POS categories examined here. While Biber's framework provides theoretical grounding for interpreting our findings, a full MDA would require analysing additional features such as specific verb tenses, complement clause types, and hedging devices to completely characterize the dimensional profiles of these texts.
+
+
+Our dependency distance analysis also has limitations related to parsing accuracy. The spaCy model employed achieves 92% accuracy for unlabeled dependencies (Honnibal et al., 2020), and while this level of accuracy is standard for computational linguistic analysis, it introduces measurement error that could attenuate the observed effects. However, there is no reason to expect systematic bias favoring one agent type over the other, suggesting that relative comparisons between LLM and human text remain valid despite this limitation.
+Similarly, our readability analysis depends on accurate sentence segmentation, and the spaCy model's sentence boundary detection, while robust, is not perfect. Errors in identifying sentence boundaries could affect metrics like mean sentence length and readability scores. As with dependency parsing, any such errors are likely distributed randomly across both agent types rather than systematically favoring one over the other, preserving the validity of comparative findings.
+
+
+Regarding enhanced symmetry between agents, this requires a more complex truncation design, where users do not have an upper bound when writing, but get their input truncated to a fixed amount of characters with a word-boundary that matches the set max output tokens of the LLM. This ensures almost identical experiment design for each agent with a hard cutoff. Nonetheless, this issue addresses a larger inherent difference in language production between humans and LLMs, namely the nature and scope of their predictive horizons. A hard cutoff is easier to implement on LLMs by virtue of their next-token prediction horizon. While studies highlight similarities between certain hidden layers in LLM convolutional networks and brain areas for language processing, they also highlight the difference in range-prediction. In these studies, the brain seems to compute on several levels of representation with long-range forecasts and high-level predictions being central for human language processing (Caucheteux et al., 2023). This difference in inherent structure of language processing between agents is not accounted well enough for in the experiment design, and should be reconsidered for future endeavors of this paradigm. 
+
+
+Finally, the cleaning of user inputs introduces an LLM normalization of their contributions. Even though post-hoc manual checks revealed minimal semantic changes, we still lose some information and variance of user input, when correcting with an LLM, that adheres to specific conventional grammatical rules. 
+
+
+6.3 Future directions
+6.3.1 Neurological basis of psycholinguistic measures (HF)
+A highly relevant and strengthening future addition to our framework is coupling our results to a neurological basis of whether and how the brain implements different prediction and error-correction strategies when the interaction partner is an LLM system rather than another human agent in linguistic interactions. Predictive processing frameworks like that of Shamay-Tsoory et al. (2019) advocate that the brain creates hierarchical models of the world, continuously updating these based on the integration of sensory input and minimization of prediction errors. This perspective raises the question of whether such cognitive models undergo a different updating process when individuals interact with an LLM interlocutor, who has no physical manifestation besides the text it produces, versus a human interlocutor, who provides both verbal and nonverbal behavioral cues.
+In a lab setting, this would be a controlled task with two primary conditions: a human-human condition and a human-LLM condition. With a focus on the linguistic dynamics, the paradigm would use one or several large language models as the artificial partner. Matching these two conditions would allow us to isolate how the kind of partner regulates prediction, surprisal, and adaptation.
+Concretely, one could try to model the neural underpinnings to this paradigm. This could be obtained by collecting EEG or fMRI data while participants either engage in these interactions or listen back to them. On account of predictive coding frameworks, one would expect to see differences in how prediction errors are encoded over time and across model hierarchies, depending on the interaction partner. A concrete example would be whether frontal regions show different patterns of activity or error responses when paired with an LLM partner, and whether these patterns correlate with the linguistic measures of surprisal derived from the cross-entropy analysis. In terms of modelling, it would be interesting to explore simple neurocomputational models. An example would be to compare human neural data with internal activations from the language model itself, to see where human and model predictive horizons diverge.
+6.3.2 Incorporating survey data (FN) 
+The survey data was not included in this analysis, but is a low hanging fruit for coupling alignment measures with subjective experience of participants. Additionally, it would be interesting to have the LLM answer the post survey in the same fashion as the participant, to gauge how it evaluates its own creative and narrative contribution as compared to that of the human. One could then compare all human and LLM post-survey responses to investigate if there are consistent patterns in how they differ across creative appraisal of the human-written contribution and the model-written contribution. Additionally, because a substantial proportion of participants were students with varying levels of education and creative writing experience, future analyses would benefit from including literacy-related covariates such as years of education or creative writing experience. Controlling for individual differences in linguistic proficiency would help isolate the true differences between human and LLM writing styles, rather than conflating agent type with participant variation.
+6.3.3 Including analyses of temporal dynamics (HF)
+A very central aspect of co-creative storywriting, not covered by this paper, is the temporal aspect of dyadic storytelling. Interpersonal dynamics evolve over time, as the story and relationship between agents progress. Thus, an analysis solely focusing on how the agents and their contributions develop, align, fluctuate, and respectively affect each other across turns is a future project in itself. Concretely, such an analysis could consist of turn based correlation analyses of both valence and valence difference between agents, evolving cosine distance between text input, semantic exploration differences, and topic modelling of narrative arcs, all having turn as a common predictor. This would not only complement the current analysis, but add an additional dimension to it, pinpointing the idea of dyadic interactions being a time-enforced mechanism through which behavioral patterns are reinforced. 
+
+
+________________
+7. Conclusion 
+This study investigated the psycholinguistic asymmetries in collaborative human-LLM dyadic story-telling. By creating a novel experimental platform allowing for co-creation between user and LLM, we examined differences in linguistic style, emotional coordination, and informational influence across four complementary dimensions of analysis. 
+Our findings reveal that human-LLM co-creation is characterized by persistent asymmetry rather than convergence toward a unified voice. At the surface level, LLM contributions consistently demonstrated higher structural complexity across readability, dependency distance, and lexical entropy, with effect sizes ranging from medium to large. Part-of-speech analysis revealed that LLMs produce text with markers of informational discourse while human-written text exhibited markers of involved, narrative production. Notably, verb usage showed no difference between agents suggesting that LLMs adopt a writing style that fuses narrative-appropriate verb frequencies and an information-dense nominal sentence structure. This pattern indicates a hybrid story-telling register for LLMs that may increase cognitive demands on readers. 
+Examining affective dynamics, we found evidence of bidirectional emotional alignment, with both agents following the emotional tone of their partner’s contributions. However, this alignment was asymmetric, with humans maintaining greater emotional autonomy and showing weaker convergence towards LLM responses as well as stronger self-alignment in semantic content. This suggests that humans resist complete emotional synchronization with artificial partners, potentially aiding creative collaboration more than mere imitation. 
+The information-theoretic analysis of novelty, transience, and resonance revealed systematic differences in narrative influence. Human contributions demonstrated higher novelty and stronger innovation bias, meaning that surprising human input more powerfully shaped subsequent narrative development. While both agents showed evidence that novel contributions gained uptake, humans exercised greater narrative control through the resonance of their surprising contributions. Importantly, near-identical transience scores between agents indicate that this asymmetry reflects differential creative evaluation rather than simple leader-follower dynamics or LLM sycophancy. 
+Future research should extend this paradigm with a human-human control condition to isolate AI-specific interaction patterns from general dyadic storytelling dynamics. Neuroimaging approaches could reveal whether the brain implements different prediction and error-correction strategies when the interaction partner is known to be artificial. Additionally, temporal analyses tracking how alignment and influence evolve across interactions would complement our aggregated measures, potentially revealing adaptation patterns masked by story-level analysis.
+
+
+8. References
+Alibaba Cloud. (2024). Qwen 2.5 72B (Version 2.5) [Computer software]. https://qwenlm.github.io 
+Anthropic. (2024). Claude Sonnet 4.5 [Computer software]. https://www.anthropic.com/claude 
+Arora, V., Thabane, A., Parpia, S., Calic, G., & Bhandari, M. (2025). Generative artificial intelligence models outperform students on divergent and convergent thinking assessments. Scientific Reports, 15(1), 36987. https://doi.org/10.1038/s41598-025-21398-4 
+Barron, A. T. J., Huang, J., Spang, R. L., & DeDeo, S. (2018). Individuals, institutions, and innovation in the debates of the French Revolution. Proceedings of the National Academy of Sciences, 115(18), 4607–4612. https://doi.org/10.1073/pnas.1717729115 
+Barsade, S. G. (2000). The Ripple Effect: Emotional Contagion in Groups (SSRN Scholarly Paper No. 250894). Social Science Research Network. https://doi.org/10.2139/ssrn.250894 
+Bergey, C. A., & DeDeo, S. (2024). From “um” to “yeah”: Producing, predicting, and regulating information flow in human conversation (No. arXiv:2403.08890). arXiv. https://doi.org/10.48550/arXiv.2403.08890 
+Bernstein, B. (1962). Social Class, Linguistic Codes and Grammatical Elements. Language and Speech, 5(4), 221–240. https://doi.org/10.1177/002383096200500405 
+Bernstein, B. (2005). Theoretical studies towards a sociology of language. Routledge. 
+Biber, D. (1991). Variation across speech and writing. Cambridge university press. 
+Biber, D. (1992a). On the complexity of discourse complexity: A multidimensional analysis. Discourse Processes, 15(2), 133–163. https://doi.org/10.1080/01638539209544806 
+Biber, D. (1992b). The multi-dimensional approach to linguistic analyses of genre variation: An overview of methodology and findings. Computers and the Humanities, 26(5), 331–345. https://doi.org/10.1007/BF00136979 
+Bizzoni, Y., & Feldkamp, P. (2023). Comparing Transformer and Dictionary-based Sentiment Models for Literary Texts: Hemingway as a Case-study. NLP4DH. https://www.semanticscholar.org/paper/Comparing-Transformer-and-Dictionary-based-Models-a-Bizzoni-Feldkamp/26b09f666c87acaa36432abd4bae82fb7b8bccd8 
+Bommasani, R., Hudson, D. A., Adeli, E., Altman, R., Arora, S., von Arx, S., Bernstein, M. S., Bohg, J., Bosselut, A., Brunskill, E., Brynjolfsson, E., Buch, S., Card, D., Castellon, R., Chatterji, N., Chen, A., Creel, K., Quincy Davis, J., Demszky, D., … Liang, P. (2021). On the Opportunities and Risks of Foundation Models. arXiv. https://doi.org/10.48550/arXiv.2108.07258 
+Camacho-Collados, J., & Pilehvar, M. T. (2018). From Word To Sense Embeddings: A Survey on Vector Representations of Meaning. Journal of Artificial Intelligence Research, 63, 743–788. https://doi.org/10.1613/jair.1.11259 
+Caucheteux, C., Gramfort, A., & King, J.-R. (2023). Evidence of a predictive coding hierarchy in the human brain listening to speech. Nature Human Behaviour, 7(3), 430–441. https://doi.org/10.1038/s41562-022-01516-2 
+Chen, R., Deng, S., & Liu, H. (2022). Syntactic Complexity of Different Text Types: From the Perspective of Dependency Distance Both Linearly and Hierarchically. Journal of Quantitative Linguistics, 29(4), 510–540. https://doi.org/10.1080/09296174.2021.2005960 
+Chun, J. (2021). SentimentArcs: A Novel Method for Self-Supervised Sentiment Analysis of Time Series Shows SOTA Transformers Can Struggle Finding Narrative Arcs (No. arXiv:2110.09454). arXiv. https://doi.org/10.48550/arXiv.2110.09454 
+de Varda, A., & Marelli, M. (2023). Scaling in Cognitive Modelling: A Multilingual Approach to Human Reading Times. In A. Rogers, J. Boyd-Graber, & N. Okazaki (Eds.), Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers) (pp. 139–149). Association for Computational Linguistics. https://doi.org/10.18653/v1/2023.acl-short.14 
+Dunbar, R. I. M. (2008). Why Humans Aren’t Just Great Apes. Etnoantropološki Problemi / Issues in Ethnology and Anthropology, 3(3), 15–33. https://doi.org/10.21301/eap.v3i3.1 
+Elsahar, H., & Gallé, M. (2019). To Annotate or Not? Predicting Performance Drop under Domain Shift. In K. Inui, J. Jiang, V. Ng, & X. Wan (Eds.), Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP) (pp. 2163–2173). Association for Computational Linguistics. https://doi.org/10.18653/v1/D19-1222 
+Farquhar, S., Kossen, J., Kuhn, L., & Gal, Y. (2024). Detecting hallucinations in large language models using semantic entropy. Nature, 630(8017), 625–630. https://doi.org/10.1038/s41586-024-07421-0 
+Feldkamp, P., Kostkan, J., Overgaard, E., Jacobsen, M., & Bizzoni, Y. (2024). Comparing Tools for Sentiment Analysis of Danish Literature from Hymns to Fairy Tales: Low-Resource Language and Domain Challenges. In O. De Clercq, V. Barriere, J. Barnes, R. Klinger, J. Sedoc, & S. Tafreshi (Eds.), Proceedings of the 14th Workshop on Computational Approaches to Subjectivity, Sentiment, & Social Media Analysis (pp. 186–199). Association for Computational Linguistics. https://doi.org/10.18653/v1/2024.wassa-1.15 
+Frazier, L. (1988). The study of linguistic complexity. In Linguistic complexity and text comprehension: Readability issues reconsidered (pp. 193–221). Lawrence Erlbaum Associates, Inc. 
+Gao, N., & He, Q. (2024). A dependency distance approach to the syntactic complexity variation in the connected speech of Alzheimer’s disease. Humanities and Social Sciences Communications, 11(1), 995. https://doi.org/10.1057/s41599-024-03509-0 
+Gibson, E. (2000). The dependency locality theory: A distance-based theory of linguistic complexity. Image, Language, Brain, 2000, 95–126. 
+Giulianelli, M., Malagutti, L., Gastaldi, J. L., DuSell, B., Vieira, T., & Cotterell, R. (2024). On the Proper Treatment of Tokenization in Psycholinguistics. https://doi.org/10.48550/ARXIV.2410.02691 
+Google Cloud. (2024a). Cloud Firestore [Computer software]. https://cloud.google.com/firestore 
+Google Cloud. (2024b). Cloud Run [Computer software]. https://cloud.google.com/run 
+Gunser, V. E., Gottschling, S., Brucker, B., Richter, S., & Gerjets, P. (2021). Can Users Distinguish Narrative Texts Written by an Artificial Intelligence Writing Tool from Purely Human Text? In C. Stephanidis, M. Antona, & S. Ntoa (Eds.), HCI International 2021—Posters (pp. 520–527). Springer International Publishing. https://doi.org/10.1007/978-3-030-78635-9_67 
+Hansen, L., Olsen, L. R., & Enevoldsen, K. (2023). TextDescriptives: A Python package for calculating a large variety of metrics from text. Journal of Open Source Software, 8(84), 5153. https://doi.org/10.21105/joss.05153 
+Honnibal, M., Montani, I., Van Landeghem, S., & Boyd, A. (2020). spaCy: Industrial-strength Natural Language Processing in Python. https://doi.org/10.5281/zenodo.1212303 
+Hudson, R. (1994). About 37% of Word-Tokens are Nouns. Language, 70(2), 331–339. https://doi.org/10.2307/415831 
+Hutto, C., & Gilbert, E. (2014). VADER: A Parsimonious Rule-Based Model for Sentiment Analysis of Social Media Text. Proceedings of the International AAAI Conference on Web and Social Media, 8(1), 216–225. https://doi.org/10.1609/icwsm.v8i1.14550 
+Kincaid, J. P., Fishburne Jr, R. P., Rogers, R. L., & Chissom, B. S. (1975). Derivation of new readability formulas (automated readability index, fog count and flesch reading ease formula) for navy enlisted personnel. 
+Ley, P., & Florio, T. (1996). The use of readability formulas in health care. Psychology, Health & Medicine, 1(1), 7–28. https://doi.org/10.1080/13548509608400003 
+Liu, H. (2008). Dependency Distance as a Metric of Language Comprehension Difficulty. Journal of Cognitive Science, 9, 159–191. https://doi.org/10.17791/jcs.2008.9.2.159 
+Liu, M. X., Liu, F., Fiannaca, A. J., Koo, T., Dixon, L., Terry, M., & Cai, C. J. (2024). “We Need Structured Output”: Towards User-centered Constraints on Large Language Model Output. Extended Abstracts of the CHI Conference on Human Factors in Computing Systems, 1–9. https://doi.org/10.1145/3613905.3650756 
+Lyngbaek, L., Feldkamp, P., Bizzoni, Y., Nielbo, K., & Enevoldsen, K. (2025). Continuous sentiment scores for literary and multilingual contexts (No. arXiv:2508.14620). arXiv. https://doi.org/10.48550/arXiv.2508.14620 
+Mao, Y., Pirk, H., & Xue, C. (2025). Lossless Compression of Large Language Model-Generated Text via Next-Token Prediction. https://doi.org/10.48550/arXiv.2505.06297 
+Marulli, F., Campanile, L., de Biase, M. S., Marrone, S., Verde, L., & Bifulco, M. (2024). Understanding Readability of Large Language Models Output: An Empirical Analysis. Procedia Computer Science, 246, 5273–5282. https://doi.org/10.1016/j.procs.2024.09.636 
+Medhat, W., Hassan, A., & Korashy, H. (2014). Sentiment analysis algorithms and applications: A survey. Ain Shams Engineering Journal, 5(4), 1093–1113. https://doi.org/10.1016/j.asej.2014.04.011 
+Mellmann, K. (2012). Is Storytelling a Biological Adaptation?: Preliminary Thoughts on How to Pose That Question (C. Gansel & D. Vanderbeke, Eds.; pp. 30–49). DE GRUYTER. https://doi.org/10.1515/9783110268683.30 
+Menon, V. K., M., S., K., H., & K.P., S. (2018). Semantic Analysis Using Pairwise Sentence Comparison with Word Embeddings (S. M. Thampi, S. Mitra, J. Mukhopadhyay, K.-C. Li, A. P. James, & S. Berretti, Eds.; Vol. 683, pp. 268–278). Springer International Publishing. https://doi.org/10.1007/978-3-319-68385-0_23 
+Meta. (2024). Llama 3.3 70B (Version 3.3) [Computer software]. https://www.llama.com 
+Meta Open Source. (2024). React [Computer software]. https://react.dev 
+Meta-llama/Llama-3.1-8B-Instruct · Hugging Face. (2024, December 6). https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct 
+Michalec, B., Forbes, C. E., Pardon, K., Ayala, B., Beltran, D. G., Douille, C., Felix, K., Gnall, S., Hoenack, M., McKeever, B., Nguyen, D., Piemonte, N., & Portle, S. (2025). A scoping review of emotional contagion research with human subjects: Identifying common trends of previous research and potential areas for future research. Frontiers in Psychology, 16, 1573375. https://doi.org/10.3389/fpsyg.2025.1573375 
+Microsoft. (2024). TypeScript [Computer software]. https://www.typescriptlang.org 
+Muñoz-Ortiz, A., Gómez-Rodríguez, C., & Vilares, D. (2024). Contrasting Linguistic Patterns in Human and LLM-Generated News Text. Artificial Intelligence Review, 57(10), 265. https://doi.org/10.1007/s10462-024-10903-2 
+Nguyen, D., Liakata, M., DeDeo, S., Eisenstein, J., Mimno, D., Tromble, R., & Winters, J. (2020). How We Do Things With Words: Analyzing Text as Social and Cultural Data. Frontiers in Artificial Intelligence, 3. https://doi.org/10.3389/frai.2020.00062 
+Nivre, J., de Marneffe, M.-C., Ginter, F., Goldberg, Y., Hajič, J., Manning, C. D., McDonald, R., Petrov, S., Pyysalo, S., Silveira, N., Tsarfaty, R., & Zeman, D. (2016). Universal Dependencies v1: A Multilingual Treebank Collection. In N. Calzolari, K. Choukri, T. Declerck, S. Goggi, M. Grobelnik, B. Maegaard, J. Mariani, H. Mazo, A. Moreno, J. Odijk, & S. Piperidis (Eds.), Proceedings of the Tenth International Conference on Language Resources and Evaluation (LREC’16) (pp. 1659–1666). European Language Resources Association (ELRA). https://aclanthology.org/L16-1262/ 
+OpenAI. (2024). GPT-4.1 [Computer software]. https://openai.com/gpt-4 
+Oya, M. (2011). Syntactic dependency distance as sentence complexity measure. Proceedings of the 16th International Conference of Pan-Pacific Association of Applied Linguistics, 1. 
+Park, K., Choe, Y. J., & Veitch, V. (2024). The Linear Representation Hypothesis and the Geometry of Large Language Models (No. arXiv:2311.03658). arXiv. https://doi.org/10.48550/arXiv.2311.03658 
+Popescu, I.-I. (2009). Word frequency studies (Vol. 64). Walter de Gruyter. 
+Rajput, N. K., Ahuja, B., & Riyal, M. K. (2018). A novel approach towards deriving vocabulary quotient. Digital Scholarship in the Humanities, 33(4), 894–901. https://doi.org/10.1093/llc/fqy014 
+Reagan, A. J., Mitchell, L., Kiley, D., Danforth, C. M., & Dodds, P. S. (2016). The emotional arcs of stories are dominated by six basic shapes. https://doi.org/10.1140/epjds/s13688-016-0093-1 
+Reimers, N., & Gurevych, I. (2019). Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks (No. arXiv:1908.10084). arXiv. https://doi.org/10.48550/arXiv.1908.10084 
+Rosenblatt, L. M. (1982). The literary transaction: Evocation and response. Theory into Practice, 21(4), 268–277. 
+Rossignac-Milon, M., & Higgins, E. T. (2018). Epistemic companions: Shared reality development in close relationships. Current Opinion in Psychology, 23, 66–71. 
+Saslow, L. R., McCoy, S., van der Löwe, I., Cosley, B., Vartan, A., Oveis, C., Keltner, D., Moskowitz, J. T., & Epel, E. S. (2014). Speaking under pressure: Low linguistic complexity is linked to high physiological and emotional stress reactivity. Psychophysiology, 51(3), 257–266. https://doi.org/10.1111/psyp.12171 
+Schulman, A., & Barbosa, S. (2018). Text Genre Classification Using only Parts of Speech. 2018 International Conference on Computational Science and Computational Intelligence (CSCI), 1226–1229. https://doi.org/10.1109/CSCI46756.2018.00236 
+Shamay-Tsoory, S. G., Saporta, N., Marton-Alper, I. Z., & Gvirts, H. Z. (2019). Herding Brains: A Core Neural Mechanism for Social Alignment. Trends in Cognitive Sciences, 23(3), 174–186. https://doi.org/10.1016/j.tics.2019.01.002 
+Shannon, C. E. (1948). A mathematical theory of communication. The Bell System Technical Journal, 27(3), 379–423. 
+Smirnov, D., Saarimäki, H., Glerean, E., Hari, R., Sams, M., & Nummenmaa, L. (2019). Emotions amplify speaker–listener neural alignment. Human Brain Mapping, 40(16), 4777–4788. https://doi.org/10.1002/hbm.24736 
+Tabinda Kokab, S., Asghar, S., & Naz, S. (2022). Transformer-based deep learning models for the sentiment analysis of social media data. Array, 14, 100157. https://doi.org/10.1016/j.array.2022.100157 
+Teubner, T., Flath, C. M., Weinhardt, C., van der Aalst, W., & Hinz, O. (2023). Welcome to the Era of ChatGPT et al. Business & Information Systems Engineering, 65(2), 95–101. https://doi.org/10.1007/s12599-023-00795-x 
+Tian, Y., Huang, T., Liu, M., Jiang, D., Spangher, A., Chen, M., May, J., & Peng, N. (2024). Are Large Language Models Capable of Generating Human-Level Narratives? In Y. Al-Onaizan, M. Bansal, & Y.-N. Chen (Eds.), Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing (pp. 17659–17681). Association for Computational Linguistics. https://doi.org/10.18653/v1/2024.emnlp-main.978 
+Trauger, J., & Tewari, A. (2025). On Next-Token Prediction in LLMs: How End Goals Determine the Consistency of Decoding Algorithms (No. arXiv:2505.11183). arXiv. https://doi.org/10.48550/arXiv.2505.11183 
+Vaccaro, M., Almaatouq, A., & Malone, T. (2024). When combinations of humans and AI are useful: A systematic review and meta-analysis. Nature Human Behaviour, 8(12), 2293–2303. https://doi.org/10.1038/s41562-024-02024-1 
+Varni, G., Hupont, I., Clavel, C., & Chetouani, M. (2020). Computational Study of Primitive Emotional Contagion in Dyadic Interactions. IEEE Transactions on Affective Computing, 11(2), 258–271. https://doi.org/10.1109/TAFFC.2017.2778154 
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł. ukasz, & Polosukhin, I. (2017). Attention is All you Need. Advances in Neural Information Processing Systems, 30. https://proceedings.neurips.cc/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html 
+Wankhade, M., Rao, A. C. S., & Kulkarni, C. (2022). A survey on sentiment analysis methods, applications, and challenges. Artificial Intelligence Review, 55(7), 5731–5780. https://doi.org/10.1007/s10462-022-10144-1 
+What Is DevOps? | IBM. (2025, May 27). https://www.ibm.com/think/topics/devops 
+World Wide Web Consortium. (2024). Cascading Style Sheets (CSS) [Computer software]. https://www.w3.org/Style/CSS/ 
+Yu, P., Xu, E., Chen, B., Chen, H., & Xu, Y. (2025). QZhou-Embedding Technical Report (No. arXiv:2508.21632). arXiv. https://doi.org/10.48550/arXiv.2508.21632 
+Zanotto, S. E., & Aroyehun, S. (2024). Human Variability vs. Machine Consistency: A Linguistic Analysis of Texts Generated by Humans and Large Language Models (No. arXiv:2412.03025). arXiv. https://doi.org/10.48550/arXiv.2412.03025 arXiv.2412.3
+
+
+________________
+[1] Four categories were not examined, these being interjections, symbols, X (other) and numerals.

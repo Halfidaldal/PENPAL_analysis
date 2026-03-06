@@ -1,0 +1,482 @@
+\documentclass[11pt]{article}
+
+% Change "review" to "final" to generate the final (sometimes called camera-ready) version.
+% Change to "preprint" to generate a non-anonymous version with page numbers.
+\usepackage[review]{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+
+% For proper rendering and hyphenation of words containing Latin characters (including in bib files)
+\usepackage[T1]{fontenc}
+% For Vietnamese characters
+% \usepackage[T5]{fontenc}
+% See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
+
+% This assumes your files are encoded as UTF8
+\usepackage[utf8]{inputenc}
+
+% This is not strictly necessary, and may be commented out,
+% but it will improve the layout of the manuscript,
+% and will typically save some space.
+\usepackage{microtype}
+
+% This is also not strictly necessary, and may be commented out.
+% However, it will improve the aesthetics of text in
+% the typewriter font.
+\usepackage{inconsolata}
+\usepackage{textgreek}
+
+%Including images in your LaTeX document requires adding
+%additional package(s)
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{ragged2e}
+\usepackage{amsmath}
+% If the title and author information does not fit in the area allocated, uncomment the following
+%
+%\setlength\titlebox{<dim>}
+%
+% and set <dim> to something 5cm or larger.
+
+\title{Directional Alignment and Narrative Agency in Human–LLM Co-Writing}
+
+% Author information can be set in various styles:
+% For several authors from the same institution:
+% \author{Author 1 \and ... \and Author n \\
+%         Address line \\ ... \\ Address line}
+% if the names do not fit well on one line use
+%         Author 1 \\ {\bf Author 2} \\ ... \\ {\bf Author n} \\
+% For authors from different institutions:
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \And  ... \And
+%         Author n \\ Address line \\ ... \\ Address line}
+% To start a separate ``row'' of authors use \AND, as in
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \AND
+%         Author 2 \\ Address line \\ ... \\ Address line \And
+%         Author 3 \\ Address line \\ ... \\ Address line}
+
+\author{First Author \\
+  Affiliation / Address line 1 \\
+  Affiliation / Address line 2 \\
+  Affiliation / Address line 3 \\
+  \texttt{email@domain} \\\And
+  Second Author \\
+  Affiliation / Address line 1 \\
+  Affiliation / Address line 2 \\
+  Affiliation / Address line 3 \\
+  \texttt{email@domain} \\}
+
+%\author{
+%  \textbf{First Author\textsuperscript{1}},
+%  \textbf{Second Author\textsuperscript{1,2}},
+%  \textbf{Third T. Author\textsuperscript{1}},
+%  \textbf{Fourth Author\textsuperscript{1}},
+%\\
+%  \textbf{Fifth Author\textsuperscript{1,2}},
+%  \textbf{Sixth Author\textsuperscript{1}},
+%  \textbf{Seventh Author\textsuperscript{1}},
+%  \textbf{Eighth Author \textsuperscript{1,2,3,4}},
+%\\
+%  \textbf{Ninth Author\textsuperscript{1}},
+%  \textbf{Tenth Author\textsuperscript{1}},
+%  \textbf{Eleventh E. Author\textsuperscript{1,2,3,4,5}},
+%  \textbf{Twelfth Author\textsuperscript{1}},
+%\\
+%  \textbf{Thirteenth Author\textsuperscript{3}},
+%  \textbf{Fourteenth F. Author\textsuperscript{2,4}},
+%  \textbf{Fifteenth Author\textsuperscript{1}},
+%  \textbf{Sixteenth Author\textsuperscript{1}},
+%\\
+%  \textbf{Seventeenth S. Author\textsuperscript{4,5}},
+%  \textbf{Eighteenth Author\textsuperscript{3,4}},
+%  \textbf{Nineteenth N. Author\textsuperscript{2,5}},
+%  \textbf{Twentieth Author\textsuperscript{1}}
+%\\
+%\\
+%  \textsuperscript{1}Affiliation 1,
+%  \textsuperscript{2}Affiliation 2,
+%  \textsuperscript{3}Affiliation 3,
+%  \textsuperscript{4}Affiliation 4,
+%  \textsuperscript{5}Affiliation 5
+%\\
+%  \small{
+%    \textbf{Correspondence:} \href{mailto:email@domain}{email@domain}
+%  }
+%}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+%We evaluate recent Large Language Models (LLMs) on the task of creative co-writing with humans, which ...
+%Specifically, we work with * * sentimental and semantic modeling to test whether the stories display a ``driving role" (for example, are driven forward by the humans or the models) and to obtain a clearer representation of creative co-writing dynamics in a setting of human-AI turn-taking. 
+%Through ... in ..., we compare [model names?].
+%We find that LLMs and humans do align in most of the cases, and ...
+%We additionally demonstrate that LLMs' narrative turns in the stories do not introduce often novel semantic elements, but follow the humans
+
+We investigate narrative agency in human–LLM creative co-writing, asking who drives story development in turn-based collaboration. Using a new corpus of human–LLM co-written stories, we apply sentiment and semantic modeling to quantify affective alignment and semantic novelty in turn-taking, and directional measures to assess which agent shapes narrative progression.
+Our results show asymmetric influence: human turns introduce greater semantic novelty and are more likely to shape subsequent developments, whereas LLM contributions predominantly elaborate on human-introduced elements. At the sentiment level, alignment is also asymmetric, but more bidirectional: LLMs exhibit stronger turn-level emotional adaptation than humans, but both agents track each other's emotional valence and LLMs show an independent tendency to more positive emotional baselines. 
+These findings indicate a complementary division of labor in human–LLM co-writing, where humans drive narrative innovation and direction, while LLMs act as adaptive amplifiers that sustain coherence and elaborate emerging narratives.
+
+
+\end{abstract}
+
+\section{Introduction}
+
+Large Language Models (LLMs) are becoming frequent ``collaborators" in creative writing practices, supporting story ideation and stylistic transformation. Prior work has evaluated these systems in terms of output quality and controllability, treating model contributions as isolated outputs and overlooking the interactive dynamics that shape a joint narrative.
+Creative co-writing is a complex process of negotiation over emotional tone, content, and narrative direction. In human--human collaboration, such negotiation involves alignment and influence between participants. As we begin to interact with LLMs as social partners, human--LLM collaboration raises parallel questions: do models adapt to human cues, or introduce new trajectories? And how does narrative agency emerge in mixed human--AI teams?
+Understanding these dynamics is crucial for both theoretical and practical reasons. From a cognitive and literary perspective, psycholinguistic evaluations of co-writing offer a window into affective coordination and shared meaning between humans and artificial agents. From a design perspective, insights into alignment and influence can inform the development of writing systems that better support creativity or user control.
+
+In this paper we examine different aspects of the interpersonal dynamics that emerge between humans and LLMs in a new corpus of co-created human-LLM turn-taking narratives. We assess emotional alignment through sentiment modeling between agent inputs, and evaluate narrative agency as the relationship between novelty as information-theoretic deviation of inputs and their retention in the subsequent story.  
+
+We address the following research questions:
+
+\begin{itemize}
+    \item \textbf{RQ1 (Baseline differences)} Do human and LLM turns differ in mean valence / valence distribution?
+    \item \textbf{RQ2 (Affective coordination):} Do human and LLM interlocutors align (turn-to-turn) and is alignment asymmetric?
+    \item \textbf{RQ3 (Narrative influence):} Whose novel contributions are more likely to be taken up in the next turn?
+\end{itemize}
+
+Our contribution is threefold: (1) a new corpus of human–LLM co-written narratives, (2) directional metrics for affective alignment, and (3) new methods to quantify linguistic influence, supported by empirical evidence of asymmetric narrative agency in mixed human–AI creative collaboration.
+% Yb: here we can add a structure of the paper if we have space, it's just nice practice (In Section 2 we...) 
+
+
+\section{Related Work}
+Differences between human and LLM generated text
+Co-creation with LLMs (Tang et al.)
+Emotional contagion in dialogue  (Varni et al.)
+Concept Vector projection (Lyngbæk et al.)
+Novelty, Transience and resonance (Barron et al.)
+Surprisal in dialogue (Bergey and Dedeo)
+
+
+%% some other stuffs we can include
+Human–AI collaborative writing (Clark et al.) — Creative Writing with a Machine in the Loop
+Story co-creation with neural models (Roemmele and Gordon) — Creative Help: A Story Writing Assistant
+
+Stylistic alignment in dialogue (Danescu-Niculescu-Mizil et al.)
+Emotion recognition in conversation (Poria et al.) — Emotion Recognition in Conversation: Research Challenges
+
+Narrative event chains (Chambers and Jurafsky) — Unsupervised Learning of Narrative Event Chains
+Information flow in dialogue (Dubey et al.)
+
+
+
+\section{A Corpus of Narrative Co-Writing}
+
+\subsection{Task and experiment design}
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{l r}
+\toprule
+\textbf{Corpus metric} & \textbf{Value} \\
+\midrule
+Total stories ($n$) & 91 \\
+Total participants ($n$) & 91\\
+Interactions per story& 10 \\
+Mean LLM word count& 29\\
+ Mean user word count&26\\
+Total interactions ($n$) & 910 \\
+\bottomrule
+\end{tabular}
+\caption{Descriptive statistics for the co-writing corpus.}
+\label{tab:corpus_descriptives}
+\end{table}
+
+We designed a controlled collaborative storytelling task that isolates turn-based interaction dynamics. The task models co-writing as a dyadic exchange in which a human participant and an LLM jointly construct a narrative through alternating contributions.
+Each agent, human or LLM, contributed to the story from where the other left off, for a total of 10 interaction steps, each comprising one user turn and one LLM turn ($U_t, A_t$), yielding 20 turns per story.
+Figure~\ref{fig:task_flow} illustrates the task flow. 
+
+The resulting dataset is structured into four levels of analysis:
+
+\begin{enumerate}
+    \item \textbf{Token level (model level):} individual tokens $w$.
+    \item \textbf{Turn level:} a single agent contribution at turn $t$, denoted $I_t$, which can be further specified as either a user turn ($U_t$) or an LLM turn ($A_t$).
+    \item \textbf{Interaction level:} paired contributions at the same turn $t$, represented as $(U_t, A_t)$.
+    \item \textbf{Story level:} a sequence of 10 interactions for session $i$, denoted $S_i$.
+\end{enumerate}
+
+The following instructions were provided to both participants and the LLM:
+
+\begin{quote}
+\textit{“You are an author taking part in a collaborative storytelling activity with another author. Together, you will create a story by taking turns adding to it. Your goal is to continue from where your partner has left off. If there is no story, please begin the story. You have 10 interactions to write the story. Your input may be slightly truncated by a random number of characters.”}
+\end{quote}
+
+The study comprised a total of 92 participants, with a balanced gender distribution (male = 45, female = 46, other = 1) and an age distribution of $M = 24$ years ($SD = 10.4$). This yielded a corpus of 91 stories (910 interactions).
+Each story consists of alternating human and model contributions of approximately 35 words. 
+%Examples of the stories are in Appendix...
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/figures/dyadic_direction.png}
+  \caption{Dyadic task flow, visualizing how the participant and LLM take turns adding to the narrative.}
+  \label{fig:task_flow}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/figures/Screenshot 2025-12-23 at 17.03.50.png}
+  \caption{The user interface of the platform used in the experiment with their instructions.}
+  \label{fig:ui_screenshot}
+\end{figure}
+
+
+
+
+
+
+\section{Methods}
+\subsection{Preprocessing}
+To ensure accurate downstream analysis, a cleaning pipeline was applied to all text data. First, incomplete stories, classified as stories with fewer than 10 total interactions, were excluded. User-generated text was then spell-corrected using GPT-4o-mini (temperature = 0) via API, with instructions to preserve each sentence as it was, correcting only spelling errors. LLM-generated text required no cleaning as it contained no spelling errors. To ensure corrections did not substantially alter the original text, the Levenshtein edit distance was calculated between original and corrected versions, and stories with user text exceeding an edit distance of 100 were excluded. Manual post-hoc inspection of spell-corrected user text confirmed minimal syntactic, semantic, or complexity-altering changes were made in the cleaning process.
+
+\subsection{Valence}
+First, we investigate the general difference in emotional tone between agents. Let $I_{t}^{(a)}$ denote the textual content of agent $a \in \{\mathrm{User}, \mathrm{LLM}\}$ at turn $t$. To get a continuous metric of valence, we compute a scalar valence score for each turn using concept vector projection. Using a sentence-embedding model (paraphrase-multilingual-mpnet-base-v2), each turn is embedded as a vector representation $\mathbf{e}_{t}^{(a)} \in \mathbb{R}^d$.  Valence is then computed as the scalar projection onto a sentiment concept vector, produced by the same model $\mathbf{c}$:
+\begin{equation}
+v_{t}^{(a)} = \frac{\mathbf{e}_{t}^{(a)} \cdot \mathbf{c}}{\|\mathbf{c}\|}.
+\end{equation}
+To evaluate baseline differences in emotional tone between agents, we fitted a linear mixed-effects model:
+\begin{equation}
+v_{it} = \beta_0 + \beta_1 \mathrm{Agent}_{it} + (1 \mid \mathrm{Story}_i),
+\end{equation}
+where $v_{it}$ denotes the valence score for turn $t$ in story $i$, and random intercepts account for non-independence of turns within stories.
+
+\subsection{Directional Sentiment Alignment}
+To model directionality of valence tracking as an expression of affective coordination between agents, we model the relationship between predictor-turn valence and response-turn valence under two directional pairing rules: 
+
+\begin{enumerate}
+    \item \textbf{User$\rightarrow$LLM}: $(U_t, A_t)$
+    \item \textbf{LLM$\rightarrow$User }: $(A_{t-1}, U_t)$
+\end{enumerate}
+
+
+Let $v^{(X)}_{it}$ denote the predictor valence and $v^{(Y)}_{it}$ the response valence under a given directional pairing in story $i$. Directional alignment was estimated using the following linear mixed-effects model:
+\begin{equation}
+\begin{aligned}
+v^{(Y)}_{it} =\;& \beta_0 + \beta_1 v^{(X)}_{it} + \beta_2 D_{it} \\
+&+ \beta_3 \left( v^{(X)}_{it} \times D_{it} \right) + (1 \mid \mathrm{Story}_i)
+\end{aligned}
+\end{equation}
+where $D_{it}$ is a binary indicator of alignment direction. Here, $\beta_1$ captures baseline alignment strength, and the interaction term $\beta_3$ captures directional asymmetry in affective adaptation.
+
+As a complementary analysis, we computed within-story Pearson correlations for each direction. Correlation coefficients were Fisher $z$-transformed before hypothesis testing to approximate normality.
+
+
+\subsection{Narrative influence}
+\subsubsection{Surprisal}
+The surprisal scores for turn-level text are computed using the open-source model Llama-3.1-8B-Instruct as the mean negative log-probability of the tokens in a turn given a preceding context. The single surprisal score of a token is thus calculated as the surprisal score of the token $w_j$ given all preceding tokens in the context window plus the preceding tokens within the turn. 
+ $$s(w_j) = -\log_2 p(w_j \mid w_{<j})$$
+Where $j$ indexes tokens within a turn. The mean surprisal score of a turn is then expressed as:
+$$\text{S(T)} = \frac{1}{n} \sum_{i=1}^{n} s(w_i)$$
+
+We then define novelty and transience as the difference between conditional and unconditional surprisal. To calculate the pointwise mutual information (PMI) of a turn, we subtract the surprisal score of the turn without context from the surprisal score of the turn with context, resulting in a measure of contextual facilitation, where more negative values indicate increased predictive benefit from the context. For novelty the score with context is calculated using up to 1024 preceding tokens of context denoted as $w_{<t}$ and the surprisal score without context is calculated using the model's beginning-of-sequence token, BOS, providing an unconditional baseline.
+
+$$\text{Novelty}_t = S(T_t \mid w_{<t}) - S(T_t \mid \text{BOS})$$
+For computing transience we measure the information gain of the current turn on up to 40 tokens of the subsequent partner response denoted as $F_t$. For user turns $F_t$ begins with the immediate LLM response, and for LLM turns $F_t$ begins with the immediate user response.
+$$\text{Transience}_t = S(F_t \mid T_t) - S(F_t \mid \text{BOS})$$
+Finally, resonance was computed by subtracting transience from novelty.
+
+$$\mathrm{Resonance}_t = \mathrm{Novelty}_t - \mathrm{Transience}_t$$
+\subsubsection{Influence Modeling}
+For modelling the relationship between novelty and resonance, we fit a linear mixed-effects model, that evaluates narrative influence by having novelty predict resonance with agent as an interaction effect:
+$$\mathrm{Resonance}_{it}=\beta_0+\beta_1\mathrm{Novelty}_{it}+\beta_2\mathrm{Agent}_{it}+\beta_3\mathrm{Novelty}_{it}\mathrm{Agent}_{it}+b_{0,\mathrm{story}(i)}+\varepsilon_{it}$$
+
+Supporting this, we also fit a similar mixed effects model, having novelty predict transience with agent as an interaction effect
+$$\mathrm{Transience}_{it}=\beta_0+\beta_1\mathrm{Novelty}_{it}+\beta_2\mathrm{Agent}_{it}+\beta_3\mathrm{Novelty}_{it}\mathrm{Agent}_{it}+b_{0,\mathrm{story}(i)}+\varepsilon_{it}$$
+Because resonance is defined as novelty minus transience, the resonance model is algebraically linked to the transience model. We report both for interpretive clarity, as the transience model isolates the uptake mechanism, while the resonance model captures net narrative influence.
+\begin{table*}[t]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{l >{\RaggedRight\arraybackslash}p{0.23\textwidth} >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{RQ} & \textbf{Unit of analysis} & \textbf{Measure(s)} & \textbf{Model / Tool} \\
+\midrule
+RQ1 & Turn $(U_t, A_t)$ &
+Valence distributions (sentiment scores per turn) &
+\texttt{paraphrase-multilingual-mpnet-base-v2}% (sentence embeddings) 
+ + sentiment concept vector projection %(Lyngbaek et al.) 
+\\
+\midrule
+RQ2 &
+Directional pairings: $(U_t, A_t)$ and $(A_{t-1}, U_t)$\newline
+Self-lag: $(U_{t-1}, U_t)$, $(A_{t-1}, A_t)$ &
+Directional alignment: (i) valence coupling (correlation), (ii) semantic alignment (cosine similarity under pairing rules) &
+\texttt{paraphrase-multilingual-mpnet-base-v2} (valence embedding) and \texttt{QZhou-Embedding} (semantic embeddings) \\
+\midrule
+RQ3 &
+Token $w_i$ with conditional context $p(w_i \mid w_{<i})$ (aggregated to turn level) &
+Surprisal-based novelty, transience and resonance (informational deviation + uptake) &
+\texttt{Llama-3.1-8B-Instruct} (token probabilities $\rightarrow$ surprisal) \\
+\bottomrule
+\end{tabularx}
+\caption{Summary of the employed unit of analysis, measures and models for each research question.}
+\label{tab:rq_summary}
+\end{table*}
+
+\section{Results}
+
+\subsection{Valence distributions differ (RQ1)}
+The distributions of valence showed lower mean user valence ($M=-0.0890$, $SD=0.395$) compared to LLM valence ($M=-0.0147$, $SD=0.402$). A linear mixed-effects model predicting valence from agent type showed a significantly higher mean valence for LLM turns ($\beta = 0.09$, $p<.001$). This coefficient reflects the estimated mean difference between LLM and user turns. Figure~\ref{fig:valence_dist} shows the valence distributions by agent.
+
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/figures/valence_distribution_comparison_density_ks.png}
+  \caption{Violin and boxplots showing distributions of valence scores for each agent.}
+  \label{fig:valence_dist}
+\end{figure}
+
+\subsection{Alignment is directional  (RQ2)}
+Emotional alignment between human and LLM co-writers was significant overall ($\beta = 0.16$, $p < .001$), confirming that valence coordination occurs from turn to turn. However, this alignment was asymmetric. The model showed a strong positive relationship in the $(U_t, A_t)$ direction, with $\beta_1 = 0.23$ ($SE = 0.0335$, $p < .001$) compared to the significantly weaker  $(A_{t-1}, U_t)$ direction, with an interaction term $\beta=-0.1314$ ($SE =0.0460$, $p= .004$). Figure~\ref{fig:dir_valence} visualizes the fitted relationships by direction.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/figures/directional_valence_alignment_field.png}
+  \caption{Linear regression of response valence as a function of predictor valence, with color-coded regression slopes for the two directions (blue: $(U_t, A_t)$; orange: $(A_{t-1}, U_t)$).}
+  \label{fig:dir_valence}
+\end{figure}
+
+This was supported by a Pearson correlation analysis computed within each story. Mean correlation was higher for $(U_t, A_t)$ ($M = 0.230$, $SD = 0.353$) than for $(A_{t-1}, U_t)$ ($M = 0.086$, $SD = 0.346$). One-sample tests against zero indicated that both correlations were reliably above zero, with a stronger effect for $(U_t, A_t)$. For $(U_t, A_t)$: $t = 5.87$, $p <.001$; for $(A_{t-1}, U_t)$: $t = 2.24$, $p = .0279$. Figure~\ref{fig:dir_align_dists} shows the distributions of (A) valence alignment correlations and (B) cosine similarity under the same directional pairing rules.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/figures/valence_alignment_paired_difference.png}
+  \caption{(A) paired valence alignment correlations for each direction and (B) Difference plot.}
+  \label{fig:dir_align_dists}
+\end{figure}
+
+
+\subsection{Narrative influence is asymmetric (RQ3)}
+User turns showed higher novelty than LLM turns (User: $M = -1.418$, $SD = 0.713$; LLM: $M = -2.07$, $SD = 0.647$). User turns also showed slightly higher transience (User: $M = -1.034$, $SD = 0.441$; LLM: $M = -0.676$, $SD = 0.454$). As a result, mean resonance was higher for user turns (User: $M = -0.384$, $SD = 0.774$) than for LLM turns (LLM: $M = -1.401$, $SD = 0.684$). Figure~\ref{fig:novelty_dist} shows novelty distributions by agent.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/figures/Surprise_Distributions_Agent.png}
+  \caption{Distributions of surprisal (novelty) for each agent.}
+  \label{fig:novelty_dist}
+\end{figure}
+
+Both agents showed a strong positive novelty-resonance relationship (innovation bias), indicating that more surprising turns tend to stick. In the resonance model, novelty had a strong positive effect ($\beta = 0.941$, $p < .001$). Furthermore, the novelty-resonance slope was significantly weaker for LLMs than users ($\beta = 0.837$, $SE = 0.019$, $p = .04$), indicating a slightly weaker innovation bias for LLMs than users. This relationship can be seen in Figure~\ref{fig:resonance_vs_novelty}.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/figures/novelty_resonance_vs_novelty.png}
+  \caption{Linear regression of resonance as a function of novelty, with color-coded regression slopes for agent (blue = user, orange = LLM). Dotted lines indicate mean novelty for each agent.}
+  \label{fig:resonance_vs_novelty}
+\end{figure}
+
+For completeness, we also visualize transience as a function of novelty in Figure~\ref{fig:transience_vs_novelty}, illustrating how the transience component co-varies with surprisal across agents.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/figures/novelty_transience_vs_novelty.png}
+  \caption{Transience as a function of novelty, with regression lines by agent.}
+  \label{fig:transience_vs_novelty}
+\end{figure}
+
+\begin{table*}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{10pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lcccl}
+\toprule
+\textbf{Result} & \textbf{User} & \textbf{LLM} & \textbf{Test} & \textbf{$p$} \\
+\midrule
+Mean valence & $-0.089$ & $0.004$ & Agent difference (LMM) & $p < .001$ \\
+Sentiment alignment ($\beta$) & $0.091$ & $0.232$ & Slope difference (interaction) & $p = .0102$ \\
+Alignment frequency (\%) & $58.949$ & $49.234$ & Proportion difference & $p = .0013$ \\
+Mean alignment duration (turns) & $1.836$ & $2.189$ & Wilcoxon rank-sum & $p = .039$ \\
+Semantic alignment (cosine) & $0.691$ & $0.678$ & --- & --- \\
+\midrule
+Resonance $\sim$ novelty slope & $0.941$ & $0.837$ & Slope difference (interaction) & $p = .0019$ \\
+Transience $\sim$ novelty slope & $0.0585$ & $0.1635$ & Slope difference (interaction) & $p = .0019$ \\
+\bottomrule
+\end{tabular}
+\caption{Key results summary. The \textit{Test} and $p$ columns indicate the inferential comparison associated with each row (e.g., slope interaction for alignment and novelty models).}
+\label{tab:key_results_user_llm_tests}
+\end{table*}
+\section{Discussion}
+This paper investigated agent alignment and narrative agency in human--LLM based co-writing. We examined affective and semantic adaptation through embedding-based analyses and information propagation through different measures of innovation and influence. Our findings reveal a consistent asymmetry in collaborative dynamics: while both humans and LLMs exhibit alignment and coordination, humans play a disproportionate role in maintaining emotional autonomy, introducing narrative novelty, and shaping subsequent developments.
+
+%\subsection{Difference in affective distributions}
+The emotional asymmetry in valence distributions quantifies a fundamental characteristic of LLMs: their responses tend to drift towards a positive baseline. This could be attributed to the removal of strong negative and profane data during training and fine-tuning of the models. While this has been established for isolated LLM output (Muñoz-Ortiz et al., 2024; Zanotto \& Aroyehun, 2024), our paradigm tests the autonomy of LLM positivism, by having it iteratively react to varying input from human interlocutors, that might force the sentiment of the story into a negative drift. This is equally the case for human partners having to react to positive LLM contributions. This could partly explain the relatively small difference observed in valence distributions, as each partner is faced with a decision to converge emotionally with the counterpart.
+
+
+%\subsection{Directional Affective Coordination}
+The analysis of direction emotional adaptation elaborates on the difference in valence distributions. We found significant bidirectional emotional alignment between co-writers, confirming that human--LLM collaboration involves affective coordination through adaptation of emotional tone. However, the alignment was directional: LLM responses tracked the valence of preceding human turns more strongly than humans tracked LLM affect. This asymmetry indicates that LLMs are more responsive to human emotional cues, and suggests that humans maintain a stronger level of emotional autonomy in the co-writing process. This is additionally highlighted by the significantly stronger self-alignment of users, in which they align more with their own preceding input than the LLM responses, adopting less of the semantic profile from the  counterpart.
+
+Alignment persistence over time revealed a similar pattern: Alignment occurred more frequently in Human$\rightarrow$LLM transitions, while also retaining longer streaks over time. It seems that LLMs both maintain stronger local affective adaptation, while also sustaining longer-term emotional trajectories (see Appendix). 
+
+
+%\subsection{Initiative Asymmetry in Human--LLM Co-Writing}
+Across analyses, humans' contributions were both more novel and yielded higher resonance than LLMs', indicating a greater capacity to introduce narrative elements that persist in the unfolding story. In contrast, LLM contributions tended to elaborate on existing material rather than introduce new semantic directions. This pattern suggests an \textit{initiative asymmetry}, in which humans function as primary drivers of narrative innovation, while LLMs act as adaptive amplifiers that reinforce and extend human-introduced content.\footnote{Importantly, although LLMs exhibited a stronger tendency to follow and elaborate on human contributions, both agents alternated between introducing novelty, transience, and aligning with prior turns, indicating that LLMs are adaptive - rather than passive - participants within collaborative dynamics.}
+
+The positive linear relationship between novelty and resonance characterizes the creative, frictionless nature of the writing task where interlocutors accept and take up the preceding contributions of the counterpart, regardless of the surprising character of this contribution given the prior context. Similarly to the previous findings, this pattern is asymmetric between agents. The effect of very surprising input on future discourse is stronger for users, indicating their writing privilege, where users' novel contributions have more influence on the future discourse, compared to equally novel LLM contributions.
+
+This asymmetry seems to mirror a complementary division of labor: humans provide innovation, on which LLMs elaborate. Such dynamics resemble improvisational settings in which one participant introduces motifs and the other stabilizes and develops them.
+
+
+
+%\subsection{Coherence and Convergence}
+
+%Despite strong coordination, we found no evidence that either agent sacrificed self-consistency to align with the interlocutor. Humans' and LLMs' self-alignment remained stable. Participants aligned at the local level but preserved their own narrative "tune", and this was the case as much for the humans as for the LLMs. 
+
+
+\section{Conclusion and Future Work}
+This study examined alignment dynamics and narrative agency in human–LLM collaborative storytelling. Our findings reveal clear patterns that characterize human–LLM co-writing: LLMs mirror the emotional tone established by human contributors, but shift it toward a more positive baseline. At the same time, LLMs tend to elaborate on human-introduced ideas rather than introducing novel narrative elements, and have less influence on the subsequent narrative. This behavior suggests that LLMs function effectively as ``following'' collaborators that sustain coherence and reinforce emerging storylines.
+
+Human participants exhibited greater semantic novelty and stronger influence on subsequent narrative developments, indicating a primary role in introducing new directions and maintaining emotional autonomy. Together, these results point to a complementary division of labor: humans drive innovation and narrative, and LLMs provide adaptive elaboration and a ``tweaked" affective alignment.
+
+These findings have implications for the design of human–AI co-creative systems. Interfaces and interaction paradigms may benefit from supporting human control over narrative direction while using LLM strengths in elaboration, stylistic variation, and coherence maintenance. Understanding this complementary dynamic can inform the development of tools that enhance creativity without diminishing human agency.
+
+Future work should extend this paradigm by incorporating human–human baselines to better contextualize mixed collaboration dynamics; exploring longer interaction sequences to capture extended narrative evolution; and integrating context-aware sentiment models to account for broader emotional trajectories. Investigating how different model architectures, prompting strategies, and genre constraints affect alignment and agency may further clarify the conditions that make human–LLM collaboration most effective.
+
+\section*{Limitations}
+Several limitations should be considered when interpreting the results. First, sentiment scores are computed at the turn level and do not incorporate broader narrative context, potentially overlooking longer-range emotional dynamics. Second, surprisal is estimated with respect to the language model used in the analysis and may not fully reflect human perceptions of novelty. Third, the study does not include a human–human co-writing condition, which limits direct comparison between mixed and purely human collaborations. 
+Additionally, the experimental setup introduces asymmetries in both interaction experience and language processing capabilities between human participants and LLMs, which may influence the observed alignment patterns. Finally, the preprocessing pipeline, including spell correction, may introduce a degree of normalization toward LLM-like text.
+
+
+\bibliography{custom}
+
+\appendix
+
+\section{Supplementary Analyses}
+\label{sec:appendix}
+
+\subsection{Duration of alignment}
+To assess stability of directional alignment, we computed (1) the overall frequency of turns classified as aligned per direction and (2) the duration of consecutive alignment streaks. Figure~\ref{fig:align_freq} summarizes alignment frequency by direction. Alignment frequency differed between directions: alignment occurred on $49.2\%$ of turns in the LLM$\rightarrow$User direction and $58.9\%$ of turns in the User$\rightarrow$LLM (next-turn) direction (two-sample test of proportions, $p=0.001324$).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/figures/alignment_frequency_bar.png}
+  \caption{Frequency of directional alignment, shown as the proportion of turns where the responder moves in the same direction as the initiator.}
+  \label{fig:align_freq}
+\end{figure}
+
+Figure~\ref{fig:align_duration} shows the persistence of alignment streaks (survival-style retention curves). Streaks were longer in the User$\rightarrow$LLM direction (mean $=2.19$, median $=2$, max $=7$) than in the LLM$\rightarrow$User direction (mean $=1.84$, median $=1.5$, max $=6$). A Wilcoxon rank-sum test indicated a reliable difference in duration distributions ($p=0.03943$).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/figures/alignment_duration_survival.png}
+  \caption{Persistence of emotional alignment. The curves show the percentage of alignment streaks lasting at least $X$ consecutive turns, by direction.}
+  \label{fig:align_duration}
+\end{figure}
+\subsection{Self alignment}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/figures/cosine_similarity_user_self_vs_interlocutor.png}
+  \caption{Semantic self-alignment of users (blue) compared to alignment with the interlocutor (orange)}
+  \label{fig:align_self}
+\end{figure}
+
+\end{document}

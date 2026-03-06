@@ -295,9 +295,6 @@ def build_full_story_text(df: pd.DataFrame) -> pd.DataFrame:
         **({'llm_type': 'first'} if 'llm_type' in df.columns else {})
     }).reset_index()
     
-    #remove all the baseline text from the beginning of the story if it exists (This is the story of)
-    story_df['user'] = story_df['user'].str.replace("This is the story of", "", regex=False).str.strip()
-    story_df['ai'] = story_df['ai'].str.replace("This is the story of", "", regex=False).str.strip()
     
     # padded versions for parsing textdescriptives
     story_df['full_user_dot'] = df.groupby('conversation_id')['user'].apply(
@@ -342,6 +339,11 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_tu
         df = df[df['interaction_count'] <= max_turns].copy()
     else:
         df = df[df['turn'] <= max_turns].copy()
+        
+    #remove all the baseline text from the beginning of the story if it exists (This is the story of)
+    df['user'] = df['user'].str.replace("This is the story of", "", regex=False).str.strip()
+    df['ai'] = df['ai'].str.replace("This is the story of", "", regex=False).str.strip()
+
 
     for rid, group in df.groupby('respondent_id'):
         # Only modify groups where starter == 'ai'

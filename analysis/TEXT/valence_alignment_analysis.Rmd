@@ -235,18 +235,6 @@ token_stats_field <- df_field %>%
 cat("=== Field Data Token Statistics ===\n")
 print(token_stats_field)
 
-# Simulated data token statistics
-token_stats_sim <- df_simulated %>%
-  summarise(
-    mean_user_tokens = mean(user_token_count, na.rm = TRUE),
-    sd_user_tokens = sd(user_token_count, na.rm = TRUE),
-    mean_ai_tokens = mean(ai_token_count, na.rm = TRUE),
-    sd_ai_tokens = sd(ai_token_count, na.rm = TRUE),
-    mean_token_ratio = mean(token_ratio, na.rm = TRUE)
-  )
-
-cat("\n=== Simulated Data Token Statistics ===\n")
-print(token_stats_sim)
 ```
 
 ## 2.2 Valence Distribution Statistics
@@ -327,7 +315,7 @@ means_sim <- df_sim_long %>%
   summarise(mean_val = mean(valence, na.rm = TRUE), .groups = "drop")
 
 
-valence_difference_mixed_model <- lmer(valence ~ agent + (agent | conversation_id), data=df_field_long)
+valence_difference_mixed_model <- lmer(valence ~ agent + (1 | conversation_id), data=df_field_long)
 cat("=== Valence Difference Model Coefficients ===\n")
 print(round(summary(valence_difference_mixed_model)$coefficients, 4))
 
@@ -834,7 +822,7 @@ print(p_general_alignment)
 
 ggsave(
   file.path(GRAPHS_DIR, "directional_valence_alignment_field.png"),
-  p_direction_alignment,
+  p_general_alignment,
   width = 10,
   height = 6,
   dpi = 300
