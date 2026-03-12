@@ -203,8 +203,11 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
 def compute_transience_scores(df, tokenizer, model, window_size=40):
     """
     Compute transience scores for user and AI utterances.
-    
-    Transience = how surprising future text is given this utterance.
+
+    Transience = how surprising the immediate next turn is given this utterance.
+    For user turns, the next turn is the paired AI response in the same row.
+    For AI turns, the next turn is the next row's user response in the same
+    conversation.
     
     Parameters
     ----------
@@ -215,7 +218,7 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
     model : transformers.PreTrainedModel
         Causal language model
     window_size : int
-        Evaluation window size (default 40 to match approx one turn length)
+        Kept for backward compatibility; not used when scoring full next turn.
         
     Returns
     -------
@@ -228,35 +231,27 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
         bos_token_id = tokenizer.eos_token_id
     base_context = [bos_token_id] if bos_token_id is not None else []
 
-    def gather_future_tokens(start_idx, df, window_size, current_conversation_id):
-        """Gather up to window_size tokens from subsequent rows in same conversation."""
-        future_ids = []
-        for j in range(start_idx + 1, len(df)):
-            # Stop if conversation boundary crossed
-            if df.at[j, "conversation_id"] != current_conversation_id:
-                break
-            for col in ["user_ids", "ai_ids"]:
-                for tid in df.at[j, col]:
-                    future_ids.append(tid)
-                    if len(future_ids) >= window_size:
-                        return future_ids
-        return future_ids
+    def gather_next_user_ids(pos, frame, current_conversation_id):
+        """Get full user token sequence from the next row in same conversation."""
+        next_pos = pos + 1
+        if next_pos >= len(frame):
+            return []
+        next_row = frame.iloc[next_pos]
+        if next_row.get("conversation_id", None) != current_conversation_id:
+            return []
+        return next_row["user_ids"]
     
     user_transience, user_raw = [], []
     ai_transience, ai_raw = [], []
     
-    for i, row in tqdm(df.iterrows(), total=len(df), desc="Computing transience"):
+    for pos in tqdm(range(len(df)), total=len(df), desc="Computing transience"):
+        row = df.iloc[pos]
         current_conversation_id = row.get("conversation_id", None)
         
-        # Future for AI is strictly the subsequent rows (what gather_future_tokens does)
-        future_ids_ai = gather_future_tokens(i, df, window_size, current_conversation_id)
-        # Limit AI future to window_size to avoid dilution
-        future_ids_ai = future_ids_ai[:window_size] 
-        
-        # Future for User starts with the AI response in THIS row, then continues to subsequent rows
-        future_ids_user = row["ai_ids"] + future_ids_ai
-        # Limit User future to window_size to avoid dilution
-        future_ids_user = future_ids_user[:window_size]
+        # User transience target: full paired AI response (same row)
+        future_ids_user = row["ai_ids"]
+        # AI transience target: full next user turn (next row, same conversation)
+        future_ids_ai = gather_next_user_ids(pos, df, current_conversation_id)
         
         # User transience (Predictor is just the current turn)
         # We assume Transience context is just the immediate past turn (no full history), 

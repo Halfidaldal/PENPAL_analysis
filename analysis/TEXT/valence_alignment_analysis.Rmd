@@ -49,6 +49,15 @@ PROJECT_ROOT <- here()
 # Set global theme
 theme_set(theme_minimal(base_size = 14))
 
+format_alignment_label <- function(x) {
+  parsed <- dplyr::recode(
+    x,
+    same_turn = "'(' * U[t] * ', ' * A[t] * ')'",
+    prev_turn = "'(' * A[t-1] * ', ' * U[t] * ')'"
+  )
+  parse(text = parsed)
+}
+
 # Define output directories
 GRAPHS_DIR <- file.path(PROJECT_ROOT, "analysis", "figures")
 TABLES_DIR <- file.path(PROJECT_ROOT, "analysis", "tables")
@@ -110,7 +119,8 @@ df_field <- df_field %>%
   ) %>%
   # Ensure conversation_id is a character/factor
   mutate(conversation_id = as.character(conversation_id)) %>%
-  filter(turn > 1, turn < 10)
+    filter(turn > 1, turn < 10)
+
 
 
 # Preprocess simulated data
@@ -429,7 +439,7 @@ cor_sim_same <- df_simulated %>%
 
 # Combine
 cor_same_combined <- bind_rows(cor_field_same, cor_sim_same) %>%
-  mutate(alignment_type = "Same Turn")
+  mutate(alignment_type = "same_turn")
 
 # Summary
 cat("=== Same-Turn Alignment Summary ===\n")
@@ -474,7 +484,7 @@ cor_sim_prev <- df_simulated %>%
 
 # Combine
 cor_prev_combined <- bind_rows(cor_field_prev, cor_sim_prev) %>%
-  mutate(alignment_type = "Previous Turn")
+  mutate(alignment_type = "prev_turn")
 
 # Summary
 cat("=== Previous-Turn Alignment Summary ===\n")
@@ -626,7 +636,7 @@ ggsave(file.path(GRAPHS_DIR, "valence_probe_temporal.png"),
 cor_all <- bind_rows(cor_same_combined, cor_prev_combined) %>%
   mutate(
     alignment_type = factor(alignment_type, 
-                           levels = c("Same Turn", "Previous Turn"))
+                           levels = c("same_turn", "prev_turn"))
   )
 
 # Boxplot with jittered points
@@ -635,8 +645,16 @@ p_alignment <- cor_all %>%
   ggplot(aes(x = alignment_type, y = rho, fill = alignment_type)) +
   geom_violin(width = 0.6, alpha = 0.7) +
   geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.4) +
-  scale_fill_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00")) +
-  scale_color_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00", name = "Alignment Type")) +
+  scale_fill_manual(
+    values = c("same_turn" = "#377EB8", "prev_turn" = "#FF7F00"),
+    labels = format_alignment_label
+  ) +
+  scale_color_manual(
+    values = c("same_turn" = "#377EB8", "prev_turn" = "#FF7F00"),
+    name = "Alignment Type",
+    labels = format_alignment_label
+  ) +
+  scale_x_discrete(labels = format_alignment_label) +
   labs(
     title = "Valence Alignment: Field vs Simulated Data",
     x = "Alignment Type",
@@ -660,17 +678,17 @@ ggsave(file.path(GRAPHS_DIR, "valence_alignment_comparison.png"),
 ```{r alignment-comparison-aggregate, fig.width=12, fig.height=8}
 # Prepare aggregate correlation data for overlay
 agg_same <- cor_same_combined_all_turns %>%
-  mutate(alignment_type = "Same Turn")
+  mutate(alignment_type = "same_turn")
 
 agg_prev <- cor_same_combined_all_turns_prev %>%
-  mutate(alignment_type = "Previous Turn") %>%
+  mutate(alignment_type = "prev_turn") %>%
   select(data_source, rho, alignment_type)
 
 agg_data <- bind_rows(agg_same, agg_prev) %>%
   filter(data_source == "Field") %>%
   mutate(
     alignment_type = factor(alignment_type, 
-                           levels = c("Same Turn", "Previous Turn"))
+                           levels = c("same_turn", "prev_turn"))
   )
 
 # Create plot with per-story boxplots and aggregate overlay
@@ -686,8 +704,16 @@ p_comparison <- cor_all %>%
              aes(x = alignment_type, y = rho, fill = alignment_type),
              position = position_dodge(width = 0.75),
              size = 6, shape = 23, color = "black", stroke = 1.5) +
-  scale_fill_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00")) +
-  scale_color_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00", name = "Alignment Type")) +
+  scale_fill_manual(
+    values = c("same_turn" = "#377EB8", "prev_turn" = "#FF7F00"),
+    labels = format_alignment_label
+  ) +
+  scale_color_manual(
+    values = c("same_turn" = "#377EB8", "prev_turn" = "#FF7F00"),
+    name = "Alignment Type",
+    labels = format_alignment_label
+  ) +
+  scale_x_discrete(labels = format_alignment_label) +
   labs(
     title = "Valence Alignment: Per-Story vs Aggregate Correlations",
     subtitle = "Boxplots = per-story correlations; Diamonds = aggregate (all turns pooled)",
@@ -846,7 +872,7 @@ p_direction_alignment <- df_alignment_long %>%
   scale_color_manual(
     values = c("User_to_AI" = "#377EB8", "AI_to_User" = "#FF7F00"),
     name = "Alignment Direction",
-    labels = c("User → LLM (same turn)", "LLM → User (previous turn)")
+    labels = c(expression((U[t] * ", " * A[t])), expression((A[t-1] * ", " * U[t])))
   ) +
   labs(
     title = "Directional Valence Alignment in Field Data",
@@ -960,9 +986,9 @@ df_field_cosine_long <- df_field %>%
   pivot_longer(cols = c(cosine_sim_same, cosine_sim_prev),
                names_to = "direction", values_to = "cosine_sim") %>%
   mutate(direction = recode(direction,
-                            cosine_sim_same = "Same Turn",
-                            cosine_sim_prev = "Previous Turn"),
-         direction = factor(direction, levels = c("Same Turn", "Previous Turn"))
+                            cosine_sim_same = "same_turn",
+                            cosine_sim_prev = "prev_turn"),
+         direction = factor(direction, levels = c("same_turn", "prev_turn"))
          )
 df_field_cosine_long_prev_self <- df_field %>%
   pivot_longer(cols = c(cosine_sim_user_self, cosine_sim_prev),
@@ -1012,8 +1038,16 @@ p_comparison_cosine_violin <- df_field_cosine_long %>%
   geom_violin(width = 0.6, alpha = 0.7) +
   geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.5,
                position = position_dodge(width = 0.75)) +
-  scale_fill_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00")) +
-  scale_color_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00", name = "direction")) +
+  scale_fill_manual(
+    values = c("same_turn" = "#377EB8", "prev_turn" = "#FF7F00"),
+    labels = format_alignment_label
+  ) +
+  scale_color_manual(
+    values = c("same_turn" = "#377EB8", "prev_turn" = "#FF7F00"),
+    name = "direction",
+    labels = format_alignment_label
+  ) +
+  scale_x_discrete(labels = format_alignment_label) +
   labs(
     title = "Semantic Alignment: Cosine Similarity Between Agents",
     x = "Alignment Type",
@@ -1034,8 +1068,15 @@ ggsave(file.path(GRAPHS_DIR, "cosine_sim_violin.png"),
 
 p_field <- ggplot(df_field_cosine_long, aes(x = cosine_sim, fill = direction)) +
   geom_density(alpha = 0.4, color = NA) +
-  scale_fill_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00"), name = "") +
-  scale_color_manual(values = c("Same Turn" = "#377EB8", "Previous Turn" = "#FF7F00")) +
+  scale_fill_manual(
+    values = c("same_turn" = "#377EB8", "prev_turn" = "#FF7F00"),
+    name = "",
+    labels = format_alignment_label
+  ) +
+  scale_color_manual(
+    values = c("same_turn" = "#377EB8", "prev_turn" = "#FF7F00"),
+    labels = format_alignment_label
+  ) +
   labs(title = "Field Data", x = "Cosine Similarity", y = NULL) +
   theme(
     legend.position = "top",
@@ -1234,8 +1275,8 @@ alignment_durations <- df_dynamics %>%
   unnest(duration) %>%
   mutate(
     direction_label = recode(direction, 
-                             duration_same = "User -> AI (Same Turn)",
-                             duration_prev = "AI -> User (Next Turn)")
+                             duration_same = "same_turn",
+                             duration_prev = "prev_turn")
   )
 
 # 3. Calculate General Alignment Frequency (Hypothesis: User->AI is more frequent)
@@ -1252,8 +1293,8 @@ alignment_frequency <- df_dynamics %>%
   ) %>%
   mutate(
     direction_label = recode(direction, 
-                             is_aligned_same = "User -> AI (Same Turn)",
-                             is_aligned_prev = "AI -> User (Next Turn)")
+                             is_aligned_same = "same_turn",
+                             is_aligned_prev = "prev_turn")
   )
 ```
 
@@ -1266,8 +1307,11 @@ p_freq <- ggplot(alignment_frequency, aes(x = direction_label, y = prop_aligned,
   geom_text(aes(label = scales::percent(prop_aligned, accuracy = 0.1)), 
             vjust = -0.5, size = 5, fontface = "bold") +
   scale_y_continuous(labels = scales::percent_format(), limits = c(0, 0.8)) + # Scale approx
-  scale_fill_manual(values = c("User -> AI (Same Turn)" = "#377EB8", 
-                               "AI -> User (Next Turn)" = "#FF7F00")) +
+  scale_fill_manual(
+    values = c("same_turn" = "#377EB8", "prev_turn" = "#FF7F00"),
+    labels = format_alignment_label
+  ) +
+  scale_x_discrete(labels = format_alignment_label) +
   labs(
     title = "Frequency of Directional Alignment",
     subtitle = "Proportion of turns where responder moves in same direction as initiator",
@@ -1320,8 +1364,10 @@ p_duration_curve <- ggplot(duration_counts, aes(x = duration, y = prop_remaining
   geom_point(size = 3) +
   scale_x_continuous(breaks = 1:10) +
   scale_y_continuous(labels = scales::percent) +
-  scale_color_manual(values = c("User -> AI (Same Turn)" = "#377EB8", 
-                                "AI -> User (Next Turn)" = "#FF7F00")) +
+  scale_color_manual(
+    values = c("same_turn" = "#377EB8", "prev_turn" = "#FF7F00"),
+    labels = format_alignment_label
+  ) +
   labs(
     title = "Persistence of Emotional Alignment",
     subtitle = "Percentage of alignment streaks lasting at least X turns",
@@ -1357,8 +1403,8 @@ summary_results <- tribble(
   "Mean Valence", mean(df_field$user_valence, na.rm = TRUE), mean(df_field$ai_valence, na.rm = TRUE),
   "Sentiment Alignment (β)", beta_user_to_ai, beta_ai_to_user,
   "Alignment Frequency (%)", alignment_frequency$prop_aligned[alignment_frequency$direction == "is_aligned_prev"] * 100, alignment_frequency$prop_aligned[alignment_frequency$direction == "is_aligned_same"] * 100,
-  "Mean Alignment Duration (turns)", duration_stats$mean_duration[duration_stats$direction_label == "AI -> User (Next Turn)"], duration_stats$mean_duration[duration_stats$direction_label == "User -> AI (Same Turn)"],
-  "Semantic Alignment (Cosine)", mean(df_field_cosine_long_prev_self$cosine_sim[df_field_cosine_long_prev_self$direction == "Interlocutor"], na.rm = TRUE), mean(df_field_cosine_long$cosine_sim[df_field_cosine_long$direction == "Same Turn"], na.rm = TRUE)
+  "Mean Alignment Duration (turns)", duration_stats$mean_duration[duration_stats$direction_label == "prev_turn"], duration_stats$mean_duration[duration_stats$direction_label == "same_turn"],
+  "Semantic Alignment (Cosine)", mean(df_field_cosine_long_prev_self$cosine_sim[df_field_cosine_long_prev_self$direction == "Interlocutor"], na.rm = TRUE), mean(df_field_cosine_long$cosine_sim[df_field_cosine_long$direction == "same_turn"], na.rm = TRUE)
 ) %>%
   mutate(
     across(c(User, LLM), ~round(., 3))
@@ -1435,7 +1481,16 @@ print(round(summary(lmer_valence_time)$coefficients, 4))
 ### 7.2.1 Same-Turn Alignment by LLM Type
 ```{r llm-same-turn}
 # Mixed model with LLM type interaction
-df_field_llm <- df_field %>% filter(!is.na(llm_type))
+df_field_llm <- df_field %>% 
+  filter(!is.na(llm_type)) %>%
+  filter(interaction_count > 1) %>%
+  mutate(
+    llm_type_name = recode(llm_type, 
+                           "1" = "Gpt-4.1", 
+                           "2" = "Claude-sonnet-4-5", 
+                           "3" = "Llama-3.3-70B-Instruct", 
+                           "4" = "Qwen2.5-72B-Instruct")
+  )
 
 model_llm_same <- lmer(ai_valence ~ user_valence * factor(llm_type) + (1 | conversation_id), 
                        data = df_field_llm)
@@ -1444,14 +1499,15 @@ cat("=== Same-Turn Alignment: LLM Type Interaction ===\n")
 print(round(summary(model_llm_same)$coefficients, 4))
 
 p_llm_same <- df_field_llm %>%
-  mutate(llm_type = as.factor(llm_type)) %>%
-  ggplot(aes(x = user_valence, y = ai_valence, color = llm_type)) +
+  mutate(llm_type_name = as.factor(llm_type_name)) %>%
+  ggplot(aes(x = user_valence, y = ai_valence, color = llm_type_name)) +
   geom_point(alpha = 0.5, size = 1.5) +
   geom_smooth(method = "lm", se = TRUE, size = 1.2) +
   labs(
-    title = "Ai Valence Same Turn by LLM (User -> LLM)",
+    title = "AI Valence Same Turn by LLM (User → LLM)",
     x = "User Valence",
-    y = "Ai Valence"
+    y = "AI Valence",
+    color = "LLM Model"
   ) +
   theme_minimal(base_size = 14) +
   theme(legend.position = "top")
@@ -1467,7 +1523,13 @@ ggsave(file.path(GRAPHS_DIR, "alignment_llm_same.png"),
 ```{r llm-prev-turn}
 # Mixed model with LLM type interaction
 df_field_llm_lag <- df_field %>% 
-  filter(!is.na(llm_type), !is.na(ai_valence_lag1))
+  filter(!is.na(llm_type), !is.na(ai_valence_lag1)) %>%   mutate(
+    llm_type_name = recode(llm_type, 
+                           "1" = "Gpt-4.1", 
+                           "2" = "Claude-sonnet-4-5", 
+                           "3" = "Llama-3.3-70B-Instruct", 
+                           "4" = "Qwen2.5-72B-Instruct")
+  )
 
 model_llm_prev <- lmer(user_valence ~ ai_valence_lag1 * factor(llm_type) + (1 | conversation_id), 
                        data = df_field_llm_lag)
@@ -1476,8 +1538,8 @@ cat("=== Previous-Turn Alignment: LLM Type Interaction ===\n")
 print(round(summary(model_llm_prev)$coefficients, 4))
 
 p_llm_prev <- df_field_llm_lag %>%
-  mutate(llm_type = as.factor(llm_type)) %>%
-  ggplot(aes(x = ai_valence_lag1, y = user_valence, color = llm_type)) +
+  mutate(llm_type_name = as.factor(llm_type_name)) %>%
+  ggplot(aes(x = ai_valence_lag1, y = user_valence, color = llm_type_name)) +
   geom_point(alpha = 0.5, size = 1.5) +
   geom_smooth(method = "lm", se = TRUE, fullrange= TRUE, size = 1.2) +
   labs(

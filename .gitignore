@@ -12,3 +12,4 @@ renv/staging/
 git_cred.sh
 .RDataTmp
 environment
+.RDataTmp1
