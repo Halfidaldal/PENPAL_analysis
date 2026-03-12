@@ -16,7 +16,7 @@ datasets:
 
 # Firestore settings
 firestore:
-  credentials_path: "environment/the-never-ending-story-a7b5f-firebase-adminsdk-ax73p-9014b38264.json"
+  credentials_path: "environment/the-never-ending-story-a7b5f-0f4f8dbe4084.json"
   TEXT:
     collection_name: "story_data_TEXT"
     stories_collection: "stories_TEXT"
