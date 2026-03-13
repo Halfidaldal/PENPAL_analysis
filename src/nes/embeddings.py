@@ -41,40 +41,6 @@ def get_device() -> torch.device:
     return device
 
 
-def _is_qzhou_model(model_name: str) -> bool:
-    """Return True when using the QZhou embedding model family."""
-    return "qzhou" in str(model_name).lower()
-
-
-def _resolve_embedding_device(model_name: str, preferred_device: torch.device) -> torch.device:
-    """Resolve a safe device for embedding model execution."""
-    if _is_qzhou_model(model_name) and preferred_device.type == "cuda":
-        print("QZhou embedding model detected; forcing CPU due to CUDA dtype incompatibility in upstream stack.")
-        return torch.device("cpu")
-    return preferred_device
-
-
-def _encode_batch_with_fallback(model, batch: List[str], task: Optional[str], device: torch.device):
-    """Encode a batch with a guarded retry for known CUDA dtype errors."""
-    try:
-        if task and hasattr(model, 'encode') and 'task' in model.encode.__code__.co_varnames:
-            return model.encode(batch, task=task, show_progress_bar=False, normalize_embeddings=True)
-        return model.encode(batch, show_progress_bar=False, normalize_embeddings=True)
-    except RuntimeError as exc:
-        msg = str(exc)
-        is_dtype_index_error = (
-            "Expected tensor for argument #1 'indices'" in msg and
-            "FloatTensor" in msg
-        )
-        if device.type == "cuda" and is_dtype_index_error:
-            print("Encountered CUDA index dtype error during encode; retrying batch on CPU.")
-            model.to("cpu")
-            if task and hasattr(model, 'encode') and 'task' in model.encode.__code__.co_varnames:
-                return model.encode(batch, task=task, show_progress_bar=False, normalize_embeddings=True)
-            return model.encode(batch, show_progress_bar=False, normalize_embeddings=True)
-        raise
-
-
 def compute_embeddings_batch(
     texts: List[str],
     model_name: str = "jinaai/jina-embeddings-v3",
@@ -98,7 +64,6 @@ def compute_embeddings_batch(
     """
     if device is None:
         device = get_device()
-    device = _resolve_embedding_device(model_name, device)
     
     print(f"Loading model: {model_name}")
     model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device), tokenizer_kwargs={"padding_side": "left", "trust_remote_code": True} if active_dataset=="TEXT" else {})
@@ -110,7 +75,11 @@ def compute_embeddings_batch(
     for i in tqdm(range(0, len(texts), batch_size), desc="Embedding batches"):
         batch = _sanitize_text_batch(texts[i:i+batch_size])
         
-        embeddings = _encode_batch_with_fallback(model, batch, task, device)
+        # Encode with optional task parameter
+        if task and hasattr(model, 'encode') and 'task' in model.encode.__code__.co_varnames:
+            embeddings = model.encode(batch, task=task, show_progress_bar=False, normalize_embeddings=True)
+        else:
+            embeddings = model.encode(batch, show_progress_bar=False, normalize_embeddings=True)
         
         all_embeddings.append(embeddings)
         
@@ -156,7 +125,6 @@ def embed_story_columns(
     
     # Load model once and reuse for all columns
     device = get_device()
-    device = _resolve_embedding_device(model_name, device)
     print(f"Loading model: {model_name}")
     tokenizer_kwargs = {"padding_side": "left", "trust_remote_code": True} if active_dataset == "TEXT" else {}
     model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device), tokenizer_kwargs=tokenizer_kwargs)
@@ -175,7 +143,11 @@ def embed_story_columns(
         for i in tqdm(range(0, len(texts), batch_size), desc="Embedding batches"):
             batch = _sanitize_text_batch(texts[i:i+batch_size])
             
-            embeddings = _encode_batch_with_fallback(model, batch, task, device)
+            # Encode with optional task parameter
+            if task and hasattr(model, 'encode') and 'task' in model.encode.__code__.co_varnames:
+                embeddings = model.encode(batch, task=task, show_progress_bar=False, normalize_embeddings=True)
+            else:
+                embeddings = model.encode(batch, show_progress_bar=False, normalize_embeddings=True)
             
             all_embeddings.append(embeddings)
             
