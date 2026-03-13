@@ -260,8 +260,7 @@ We then compute valence as the scalar projection onto a sentiment concept vector
 \begin{equation}
 v_{t}^{(a)} = \frac{\mathbf{e}_{t}^{(a)} \cdot \mathbf{c}}{\|\mathbf{c}\|}.
 \end{equation}
-Intuitively, this projection measures how far each turn's embedding lies along the positive--negative sentiment axis in the embedding space. Higher values indicate more positively-toned language, while lower values indicate more negative tone.
-To evaluate baseline differences in emotional tone between agents, we fitted a linear mixed-effects model:
+Intuitively, this projection measures how far each turn's embedding lies along the positive--negative sentiment axis in the embedding space. Higher values indicate more positively-toned language, while lower values indicate more negative tone. To evaluate baseline differences in emotional tone between agents, we fitted a linear mixed-effects model:
 \begin{equation}
 v_{it} = \beta_0 + \beta_1 \mathrm{Agent}_{it} + (1 \mid \mathrm{Story}_i),
 \end{equation}
@@ -451,7 +450,7 @@ Across analyses, human contributions were both more novel and yielded higher res
 
 The positive linear relationship between novelty and resonance characterizes the creative, frictionless nature of the writing task where interlocutors accept and take up the preceding contributions of the counterpart, regardless of the surprising character of this contribution given the prior context. Similarly to the previous findings, this pattern is asymmetric between agents. The effect of very surprising input on future discourse is stronger for users, indicating their writing privilege, where users' novel contributions have more influence on the future discourse, compared to equally novel LLM contributions. Supplementary analyses indicate consistent behavior across the four model subgroups (see Appendix~\ref{sec:appendix}).
 These asymmetries seem to mirror a complementary division of labor: humans provide innovation, on which LLMs elaborate, reminiscent of improvisational settings in which one participant introduces motifs and the other stabilizes and develops them.% This raises a broader question about human-machine authorship. While reinforcing the notion of LLMs as elaborative, rather than autonomous creative agents, it also highlights how human agency is still shaped by the model's adaptive tendencies. 
-Finally, the applicability of the directional metrics we introduce extend beyond the presented corpus. These approaches may serve as general tools for modeling interlocutor dynamics in conversation, multi-authored text, or political discourse.
+Finally, the applicability of the directional metrics we introduce extend beyond the presented corpus. These approaches may be further applicable as general tools for modeling interlocutor dynamics in conversation, multi-authored text, or political discourse.
 
 \section{Conclusion and Future Work}
 This study examined alignment dynamics and narrative agency in human–LLM collaborative storytelling. Our findings reveal clear patterns that characterize human–LLM co-writing: LLMs \textbf{mirror} the emotional tone established by human contributors, \textbf{but shift} it toward a more positive baseline. At the same time, LLMs tend to \textbf{elaborate} on human-introduced ideas \textbf{rather than introduce} novel narrative elements, and have less influence on the subsequent narrative.
