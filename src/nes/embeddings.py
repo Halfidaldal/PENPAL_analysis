@@ -15,6 +15,25 @@ from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 
 
+def _sanitize_text(value) -> str:
+    """Convert arbitrary cell values to safe text for embedding."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and np.isnan(value):
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    return str(value)
+
+
+def _sanitize_text_batch(batch: List) -> List[str]:
+    """Sanitize a batch to a list of strings for SentenceTransformer.encode."""
+    return [_sanitize_text(item) for item in batch]
+
+
 def get_device() -> torch.device:
     """Get the appropriate device (CUDA if available, else CPU)."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -49,11 +68,12 @@ def compute_embeddings_batch(
     print(f"Loading model: {model_name}")
     model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device), tokenizer_kwargs={"padding_side": "left", "trust_remote_code": True} if active_dataset=="TEXT" else {})
     
+    texts = _sanitize_text_batch(texts)
     print(f"Computing embeddings for {len(texts)} texts (batch_size={batch_size})...")
     
     all_embeddings = []
     for i in tqdm(range(0, len(texts), batch_size), desc="Embedding batches"):
-        batch = texts[i:i+batch_size]
+        batch = _sanitize_text_batch(texts[i:i+batch_size])
         
         # Encode with optional task parameter
         if task and hasattr(model, 'encode') and 'task' in model.encode.__code__.co_varnames:
@@ -115,13 +135,13 @@ def embed_story_columns(
             continue
         
         print(f"\n=== Embedding column: {col} ===")
-        texts = df[col].astype(str).tolist()
+        texts = _sanitize_text_batch(df[col].tolist())
         
         # Compute embeddings directly without loading model again
         print(f"Computing embeddings for {len(texts)} texts (batch_size={batch_size})...")
         all_embeddings = []
         for i in tqdm(range(0, len(texts), batch_size), desc="Embedding batches"):
-            batch = texts[i:i+batch_size]
+            batch = _sanitize_text_batch(texts[i:i+batch_size])
             
             # Encode with optional task parameter
             if task and hasattr(model, 'encode') and 'task' in model.encode.__code__.co_varnames:
