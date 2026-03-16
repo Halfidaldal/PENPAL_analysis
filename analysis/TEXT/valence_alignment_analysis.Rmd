@@ -590,7 +590,7 @@ p_probe_sentiment <- df_field %>%
   arrange(time, .by_group = TRUE) %>%
   mutate(turn_index = row_number()) %>%
   ungroup() %>%
-  filter(conversation_id %in% unique(conversation_id)[22:24]) %>%
+  filter(conversation_id %in% unique(conversation_id)[26:28]) %>%
   pivot_longer(cols = c(user_valence, ai_valence),
                names_to = "source", values_to = "valence") %>%
 mutate(

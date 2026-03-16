@@ -1,0 +1,42 @@
+# PENPAL Analysis - Python Dependencies
+
+# Core data handling
+pandas
+numpy
+pyarrow==15.0.0
+
+# Firebase/Firestore
+firebase-admin==6.5.0
+
+# OpenAI API (for AI-AI simulation)
+openai>=1.0.0
+
+# Machine Learning / Transformers
+torch
+transformers==4.53.3
+sentence-transformers
+accelerate
+# Progress bars
+tqdm==4.66.0
+Levenshtein
+textdescriptives
+# Configuration
+pyyaml==6.0.1
+
+# Visualization (for analysis notebooks)
+matplotlib==3.8.0
+seaborn==0.13.0
+plotly==5.18.0
+
+# Jupyter (for analysis notebooks)
+jupyter==1.0.0
+ipykernel==6.29.0
+
+# Additional utilities
+scikit-learn
+scipy==1.12.0
+
+# Note: sentence-transformers will automatically install:
+# - huggingface-hub
+# - tokenizers
+# - safetensors
