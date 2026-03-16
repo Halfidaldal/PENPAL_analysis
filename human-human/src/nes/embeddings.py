@@ -34,6 +34,24 @@ def _sanitize_text_batch(batch: List) -> List[str]:
     return [_sanitize_text(item) for item in batch]
 
 
+def _ensure_integer_input_ids(model: SentenceTransformer) -> None:
+    """Patch tokenizer output to guarantee integer input_ids for remote models."""
+    if getattr(model, "_input_ids_int_patch", False):
+        return
+
+    original_tokenize = model.tokenize
+
+    def tokenize_with_int_ids(*args, **kwargs):
+        features = original_tokenize(*args, **kwargs)
+        input_ids = features.get("input_ids") if isinstance(features, dict) else None
+        if isinstance(input_ids, torch.Tensor) and input_ids.dtype not in (torch.int64, torch.int32):
+            features["input_ids"] = input_ids.long()
+        return features
+
+    model.tokenize = tokenize_with_int_ids
+    model._input_ids_int_patch = True
+
+
 def get_device() -> torch.device:
     """Get the appropriate device (CUDA if available, else CPU)."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -67,6 +85,7 @@ def compute_embeddings_batch(
     
     print(f"Loading model: {model_name}")
     model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device), tokenizer_kwargs={"padding_side": "left", "trust_remote_code": True} if active_dataset=="TEXT" else {})
+    _ensure_integer_input_ids(model)
     
     texts = _sanitize_text_batch(texts)
     print(f"Computing embeddings for {len(texts)} texts (batch_size={batch_size})...")
@@ -128,6 +147,7 @@ def embed_story_columns(
     print(f"Loading model: {model_name}")
     tokenizer_kwargs = {"padding_side": "left", "trust_remote_code": True} if active_dataset == "TEXT" else {}
     model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device), tokenizer_kwargs=tokenizer_kwargs)
+    _ensure_integer_input_ids(model)
     
     for col in text_columns:
         if col not in df.columns:
@@ -178,12 +198,12 @@ def compute_story_embeddings_full_stories(
     batch_size: int = 32
 ) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Compute embeddings for full_story, full_user, and full_user2 columns.
+    Compute embeddings for full_story, full_user, and full_user2/full_ai columns.
     
     This is the "field" embedding approach where we embed the complete texts.
     
     Args:
-        df: DataFrame with 'full_story', 'full_user', 'full_user2' columns
+        df: DataFrame with 'full_story', 'full_user', and either 'full_user2' or 'full_ai'
         model_name: Model to use for embeddings
         batch_size: Batch size for processing
         
@@ -194,7 +214,8 @@ def compute_story_embeddings_full_stories(
         - user_embeddings (np.ndarray)
         - user2_embeddings (np.ndarray)
     """
-    columns_to_embed = ['full_story', 'full_user', 'full_user2']
+    second_speaker_col = 'full_user2' if 'full_user2' in df.columns else 'full_ai'
+    columns_to_embed = ['full_story', 'full_user', second_speaker_col]
     
     df_embedded, embeddings_dict = embed_story_columns(
         df,
@@ -206,6 +227,6 @@ def compute_story_embeddings_full_stories(
     
     story_embeddings = embeddings_dict.get('full_story')
     user_embeddings = embeddings_dict.get('full_user')
-    user2_embeddings = embeddings_dict.get('full_user2')
+    user2_embeddings = embeddings_dict.get(second_speaker_col)
     
     return df_embedded, story_embeddings, user_embeddings, user2_embeddings
