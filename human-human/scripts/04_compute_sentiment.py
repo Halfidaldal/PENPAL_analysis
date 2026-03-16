@@ -65,12 +65,12 @@ def main():
     
     # Compute dyadic (turn-by-turn) sentiment
     print("\nComputing turn-by-turn sentiment...")
-    #df_dyadic = compute_dyadic_sentiment(
-    #    append_turn_numbers(df_de_interaction_level),
-    #   valence_method=sentiment_config['valence_method'],
-    #   batch_size=sentiment_config['batch_size'],
-    #    model_name=sentiment_config['model_name']
-    #)
+    df_dyadic = compute_dyadic_sentiment(
+        append_turn_numbers(df_de_interaction_level),
+        valence_method=sentiment_config['valence_method'],
+        batch_size=sentiment_config['batch_size'],
+        model_name=sentiment_config['model_name']
+    )
     
     # Compute Semantic Projection Sentiment
     print("\nComputing Semantic Projection Sentiment...")

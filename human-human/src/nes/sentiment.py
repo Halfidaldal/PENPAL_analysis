@@ -17,6 +17,27 @@ from sentence_transformers import SentenceTransformer
 import os
 
 
+def _sanitize_text(value) -> str:
+    """Convert arbitrary values to safe text for tokenization/encoding."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and np.isnan(value):
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    if isinstance(value, (list, tuple)):
+        return " ".join(str(v) for v in value if v is not None)
+    return str(value)
+
+
+def _sanitize_text_batch(texts: List) -> List[str]:
+    """Sanitize a text batch to a list of plain strings."""
+    return [_sanitize_text(text) for text in texts]
+
+
 def get_device() -> torch.device:
     """Get the appropriate device (CUDA if available, else CPU)."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,13 +125,14 @@ def compute_sentiment_batch(
     Returns:
         NumPy array of sentiment scores (float, range approx -1 to +1)
     """
+    texts = _sanitize_text_batch(texts)
     tokenizer, model, device = load_sentiment_model(model_name, device)
     
     all_scores = []
     print(f"Computing sentiment for {len(texts)} texts (batch_size={batch_size})...")
     
     for i in tqdm(range(0, len(texts), batch_size), desc="Sentiment batches"):
-        batch = texts[i:i+batch_size]
+        batch = _sanitize_text_batch(texts[i:i+batch_size])
         inputs = tokenizer(
             batch,
             return_tensors="pt",
@@ -155,7 +177,7 @@ def add_sentiment_to_dataframe(
             continue
         
         print(f"\n=== Computing sentiment for column: {col} ===")
-        texts = df[col].astype(str).tolist()
+        texts = _sanitize_text_batch(df[col].tolist())
         
         scores = compute_sentiment_batch(
             texts,
@@ -200,13 +222,13 @@ def compute_dyadic_sentiment(
     # Compute sentiment for all turns
     print(f"\nComputing sentiment for {len(df)} turns...")
     user_scores = compute_sentiment_batch(
-        df['user'].astype(str).tolist(),
+        _sanitize_text_batch(df['user'].tolist()),
         batch_size=batch_size,
         valence_method=valence_method,
         model_name=model_name
     )
     user2_scores = compute_sentiment_batch(
-        df['user2'].astype(str).tolist(),
+        _sanitize_text_batch(df['user2'].tolist()),
         batch_size=batch_size,
         valence_method=valence_method,
         model_name=model_name
@@ -293,4 +315,4 @@ def compute_semantic_projection_batch(
         NumPy array of sentiment scores
     """
     projector = SemanticProjectionSentiment(model_name, vector_path, device)
-    return projector.compute_score(texts, batch_size)
+    return projector.compute_score(_sanitize_text_batch(texts), batch_size)
