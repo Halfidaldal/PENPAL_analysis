@@ -105,14 +105,14 @@ def calc_sentence_surprisal(context_ids, target_ids, model, window_size=128):
 
 def compute_novelty_scores(df, tokenizer, model, window_size=128):
     """
-    Compute novelty (surprise) scores for user and AI utterances.
+    Compute novelty (surprise) scores for user and user2 utterances.
     
     Novelty = how surprising this utterance is given prior context.
     
     Parameters
     ----------
     df : pd.DataFrame
-        Input dataframe with user and AI text columns
+        Input dataframe with user and user2 text columns
     tokenizer : transformers.PreTrainedTokenizer
         Tokenizer
     model : transformers.PreTrainedModel
@@ -151,7 +151,7 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     
     last_client = None
     user_novelty, user_raw, user_entropy = [], [], []
-    ai_novelty, ai_raw, ai_entropy = [], [], []
+    user2_novelty, user2_raw, user2_entropy = [], [], []
     
     for _, row in tqdm(df.iterrows(), total=len(df), desc="Computing novelty"):
         client = row.get("conversation_id", None)
@@ -190,12 +190,12 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     # We overwrite 'user_surprise' with the new metric to propagate the fix,
     # but we save 'user_surprise_raw' just in case.
     df["user_surprise"] = user_novelty
-    df["ai_surprise"] = ai_novelty
+    df["user2_surprise"] = user2_novelty
     df["user_surprise_raw"] = user_raw
-    df["ai_surprise_raw"] = ai_raw
+    df["user2_surprise_raw"] = user2_raw
     
     df["user_entropy"] = user_entropy
-    df["ai_entropy"] = ai_entropy
+    df["user2_entropy"] = user2_entropy
     
     return df
 
@@ -242,7 +242,7 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
         return next_row["user_ids"]
     
     user_transience, user_raw = [], []
-    ai_transience, ai_raw = [], []
+    user2_transience, user2_raw = [], []
     
     for pos in tqdm(range(len(df)), total=len(df), desc="Computing transience"):
         row = df.iloc[pos]
