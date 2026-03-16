@@ -187,7 +187,7 @@ def compute_dyadic_sentiment(
         batch_size: Batch size for processing
         
     Returns:
-        DataFrame with columns: conversation_id, turn, type (user/ai), text, sentiment_score, pct_turn
+        DataFrame with columns: conversation_id, turn, type (user/user2), text, sentiment_score, pct_turn
     """
         
     
@@ -205,14 +205,14 @@ def compute_dyadic_sentiment(
         valence_method=valence_method,
         model_name=model_name
     )
-    ai_scores = compute_sentiment_batch(
-        df['ai'].astype(str).tolist(),
+    user2_scores = compute_sentiment_batch(
+        df['user2'].astype(str).tolist(),
         batch_size=batch_size,
         valence_method=valence_method,
         model_name=model_name
     )
     df['user_sentiment_score'] = user_scores
-    df['ai_sentiment_score'] = ai_scores
+    df['user2_sentiment_score'] = user2_scores
     df = df.sort_values(['conversation_id', 'turn']).reset_index(drop=True)
     return df
 

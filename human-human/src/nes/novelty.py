@@ -132,7 +132,7 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
         )["input_ids"]
     )
 
-    df["ai_ids"] = df["ai"].apply(
+    df["user2_ids"] = df["user2"].apply(
         lambda txt: tokenizer(
             "" if pd.isna(txt) else str(txt),
             add_special_tokens=False
@@ -177,15 +177,15 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
         
         context_buffer.extend(u_ids)
         
-        # AI novelty
-        a_ids = row["ai_ids"]
-        avg_a, total_a = calc_sentence_surprisal(context_buffer, a_ids, model, window_size)
-        avg_base_a, _ = calc_sentence_surprisal(base_context, a_ids, model, window_size)
+        # User2 novelty
+        u2_ids = row["user2_ids"]
+        avg_u2, total_u2 = calc_sentence_surprisal(context_buffer, u2_ids, model, window_size)
+        avg_base_u2, _ = calc_sentence_surprisal(base_context, u2_ids, model, window_size)
         
-        ai_raw.append(avg_a)
-        ai_novelty.append(avg_a - avg_base_a)
-        ai_entropy.append(total_a)
-        context_buffer.extend(a_ids)
+        user2_raw.append(avg_u2)
+        user2_novelty.append(avg_u2 - avg_base_u2)
+        user2_entropy.append(total_u2)
+        context_buffer.extend(u2_ids)
     
     # We overwrite 'user_surprise' with the new metric to propagate the fix,
     # but we save 'user_surprise_raw' just in case.
@@ -202,17 +202,17 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
 
 def compute_transience_scores(df, tokenizer, model, window_size=40):
     """
-    Compute transience scores for user and AI utterances.
+    Compute transience scores for user and user2 utterances.
 
     Transience = how surprising the immediate next turn is given this utterance.
-    For user turns, the next turn is the paired AI response in the same row.
-    For AI turns, the next turn is the next row's user response in the same
+    For user turns, the next turn is the paired USER2 response in the same row.
+    For USER2 turns, the next turn is the next row's user response in the same
     conversation.
     
     Parameters
     ----------
     df : pd.DataFrame
-        Input dataframe (must already have user_ids and ai_ids columns)
+        Input dataframe (must already have user_ids and user2_ids columns)
     tokenizer : transformers.PreTrainedTokenizer
         Tokenizer
     model : transformers.PreTrainedModel
@@ -248,10 +248,10 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
         row = df.iloc[pos]
         current_conversation_id = row.get("conversation_id", None)
         
-        # User transience target: full paired AI response (same row)
-        future_ids_user = row["ai_ids"]
-        # AI transience target: full next user turn (next row, same conversation)
-        future_ids_ai = gather_next_user_ids(pos, df, current_conversation_id)
+        # User transience target: full paired USER2 response (same row)
+        future_ids_user = row["user2_ids"]
+        # USER2 transience target: full next user turn (next row, same conversation)
+        future_ids_user2 = gather_next_user_ids(pos, df, current_conversation_id)
         
         # User transience (Predictor is just the current turn)
         # We assume Transience context is just the immediate past turn (no full history), 
@@ -268,20 +268,20 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
             user_transience.append(0.0)
             user_raw.append(0.0)
         
-        # AI transience
-        a_context = row["ai_ids"] # Use full AI turn as context
-        if future_ids_ai:
-            avg_fut_ai, _ = calc_sentence_surprisal(a_context, future_ids_ai, model, window_size)
-            avg_base_ai, _ = calc_sentence_surprisal(base_context, future_ids_ai, model, window_size)
-            ai_transience.append(avg_fut_ai - avg_base_ai)
-            ai_raw.append(avg_fut_ai)
+        # USER2 transience
+        u2_context = row["user2_ids"] # Use full USER2 turn as context
+        if future_ids_user2:
+            avg_fut_user2, _ = calc_sentence_surprisal(u2_context, future_ids_user2, model, window_size)
+            avg_base_user2, _ = calc_sentence_surprisal(base_context, future_ids_user2, model, window_size)
+            user2_transience.append(avg_fut_user2 - avg_base_user2)
+            user2_raw.append(avg_fut_user2)
         else:
-            ai_transience.append(0.0)
-            ai_raw.append(0.0)
+            user2_transience.append(0.0)
+            user2_raw.append(0.0)
     
     df["user_transience"] = user_transience
-    df["ai_transience"] = ai_transience
+    df["user2_transience"] = user2_transience
     df["user_transience_raw"] = user_raw
-    df["ai_transience_raw"] = ai_raw
+    df["user2_transience_raw"] = user2_raw
     
     return df

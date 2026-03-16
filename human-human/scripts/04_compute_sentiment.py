@@ -4,7 +4,7 @@ Script 04: Compute sentiment scores.
 
 This script:
 1. Loads story data with embeddings
-2. Computes sentiment scores for full_user and full_ai
+2. Computes sentiment scores for full_user and full_user2
 3. Computes turn-by-turn dyadic sentiment
 4. Saves results to data/processed/
 
@@ -49,11 +49,11 @@ def main():
         df_de_full = df_full.copy()
         df_de_interaction_level = df_interaction_level.copy()
     
-    # Compute sentiment for full_user and full_ai
+    # Compute sentiment for full_user and full_user2
     print(f"\nComputing sentiment using {sentiment_config['model_name']}...")
     #df_with_sentiment = add_sentiment_to_dataframe(
     #    df_de_full,
-    #    text_columns=['full_user', 'full_ai'],
+    #    text_columns=['full_user', 'full_user2'],
     #    model_name=sentiment_config['model_name'],
     #    batch_size=sentiment_config['batch_size'],
     #    valence_method=sentiment_config['valence_method']
@@ -81,10 +81,10 @@ def main():
         batch_size=sentiment_config['batch_size']
     )
     
-    # AI turns
-    print("Projecting AI turns...")
-    df_dyadic['ai_sentiment_projection'] = compute_semantic_projection_batch(
-        df_dyadic['ai'].astype(str).tolist(),
+    # User2 turns
+    print("Projecting User2 turns...")
+    df_dyadic['user2_sentiment_projection'] = compute_semantic_projection_batch(
+        df_dyadic['user2'].astype(str).tolist(),
         batch_size=sentiment_config['batch_size']
     )
     

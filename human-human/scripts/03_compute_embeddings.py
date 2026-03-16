@@ -4,7 +4,7 @@ Script 03: Compute embeddings for story data.
 
 This script:
 1. Loads cleaned story data
-2. Computes embeddings for full_story, full_user, full_ai
+2. Computes embeddings for full_story, full_user, full_user2
 3. Saves embeddings as both:
    - Parquet file (with embeddings as list columns)
    - Separate .npy files for each embedding type
@@ -38,7 +38,7 @@ def main():
     
     # Compute embeddings
     print(f"\nComputing embeddings using {embeddings_config['model_name']}...")
-    df_embedded, story_emb, user_emb, ai_emb = compute_story_embeddings_full_stories(
+    df_embedded, story_emb, user_emb, user2_emb = compute_story_embeddings_full_stories(
         df_full,
         model_name=embeddings_config['model_name'],
         batch_size=embeddings_config['batch_size'],
@@ -47,7 +47,7 @@ def main():
     
     df_embedded_interaction, embeddings_interaction_dict = embed_story_columns(
         df_interactions,
-        ['user', 'ai'],
+        ['user', 'user2'],
         model_name=embeddings_config['model_name'],
         batch_size=embeddings_config['batch_size'],
         active_dataset=config.get('active_dataset', 'TEXT')
@@ -61,7 +61,7 @@ def main():
     # Save individual .npy files for numpy arrays
     save_npy(story_emb, "story_embeddings_full_simulated.npy" if simulated else "story_embeddings_full.npy",  stage="processed")
     save_npy(user_emb, "story_user_embeddings_full_simulated.npy" if simulated else "story_user_embeddings_full.npy", stage="processed")
-    save_npy(ai_emb, "story_ai_embeddings_full_simulated.npy" if simulated else "story_ai_embeddings_full.npy", stage="processed")
+    save_npy(user2_emb, "story_user2_embeddings_full_simulated.npy" if simulated else "story_user2_embeddings_full.npy", stage="processed")
         
     print(f"\n✓ Computed embeddings for {len(df_embedded)} stories")
     print(f"✓ Embedding dimension: {story_emb.shape[1]}")
