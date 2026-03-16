@@ -36,9 +36,9 @@ def main():
     print("Loading story data with embeddings...")
     
 
-    df_full = load_parquet("story_embeddings_full_simulated.parquet" if simulated else "story_embeddings_full.parquet", stage="processed")
+    #df_full = load_parquet("story_embeddings_full_simulated.parquet" if simulated else "story_embeddings_full.parquet", stage="processed")
     df_interaction_level = load_parquet("story_embeddings_interaction_level_simulated.parquet" if simulated else "story_embeddings_interaction_level.parquet", stage="processed")
-    print(f"Loaded {len(df_full)} stories")
+    #print(f"Loaded {len(df_full)} stories")
     
     # Filter to German stories only (adjust as needed)
     if config.get('active_dataset') == 'Berlin':
@@ -46,7 +46,7 @@ def main():
         df_de_interaction_level = df_interaction_level[df_interaction_level['language'] == 'de'].copy()
         print(f"Filtered to {len(df_de_full)} German stories")
     else:
-        df_de_full = df_full.copy()
+        #df_de_full = df_full.copy()
         df_de_interaction_level = df_interaction_level.copy()
     
     # Compute sentiment for full_user and full_user2
