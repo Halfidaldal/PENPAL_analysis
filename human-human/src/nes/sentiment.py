@@ -17,6 +17,35 @@ from sentence_transformers import SentenceTransformer
 import os
 
 
+def _sanitize_text(value) -> str:
+    """Convert arbitrary values to safe strings for tokenization."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and np.isnan(value):
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    return str(value)
+
+
+def _sanitize_text_batch(texts: List) -> List[str]:
+    """Sanitize a list-like batch to plain strings."""
+    return [_sanitize_text(text) for text in texts]
+
+
+def _resolve_tokenizer_max_length(tokenizer) -> Optional[int]:
+    """Return a usable max_length or None when tokenizer has no practical limit."""
+    max_len = getattr(tokenizer, "model_max_length", None)
+    if not isinstance(max_len, int):
+        return None
+    if max_len <= 0 or max_len >= 100000:
+        return None
+    return max_len
+
+
 def get_device() -> torch.device:
     """Get the appropriate device (CUDA if available, else CPU)."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -105,18 +134,23 @@ def compute_sentiment_batch(
         NumPy array of sentiment scores (float, range approx -1 to +1)
     """
     tokenizer, model, device = load_sentiment_model(model_name, device)
+    texts = _sanitize_text_batch(texts)
+    tokenizer_max_len = _resolve_tokenizer_max_length(tokenizer)
     
     all_scores = []
     print(f"Computing sentiment for {len(texts)} texts (batch_size={batch_size})...")
     
     for i in tqdm(range(0, len(texts), batch_size), desc="Sentiment batches"):
         batch = texts[i:i+batch_size]
-        inputs = tokenizer(
-            batch,
-            return_tensors="pt",
-            truncation=True,
-            padding=True
-        ).to(device)
+        tokenizer_kwargs = {
+            "return_tensors": "pt",
+            "padding": True,
+            "truncation": tokenizer_max_len is not None,
+        }
+        if tokenizer_max_len is not None:
+            tokenizer_kwargs["max_length"] = tokenizer_max_len
+
+        inputs = tokenizer(batch, **tokenizer_kwargs).to(device)
         
         with torch.no_grad():
             outputs = model(**inputs)
@@ -155,7 +189,7 @@ def add_sentiment_to_dataframe(
             continue
         
         print(f"\n=== Computing sentiment for column: {col} ===")
-        texts = df[col].astype(str).tolist()
+        texts = _sanitize_text_batch(df[col].tolist())
         
         scores = compute_sentiment_batch(
             texts,
@@ -200,13 +234,13 @@ def compute_dyadic_sentiment(
     # Compute sentiment for all turns
     print(f"\nComputing sentiment for {len(df)} turns...")
     user_scores = compute_sentiment_batch(
-        df['user'].astype(str).tolist(),
+        _sanitize_text_batch(df['user'].tolist()),
         batch_size=batch_size,
         valence_method=valence_method,
         model_name=model_name
     )
     user2_scores = compute_sentiment_batch(
-        df['user2'].astype(str).tolist(),
+        _sanitize_text_batch(df['user2'].tolist()),
         batch_size=batch_size,
         valence_method=valence_method,
         model_name=model_name

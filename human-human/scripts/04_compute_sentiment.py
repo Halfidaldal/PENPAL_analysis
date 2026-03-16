@@ -42,12 +42,15 @@ def main():
     
     # Filter to German stories only (adjust as needed)
     if config.get('active_dataset') == 'Berlin':
-        df_de_full = df_full[df_full['language'] == 'de'].copy()
         df_de_interaction_level = df_interaction_level[df_interaction_level['language'] == 'de'].copy()
-        print(f"Filtered to {len(df_de_full)} German stories")
+        print(f"Filtered to {len(df_de_interaction_level)} German interaction rows")
     else:
         #df_de_full = df_full.copy()
         df_de_interaction_level = df_interaction_level.copy()
+
+    if 'user2' not in df_de_interaction_level.columns and 'ai' in df_de_interaction_level.columns:
+        df_de_interaction_level = df_de_interaction_level.copy()
+        df_de_interaction_level['user2'] = df_de_interaction_level['ai']
     
     # Compute sentiment for full_user and full_user2
     print(f"\nComputing sentiment using {sentiment_config['model_name']}...")
