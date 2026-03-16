@@ -178,11 +178,11 @@ def compute_dyadic_sentiment(
     """
     Compute turn-by-turn sentiment for dyadic conversations.
     
-    Splits stories into USER/AI turns and computes sentiment for each turn.
+    Splits stories into USER/USER2 turns and computes sentiment for each turn.
     
     Args:
         df: DataFrame with story text
-        story_column: Column containing full story text with USER:/AI: markers
+        story_column: Column containing full story text with USER:/USER2: markers
         valence_method: Method for valence scoring
         batch_size: Batch size for processing
         

@@ -40,18 +40,18 @@ def parse_embedding(x):
     return arr if (isinstance(arr, np.ndarray) and arr.ndim == 1) else None
 
 
-def interleave_and_align(user_embs, ai_embs):
+def interleave_and_align(user_embs, user2_embs):
     """
-    Interleave user and AI embeddings, then shift to align properly.
+    Interleave user and USER2 embeddings, then shift to align properly.
     
-    Returns array starting from first AI embedding (after first user).
+    Returns array starting from first USER2 embedding (after first user).
     
     Parameters
     ----------
     user_embs : np.ndarray
         User embeddings, shape (T, D)
-    ai_embs : np.ndarray
-        AI embeddings, shape (T, D)
+    user2_embs : np.ndarray
+        USER2 embeddings, shape (T, D)
         
     Returns
     -------
@@ -61,8 +61,8 @@ def interleave_and_align(user_embs, ai_embs):
     T, D = user_embs.shape
     E = np.empty((2 * T, D), dtype=float)
     E[0::2] = user_embs
-    E[1::2] = ai_embs
-    return E[1:]  # Drop first user, start from first AI
+    E[1::2] = user2_embs
+    return E[1:]  # Drop first user, start from first USER2
 
 
 def compute_nonoverlap_distances(embeddings, window_length):
@@ -110,7 +110,7 @@ def compute_nonoverlap_distances(embeddings, window_length):
 def compute_semantic_exploration_metrics(
     df,
     user_embedding_col="user_embedding",
-    ai_embedding_col="ai_embedding",
+    user2_embedding_col="user2_embedding",
     max_k=10
 ):
     """
@@ -125,8 +125,8 @@ def compute_semantic_exploration_metrics(
         Input dataframe with embedding columns
     user_embedding_col : str
         Name of user embedding column
-    ai_embedding_col : str
-        Name of AI embedding column
+    user2_embedding_col : str
+        Name of USER2 embedding column
     max_k : int
         Maximum bin-width parameter (window_length = k + 1)
         
@@ -135,7 +135,7 @@ def compute_semantic_exploration_metrics(
     pd.DataFrame
         Long-format dataframe with columns:
         - conversation_id
-        - agent ('user' or 'ai' for single-agent metrics, absent for interleaved)
+        - agent ('user' or 'user2' for single-agent metrics, absent for interleaved)
         - k (bin-width parameter)
         - bin_index (which consecutive window pair)
         - distance (cosine distance between centroids)
@@ -143,11 +143,11 @@ def compute_semantic_exploration_metrics(
     # Parse embeddings
     df = df.copy()
     df['user_emb'] = df[user_embedding_col].apply(parse_embedding)
-    df['ai_emb'] = df[ai_embedding_col].apply(parse_embedding)
+    df['user2_emb'] = df[user2_embedding_col].apply(parse_embedding)
     
     # Filter out invalid embeddings
     before = len(df)
-    df = df[df['user_emb'].notnull() & df['ai_emb'].notnull()].reset_index(drop=True)
+    df = df[df['user_emb'].notnull() & df['user2_emb'].notnull()].reset_index(drop=True)
     print(f"Dropped {before - len(df)} rows with invalid embeddings.")
     
     # Group by story
@@ -156,21 +156,21 @@ def compute_semantic_exploration_metrics(
     records = []
     for conversation_id, grp in tqdm(story_groups, desc="Computing semantic exploration"):
         user_list = grp['user_emb'].tolist()
-        ai_list = grp['ai_emb'].tolist()
+        user2_list = grp['user2_emb'].tolist()
         starter = grp['starter']
         llm_type = grp['llm_type']
         
         try:
             user_embs = np.vstack(user_list)
-            ai_embs = np.vstack(ai_list)
+            user2_embs = np.vstack(user2_list)
         except Exception:
             continue
         
-        if user_embs.shape != ai_embs.shape:
+        if user_embs.shape != user2_embs.shape:
             continue
         
         # Interleave and align
-        E = interleave_and_align(user_embs, ai_embs)
+        E = interleave_and_align(user_embs, user2_embs)
         
         # Compute distances at different window sizes
         for k in range(1, max_k + 1):
@@ -188,7 +188,7 @@ def compute_semantic_exploration_metrics(
                     'llm_type': llm_type.iloc[0]
                 })
                 
-        for agent_name, embs in (("user", user_embs), ("ai", ai_embs)):
+        for agent_name, embs in (("user", user_embs), ("user2", user2_embs)):
             for k in range(1, max_k + 1):
                 window_length = k + 1
                 distances = compute_nonoverlap_distances(embs, window_length)
@@ -237,11 +237,11 @@ def compute_ai_ai_semantic_exploration(
     # Parse embeddings
     df = df.copy()
     df['user_emb'] = df[ai1_embedding_col].apply(parse_embedding)
-    df['ai_emb'] = df[ai2_embedding_col].apply(parse_embedding)
+    df['user2_emb'] = df[ai2_embedding_col].apply(parse_embedding)
     
     # Filter out invalid embeddings
     before = len(df)
-    df = df[df['user_emb'].notnull() & df['ai_emb'].notnull()].reset_index(drop=True)
+    df = df[df['user_emb'].notnull() & df['user2_emb'].notnull()].reset_index(drop=True)
     print(f"Dropped {before - len(df)} rows with invalid embeddings.")
     
     # Group by story
@@ -250,19 +250,19 @@ def compute_ai_ai_semantic_exploration(
     records = []
     for conversation_id, grp in tqdm(story_groups, desc="Computing AI-AI semantic exploration"):
         user_list = grp['user_emb'].tolist()
-        ai_list = grp['ai_emb'].tolist()
+        user2_list = grp['user2_emb'].tolist()
         
         try:
             user_embs = np.vstack(user_list)
-            ai_embs = np.vstack(ai_list)
+            user2_embs = np.vstack(user2_list)
         except Exception:
             continue
         
-        if user_embs.shape != ai_embs.shape:
+        if user_embs.shape != user2_embs.shape:
             continue
         
         # Interleave and align
-        E = interleave_and_align(user_embs, ai_embs)
+        E = interleave_and_align(user_embs, user2_embs)
         
         # Compute distances at different window sizes
         for k in range(1, max_k + 1):
@@ -370,19 +370,19 @@ def compute_lag_exploration_metrics(
     records = []
     for conversation_id, grp in tqdm(story_groups, desc="Computing lag exploration"):
         user_list = grp['user_emb'].tolist()
-        ai_list = grp['ai_emb'].tolist()
+        user2_list = grp['user2_emb'].tolist()
         starter = grp['starter'].iloc[0] if 'starter' in grp else None
         llm_type = grp['llm_type'].iloc[0] if 'llm_type' in grp else None
         
         try:
             user_embs = np.vstack(user_list)
-            ai_embs = np.vstack(ai_list)
+            user2_embs = np.vstack(user2_list)
         except Exception:
             continue
             
         # Interleaved
-        if user_embs.shape == ai_embs.shape:
-            E = interleave_and_align(user_embs, ai_embs)
+        if user_embs.shape == user2_embs.shape:
+            E = interleave_and_align(user_embs, user2_embs)
             lag_results = compute_lag_distances(E, max_lag)
             for res in lag_results:
                 res.update({
@@ -394,7 +394,7 @@ def compute_lag_exploration_metrics(
                 records.append(res)
                 
         # Individual agents
-        for agent_name, embs in (("user", user_embs), ("ai", ai_embs)):
+        for agent_name, embs in (("user", user_embs), ("user2", user2_embs)):
             lag_results = compute_lag_distances(embs, max_lag)
             for res in lag_results:
                 res.update({
