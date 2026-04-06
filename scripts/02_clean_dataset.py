@@ -76,6 +76,11 @@ def main():
     # Load raw data
     print(f"\nLoading raw story data from {input_file}...")
     df = load_csv(input_file, stage="raw")
+    df = df.rename(columns={
+        df.columns[1]: "author_1",
+        df.columns[2]: "author_2"
+    })
+    
     print(f"Loaded {len(df)} rows")
     
     # AI-AI has its own cleaning path
@@ -86,14 +91,14 @@ def main():
     else:
         # Human experiments: optional spell correction + edit distance filtering
         if api_key and experiment in ['human-ai', 'human-human']:
-            print("\nApplying spell correction to user inputs...")
-            df['user_corrected'] = [correct_spelling(text, api_key=api_key) for text in tqdm(df["user"], desc="Spell Correction")]
+            print("\nApplying spell correction to author_1 inputs...")
+            df['author_1_corrected'] = [correct_spelling(text, api_key=api_key) for text in tqdm(df["author_1"], desc="Spell Correction")]
             print("Spell correction complete.")
             df['edit_distance'] = [compute_edit_distance(row) for _, row in tqdm(df.iterrows(), total=len(df), desc="Edit Distance Computation")]
             print("Edit distance computation complete.")
             
-            df['user'] = df['user_corrected']
-            df.drop(columns=['user_corrected'], inplace=True)
+            df['author_1'] = df['author_1_corrected']
+            df.drop(columns=['author_1_corrected'], inplace=True)
         else:
             print("\nSkipping spell correction (no API key or not applicable)")
         

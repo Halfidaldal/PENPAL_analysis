@@ -33,9 +33,6 @@ def main():
     
     print(f"Active experiment: {experiment}")
     
-    # Determine column names based on experiment
-    author_2_col = 'ai' if experiment == 'human-ai' else 'user2'
-    
     # Load story embeddings data
     print("Loading story data with embeddings...")
     
@@ -58,19 +55,19 @@ def main():
         model_name=sentiment_config['model_name']
     )
     
-    # Compute Semantic Projection Sentiment
+    # Compute Semantic Projection Sentiment using standardized column names
     print("\nComputing Semantic Projection Sentiment...")
     # Author 1 turns
     print("Projecting author_1 turns...")
-    df_dyadic['user_sentiment_projection'] = compute_semantic_projection_batch(
-        df_dyadic['user'].astype(str).tolist(),
+    df_dyadic['author_1_sentiment_projection'] = compute_semantic_projection_batch(
+        df_dyadic['author_1'].astype(str).tolist(),
         batch_size=sentiment_config['batch_size']
     )
     
     # Author 2 turns
-    print(f"Projecting {author_2_col} turns...")
-    df_dyadic[f'{author_2_col}_sentiment_projection'] = compute_semantic_projection_batch(
-        df_dyadic[author_2_col].astype(str).tolist(),
+    print("Projecting author_2 turns...")
+    df_dyadic['author_2_sentiment_projection'] = compute_semantic_projection_batch(
+        df_dyadic['author_2'].astype(str).tolist(),
         batch_size=sentiment_config['batch_size']
     )
     

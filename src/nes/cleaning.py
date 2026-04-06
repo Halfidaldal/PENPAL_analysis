@@ -91,16 +91,16 @@ def normalize_columns(df: pd.DataFrame, experiment: str) -> pd.DataFrame:
             df = df.rename(columns={'full_ai_dot': 'full_author_2_dot'})
             
     elif experiment == 'ai-ai':
-        # agent_1 -> author_1, agent_2 -> author_2
-        if 'agent_1' in df.columns:
-            df = df.rename(columns={'agent_1': 'author_1'})
-        if 'agent_2' in df.columns:
-            df = df.rename(columns={'agent_2': 'author_2'})
+        # author_1 -> author_1, author_2 -> author_2
+        if 'author_1' in df.columns:
+            df = df.rename(columns={'author_1': 'author_1'})
+        if 'author_2' in df.columns:
+            df = df.rename(columns={'author_2': 'author_2'})
         # Handle full text columns if present
-        if 'full_agent_1' in df.columns:
-            df = df.rename(columns={'full_agent_1': 'full_author_1'})
-        if 'full_agent_2' in df.columns:
-            df = df.rename(columns={'full_agent_2': 'full_author_2'})
+        if 'full_author_1' in df.columns:
+            df = df.rename(columns={'full_author_1': 'full_author_1'})
+        if 'full_author_2' in df.columns:
+            df = df.rename(columns={'full_author_2': 'full_author_2'})
     else:
         raise ValueError(f"Unknown experiment: {experiment}")
     
@@ -414,38 +414,33 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
     Build full_story, full_author_1, and full_author_2 columns by concatenating
     text within each conversation_id or story_id.
     
+    Uses standardized column names: author_1, author_2.
+    
     Args:
-        df: DataFrame with grouping column and author columns
+        df: DataFrame with author_1, author_2 columns and grouping column
         experiment: Experiment type ('human-ai', 'human-human', or 'ai-ai')
         
     Returns:
         DataFrame grouped by conversation/story with concatenated text columns
     """
-    # Determine column names based on experiment
+    # Determine grouping column based on experiment
     if experiment == 'ai-ai':
-        author_1_col = 'agent_1'
-        author_2_col = 'agent_2'
         group_col = 'story_id'
     else:
-        author_1_col = 'user'
-        author_2_col = 'ai' if experiment == 'human-ai' else 'user2'
         group_col = 'conversation_id'
-        
-        if author_2_col not in df.columns:
-            # Fallback: try the other column
-            author_2_col = 'user2' if 'user2' in df.columns else 'ai'
     
-    if author_1_col not in df.columns:
-        raise ValueError(f"Expected '{author_1_col}' column in DataFrame")
-    if author_2_col not in df.columns:
-        raise ValueError(f"Expected '{author_2_col}' column in DataFrame")
+    # Validate columns
+    if 'author_1' not in df.columns:
+        raise ValueError("Expected 'author_1' column in DataFrame")
+    if 'author_2' not in df.columns:
+        raise ValueError("Expected 'author_2' column in DataFrame")
     if group_col not in df.columns:
         raise ValueError(f"Expected '{group_col}' column in DataFrame")
     
     # Group by conversation/story and concatenate
     agg_dict = {
-        author_1_col: lambda x: ' '.join(x.astype(str)),
-        author_2_col: lambda x: ' '.join(x.astype(str)),
+        'author_1': lambda x: ' '.join(x.astype(str)),
+        'author_2': lambda x: ' '.join(x.astype(str)),
     }
     # Add metadata columns if present
     for col in ['language', 'client_id', 'workshop_id', 'timestamp', 
@@ -456,16 +451,16 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
     
     story_df = df.groupby(group_col).agg(agg_dict).reset_index()
     
-    # Padded versions for parsing textdescriptives
-    story_df['full_user_dot'] = df.groupby(group_col)[author_1_col].apply(
+    # Padded versions for parsing textdescriptives (using standardized names)
+    story_df['full_author_1_dot'] = df.groupby(group_col)['author_1'].apply(
         lambda x: ' '.join((x.astype(str) + '.').tolist())).values
-    story_df['full_ai_dot'] = df.groupby(group_col)[author_2_col].apply(
+    story_df['full_author_2_dot'] = df.groupby(group_col)['author_2'].apply(
         lambda x: ' '.join((x.astype(str) + '.').tolist())).values
 
-    # Rename columns to unified names
+    # Rename columns to full_ prefix
     story_df = story_df.rename(columns={
-        author_1_col: 'full_user',
-        author_2_col: 'full_ai',
+        'author_1': 'full_author_1',
+        'author_2': 'full_author_2',
     })
     
     # Also rename group column to conversation_id for consistency
@@ -481,8 +476,8 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
         else:
             mask = df['conversation_id'] == group_val
         
-        author1s = df[mask][author_1_col].tolist()
-        author2s = df[mask][author_2_col].tolist()
+        author1s = df[mask]['author_1'].tolist()
+        author2s = df[mask]['author_2'].tolist()
         parts = []
         for u, a in zip(author1s, author2s):
             parts.append(f"{u}")
@@ -500,8 +495,10 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_tu
     """
     Clean starter text and identify which author started.
     
+    Uses standardized column names: author_1, author_2.
+    
     Args:
-        df: Input DataFrame
+        df: Input DataFrame with author_1, author_2 columns
         interaction_count: Whether to filter by interaction_count column
         max_turns: Maximum turns to keep
         experiment: Experiment type ('human-ai' or 'human-human')
@@ -509,25 +506,23 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_tu
     Returns:
         Cleaned DataFrame with 'starter' column
     """
-    # Determine column names based on experiment
+    # Determine respondent column based on experiment
     if experiment == 'human-ai':
-        author_2_col = 'ai'
         respondent_col = 'respondent_id'
-        author_2_starter_label = 'ai'
+        author_2_starter_label = 'author_2'
     else:
-        author_2_col = 'user2'
         respondent_col = 'respondent_id_u1' if 'respondent_id_u1' in df.columns else 'respondent_id'
-        author_2_starter_label = 'user2'
+        author_2_starter_label = 'author_2'
     
-    # Identify starters
+    # Identify starters (who started with "This is the story of" placeholder)
     if respondent_col in df.columns:
         df['turn'] = df.groupby(respondent_col).cumcount() + 1
-        starter_map = (df['user'] == 'This is the story of').groupby(df[respondent_col]).any().map(
-            {True: author_2_starter_label, False: 'user'}
+        starter_map = (df['author_1'] == 'This is the story of').groupby(df[respondent_col]).any().map(
+            {True: author_2_starter_label, False: 'author_1'}
         )
         df['starter'] = df[respondent_col].map(starter_map)
         print(f"Identified starters for {len(df[df['starter'] == author_2_starter_label][respondent_col].unique())} {author_2_starter_label}")
-        print(f"Identified starters for {len(df[df['starter'] == 'user'][respondent_col].unique())} user")
+        print(f"Identified starters for {len(df[df['starter'] == 'author_1'][respondent_col].unique())} author_1")
     
     # Filter by max_turns
     if interaction_count:
@@ -536,27 +531,27 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_tu
         df = df[df['turn'] <= max_turns].copy()
     
     # Remove baseline text
-    df['user'] = df['user'].str.replace("This is the story of", "", regex=False).str.strip()
-    df[author_2_col] = df[author_2_col].str.replace("This is the story of", "", regex=False).str.strip()
+    df['author_1'] = df['author_1'].str.replace("This is the story of", "", regex=False).str.strip()
+    df['author_2'] = df['author_2'].str.replace("This is the story of", "", regex=False).str.strip()
 
     # Handle starter adjustments
     for rid, group in df.groupby(respondent_col):
         if group['starter'].iloc[0] != author_2_starter_label:
             continue
         
-        first_user_idx = group[group['user'].notna()].index.min()
-        first_author2_idx = group[group[author_2_col].notna()].index.min()
-        last_author2_idx = group[group[author_2_col].isna()].index
+        first_author1_idx = group[group['author_1'].notna()].index.min()
+        first_author2_idx = group[group['author_2'].notna()].index.min()
+        last_author2_idx = group[group['author_2'].isna()].index
         
-        if pd.isna(first_user_idx) or pd.isna(first_author2_idx):
+        if pd.isna(first_author1_idx) or pd.isna(first_author2_idx):
             continue
         
-        user_text = df.loc[first_user_idx, 'user']
-        author2_text = df.loc[first_author2_idx, author_2_col]
+        author1_text = df.loc[first_author1_idx, 'author_1']
+        author2_text = df.loc[first_author2_idx, 'author_2']
         
-        df.loc[first_author2_idx, author_2_col] = f"{user_text} {author2_text}"
-        df.loc[first_user_idx, 'user'] = ""
-        df.loc[last_author2_idx, author_2_col] = ""
+        df.loc[first_author2_idx, 'author_2'] = f"{author1_text} {author2_text}"
+        df.loc[first_author1_idx, 'author_1'] = ""
+        df.loc[last_author2_idx, 'author_2'] = ""
 
     return df 
 
@@ -572,7 +567,7 @@ def clean_ai_ai_data(df: pd.DataFrame, max_turns: int = 10) -> pd.DataFrame:
     
     Args:
         df: Raw AI-AI simulation data with columns:
-            turn, agent_1, agent_2, story_id, model_id, timestamp
+            turn, author_1, author_2, story_id, model_id, timestamp
         max_turns: Maximum turns per story (default 10)
         
     Returns:
@@ -585,20 +580,20 @@ def clean_ai_ai_data(df: pd.DataFrame, max_turns: int = 10) -> pd.DataFrame:
     
     print(f"Cleaning AI-AI data: {len(df)} rows, {df['story_id'].nunique()} stories")
     
-    # Remove "This is the story of" prefix from agent_1's first turn
+    # Remove "This is the story of" prefix from author_1's first turn
     # The prefix is prepended with \n in simulation, so handle both cases
-    df['agent_1'] = df['agent_1'].str.replace(f"{STORY_PREFIX}\n", "", regex=False)
-    df['agent_1'] = df['agent_1'].str.replace(STORY_PREFIX, "", regex=False).str.strip()
+    df['author_1'] = df['author_1'].str.replace(f"{STORY_PREFIX}\n", "", regex=False)
+    df['author_1'] = df['author_1'].str.replace(STORY_PREFIX, "", regex=False).str.strip()
     
-    # Also clean agent_2 just in case (shouldn't have it, but for safety)
-    df['agent_2'] = df['agent_2'].str.replace(STORY_PREFIX, "", regex=False).str.strip()
+    # Also clean author_2 just in case (shouldn't have it, but for safety)
+    df['author_2'] = df['author_2'].str.replace(STORY_PREFIX, "", regex=False).str.strip()
     
     # Filter to max_turns
     if 'turn' in df.columns:
         df = df[df['turn'] <= max_turns].copy()
     
-    # Add starter column (agent_1 always starts in AI-AI)
-    df['starter'] = 'agent_1'
+    # Add starter column (author_1 always starts in AI-AI)
+    df['starter'] = 'author_1'
     
     # Add interaction_count column for compatibility
     df['interaction_count'] = df['turn']

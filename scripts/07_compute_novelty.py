@@ -47,7 +47,7 @@ def main():
     df = compute_transience_scores(df, tokenizer, model, window_size=window_size)
     
     # Drop token ID columns (not needed in output)
-    df = df.drop(columns=["user_ids", "ai_ids"], errors="ignore")
+    df = df.drop(columns=["author_1_ids", "author_2_ids"], errors="ignore")
     
     save_csv(df, Path(args.output).name)
     print(f"Saved novelty scores to {exp_config['processed_dir']}/{args.output}")

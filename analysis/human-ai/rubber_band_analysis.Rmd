@@ -73,7 +73,7 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 
 ```{r load-data}
 # Load dyadic sentiment scores
-df_field <- read_parquet(here("data/TEXT/processed/dyadic_sentiment_scores.parquet"))
+df_field <- read_parquet(here("data/human-ai/processed/dyadic_sentiment_scores.parquet"))
 # df_simulated <- read_parquet(here("data/Berlin/processed/dyadic_sentiment_scores_simulated.parquet"))
 
 # Display structure

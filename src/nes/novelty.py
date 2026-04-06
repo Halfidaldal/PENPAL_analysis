@@ -105,14 +105,16 @@ def calc_sentence_surprisal(context_ids, target_ids, model, window_size=128):
 
 def compute_novelty_scores(df, tokenizer, model, window_size=128):
     """
-    Compute novelty (surprise) scores for user and AI utterances.
+    Compute novelty (surprise) scores for author_1 and author_2 utterances.
+    
+    Uses standardized column names: author_1, author_2.
     
     Novelty = how surprising this utterance is given prior context.
     
     Parameters
     ----------
     df : pd.DataFrame
-        Input dataframe with user and AI text columns
+        Input dataframe with author_1 and author_2 text columns
     tokenizer : transformers.PreTrainedTokenizer
         Tokenizer
     model : transformers.PreTrainedModel
@@ -125,14 +127,14 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     pd.DataFrame
         DataFrame with added novelty columns
     """
-    df["user_ids"] = df["user"].apply(
+    df["author_1_ids"] = df["author_1"].apply(
         lambda txt: tokenizer(
             "" if pd.isna(txt) else str(txt),
             add_special_tokens=False
         )["input_ids"]
     )
 
-    df["ai_ids"] = df["ai"].apply(
+    df["author_2_ids"] = df["author_2"].apply(
         lambda txt: tokenizer(
             "" if pd.isna(txt) else str(txt),
             add_special_tokens=False
@@ -150,8 +152,8 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     context_buffer = [bos_token_id] if bos_token_id is not None else []
     
     last_client = None
-    user_novelty, user_raw, user_entropy = [], [], []
-    ai_novelty, ai_raw, ai_entropy = [], [], []
+    author_1_novelty, author_1_raw, author_1_entropy = [], [], []
+    author_2_novelty, author_2_raw, author_2_entropy = [], [], []
     
     for _, row in tqdm(df.iterrows(), total=len(df), desc="Computing novelty"):
         client = row.get("conversation_id", None)
@@ -161,58 +163,59 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
             context_buffer = [bos_token_id] if bos_token_id is not None else []
             last_client = client
         
-        # User novelty
-        u_ids = row["user_ids"]
+        # Author 1 novelty
+        a1_ids = row["author_1_ids"]
         # 1. Nominal (Conditional)
-        avg_s, total_s = calc_sentence_surprisal(context_buffer, u_ids, model, window_size)
+        avg_s, total_s = calc_sentence_surprisal(context_buffer, a1_ids, model, window_size)
         # 2. Baseline (Unconditional)
-        avg_base, _ = calc_sentence_surprisal(base_context, u_ids, model, window_size)
+        avg_base, _ = calc_sentence_surprisal(base_context, a1_ids, model, window_size)
         
-        user_raw.append(avg_s) # Keep original for reference
+        author_1_raw.append(avg_s) # Keep original for reference
         # The new metric: Cond - Uncond. 
         # If context helps, Cond < Uncond => Negative value.
         # High Novelty (Deviation) => Cond ~ Uncond => Closer to 0.
-        user_novelty.append(avg_s - avg_base) 
-        user_entropy.append(total_s)
+        author_1_novelty.append(avg_s - avg_base) 
+        author_1_entropy.append(total_s)
         
-        context_buffer.extend(u_ids)
+        context_buffer.extend(a1_ids)
         
-        # AI novelty
-        a_ids = row["ai_ids"]
-        avg_a, total_a = calc_sentence_surprisal(context_buffer, a_ids, model, window_size)
-        avg_base_a, _ = calc_sentence_surprisal(base_context, a_ids, model, window_size)
+        # Author 2 novelty
+        a2_ids = row["author_2_ids"]
+        avg_a, total_a = calc_sentence_surprisal(context_buffer, a2_ids, model, window_size)
+        avg_base_a, _ = calc_sentence_surprisal(base_context, a2_ids, model, window_size)
         
-        ai_raw.append(avg_a)
-        ai_novelty.append(avg_a - avg_base_a)
-        ai_entropy.append(total_a)
-        context_buffer.extend(a_ids)
+        author_2_raw.append(avg_a)
+        author_2_novelty.append(avg_a - avg_base_a)
+        author_2_entropy.append(total_a)
+        context_buffer.extend(a2_ids)
     
-    # We overwrite 'user_surprise' with the new metric to propagate the fix,
-    # but we save 'user_surprise_raw' just in case.
-    df["user_surprise"] = user_novelty
-    df["ai_surprise"] = ai_novelty
-    df["user_surprise_raw"] = user_raw
-    df["ai_surprise_raw"] = ai_raw
+    # Use standardized column names
+    df["author_1_surprise"] = author_1_novelty
+    df["author_2_surprise"] = author_2_novelty
+    df["author_1_surprise_raw"] = author_1_raw
+    df["author_2_surprise_raw"] = author_2_raw
     
-    df["user_entropy"] = user_entropy
-    df["ai_entropy"] = ai_entropy
+    df["author_1_entropy"] = author_1_entropy
+    df["author_2_entropy"] = author_2_entropy
     
     return df
 
 
 def compute_transience_scores(df, tokenizer, model, window_size=40):
     """
-    Compute transience scores for user and AI utterances.
+    Compute transience scores for author_1 and author_2 utterances.
+
+    Uses standardized column names: author_1, author_2.
 
     Transience = how surprising the immediate next turn is given this utterance.
-    For user turns, the next turn is the paired AI response in the same row.
-    For AI turns, the next turn is the next row's user response in the same
+    For author_1 turns, the next turn is the paired author_2 response in the same row.
+    For author_2 turns, the next turn is the next row's author_1 response in the same
     conversation.
     
     Parameters
     ----------
     df : pd.DataFrame
-        Input dataframe (must already have user_ids and ai_ids columns)
+        Input dataframe (must already have author_1_ids and author_2_ids columns)
     tokenizer : transformers.PreTrainedTokenizer
         Tokenizer
     model : transformers.PreTrainedModel
@@ -231,57 +234,55 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
         bos_token_id = tokenizer.eos_token_id
     base_context = [bos_token_id] if bos_token_id is not None else []
 
-    def gather_next_user_ids(pos, frame, current_conversation_id):
-        """Get full user token sequence from the next row in same conversation."""
+    def gather_next_author_1_ids(pos, frame, current_conversation_id):
+        """Get full author_1 token sequence from the next row in same conversation."""
         next_pos = pos + 1
         if next_pos >= len(frame):
             return []
         next_row = frame.iloc[next_pos]
         if next_row.get("conversation_id", None) != current_conversation_id:
             return []
-        return next_row["user_ids"]
+        return next_row["author_1_ids"]
     
-    user_transience, user_raw = [], []
-    ai_transience, ai_raw = [], []
+    author_1_transience, author_1_raw = [], []
+    author_2_transience, author_2_raw = [], []
     
     for pos in tqdm(range(len(df)), total=len(df), desc="Computing transience"):
         row = df.iloc[pos]
         current_conversation_id = row.get("conversation_id", None)
         
-        # User transience target: full paired AI response (same row)
-        future_ids_user = row["ai_ids"]
-        # AI transience target: full next user turn (next row, same conversation)
-        future_ids_ai = gather_next_user_ids(pos, df, current_conversation_id)
+        # Author 1 transience target: full paired author_2 response (same row)
+        future_ids_author_1 = row["author_2_ids"]
+        # Author 2 transience target: full next author_1 turn (next row, same conversation)
+        future_ids_author_2 = gather_next_author_1_ids(pos, df, current_conversation_id)
         
-        # User transience (Predictor is just the current turn)
-        # We assume Transience context is just the immediate past turn (no full history), 
-        # as defined in Barron approx.
-        u_context = row["user_ids"] # Use full user turn as context
+        # Author 1 transience (Predictor is just the current turn)
+        a1_context = row["author_1_ids"]
         
-        if future_ids_user:
-            avg_fut, _ = calc_sentence_surprisal(u_context, future_ids_user, model, window_size)
-            avg_base, _ = calc_sentence_surprisal(base_context, future_ids_user, model, window_size)
+        if future_ids_author_1:
+            avg_fut, _ = calc_sentence_surprisal(a1_context, future_ids_author_1, model, window_size)
+            avg_base, _ = calc_sentence_surprisal(base_context, future_ids_author_1, model, window_size)
             # Metric: Cond - Uncond
-            user_transience.append(avg_fut - avg_base)
-            user_raw.append(avg_fut)
+            author_1_transience.append(avg_fut - avg_base)
+            author_1_raw.append(avg_fut)
         else:
-            user_transience.append(0.0)
-            user_raw.append(0.0)
+            author_1_transience.append(0.0)
+            author_1_raw.append(0.0)
         
-        # AI transience
-        a_context = row["ai_ids"] # Use full AI turn as context
-        if future_ids_ai:
-            avg_fut_ai, _ = calc_sentence_surprisal(a_context, future_ids_ai, model, window_size)
-            avg_base_ai, _ = calc_sentence_surprisal(base_context, future_ids_ai, model, window_size)
-            ai_transience.append(avg_fut_ai - avg_base_ai)
-            ai_raw.append(avg_fut_ai)
+        # Author 2 transience
+        a2_context = row["author_2_ids"]
+        if future_ids_author_2:
+            avg_fut_a2, _ = calc_sentence_surprisal(a2_context, future_ids_author_2, model, window_size)
+            avg_base_a2, _ = calc_sentence_surprisal(base_context, future_ids_author_2, model, window_size)
+            author_2_transience.append(avg_fut_a2 - avg_base_a2)
+            author_2_raw.append(avg_fut_a2)
         else:
-            ai_transience.append(0.0)
-            ai_raw.append(0.0)
+            author_2_transience.append(0.0)
+            author_2_raw.append(0.0)
     
-    df["user_transience"] = user_transience
-    df["ai_transience"] = ai_transience
-    df["user_transience_raw"] = user_raw
-    df["ai_transience_raw"] = ai_raw
+    df["author_1_transience"] = author_1_transience
+    df["author_2_transience"] = author_2_transience
+    df["author_1_transience_raw"] = author_1_raw
+    df["author_2_transience_raw"] = author_2_raw
     
     return df

@@ -33,8 +33,8 @@ def main():
 
     print(f"Active experiment: {experiment}")
     
-    # Determine author_2 embedding column name
-    author_2_emb_col = 'ai_embedding' if experiment == 'human-ai' else 'user2_embedding'
+    # Determine author_2 embedding column name (standardized)
+    author_2_emb_col = 'author_2_embedding'
 
     print("Computing semantic exploration for interactions...")
     print(f"Loading embeddings from {exp_config['processed_dir']}/")
@@ -44,10 +44,10 @@ def main():
         # Filter first interaction away
         df_filtered = df_interaction_level[(df_interaction_level['turn'] > 1) & (df_interaction_level['turn'] < 10)].copy()
         
-        # Compute exploration metrics
+        # Compute exploration metrics using standardized column names
         exploration_df = compute_lag_exploration_metrics(
             df_filtered,
-            user_embedding_col="user_embedding",
+            user_embedding_col="author_1_embedding",
             ai_embedding_col=author_2_emb_col,
             max_lag=exploration_config.get('max_k', 10)
         )

@@ -178,12 +178,12 @@ def compute_story_embeddings_full_stories(
     batch_size: int = 32
 ) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Compute embeddings for full_story, full_user, and full_ai columns.
+    Compute embeddings for full_story, full_author_1, and full_author_2 columns.
     
     This is the "field" embedding approach where we embed the complete texts.
     
     Args:
-        df: DataFrame with 'full_story', 'full_user', 'full_ai' columns
+        df: DataFrame with 'full_story', 'full_author_1', 'full_author_2' columns
         model_name: Model to use for embeddings
         batch_size: Batch size for processing
         
@@ -191,10 +191,10 @@ def compute_story_embeddings_full_stories(
         Tuple of:
         - DataFrame with embedding columns added
         - story_embeddings (np.ndarray)
-        - user_embeddings (np.ndarray)
-        - ai_embeddings (np.ndarray)
+        - author_1_embeddings (np.ndarray)
+        - author_2_embeddings (np.ndarray)
     """
-    columns_to_embed = ['full_story', 'full_user', 'full_ai']
+    columns_to_embed = ['full_story', 'full_author_1', 'full_author_2']
     
     df_embedded, embeddings_dict = embed_story_columns(
         df,
@@ -205,7 +205,7 @@ def compute_story_embeddings_full_stories(
     )
     
     story_embeddings = embeddings_dict.get('full_story')
-    user_embeddings = embeddings_dict.get('full_user')
-    ai_embeddings = embeddings_dict.get('full_ai')
+    author_1_embeddings = embeddings_dict.get('full_author_1')
+    author_2_embeddings = embeddings_dict.get('full_author_2')
     
-    return df_embedded, story_embeddings, user_embeddings, ai_embeddings
+    return df_embedded, story_embeddings, author_1_embeddings, author_2_embeddings

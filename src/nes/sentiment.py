@@ -178,16 +178,16 @@ def compute_dyadic_sentiment(
     """
     Compute turn-by-turn sentiment for dyadic conversations.
     
-    Splits stories into USER/AI turns and computes sentiment for each turn.
+    Uses standardized column names: author_1, author_2.
     
     Args:
-        df: DataFrame with story text
-        story_column: Column containing full story text with USER:/AI: markers
+        df: DataFrame with author_1 and author_2 text columns
         valence_method: Method for valence scoring
         batch_size: Batch size for processing
+        model_name: Sentiment model to use
         
     Returns:
-        DataFrame with columns: conversation_id, turn, type (user/ai), text, sentiment_score, pct_turn
+        DataFrame with added sentiment columns (author_1_sentiment_score, author_2_sentiment_score)
     """
         
     
@@ -197,22 +197,22 @@ def compute_dyadic_sentiment(
         .transform(lambda x: (x - x.min()) / (x.max() - x.min()) if x.max() > x.min() else 0)
     )
     
-    # Compute sentiment for all turns
+    # Compute sentiment for all turns using standardized column names
     print(f"\nComputing sentiment for {len(df)} turns...")
-    user_scores = compute_sentiment_batch(
-        df['user'].astype(str).tolist(),
+    author_1_scores = compute_sentiment_batch(
+        df['author_1'].astype(str).tolist(),
         batch_size=batch_size,
         valence_method=valence_method,
         model_name=model_name
     )
-    ai_scores = compute_sentiment_batch(
-        df['ai'].astype(str).tolist(),
+    author_2_scores = compute_sentiment_batch(
+        df['author_2'].astype(str).tolist(),
         batch_size=batch_size,
         valence_method=valence_method,
         model_name=model_name
     )
-    df['user_sentiment_score'] = user_scores
-    df['ai_sentiment_score'] = ai_scores
+    df['author_1_sentiment_score'] = author_1_scores
+    df['author_2_sentiment_score'] = author_2_scores
     df = df.sort_values(['conversation_id', 'turn']).reset_index(drop=True)
     return df
 

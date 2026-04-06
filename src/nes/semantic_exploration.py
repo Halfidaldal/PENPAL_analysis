@@ -109,12 +109,14 @@ def compute_nonoverlap_distances(embeddings, window_length):
 
 def compute_semantic_exploration_metrics(
     df,
-    user_embedding_col="user_embedding",
-    ai_embedding_col="ai_embedding",
+    author_1_embedding_col="author_1_embedding",
+    author_2_embedding_col="author_2_embedding",
     max_k=10
 ):
     """
     Compute semantic exploration metrics at multiple timescales.
+    
+    Uses standardized column names: author_1_embedding, author_2_embedding.
     
     For each story, computes non-overlapping semantic jumps for window sizes
     from 2 to max_k+1 turns. Larger k = longer timescale.
@@ -123,10 +125,10 @@ def compute_semantic_exploration_metrics(
     ----------
     df : pd.DataFrame
         Input dataframe with embedding columns
-    user_embedding_col : str
-        Name of user embedding column
-    ai_embedding_col : str
-        Name of AI embedding column
+    author_1_embedding_col : str
+        Name of author_1 embedding column
+    author_2_embedding_col : str
+        Name of author_2 embedding column
     max_k : int
         Maximum bin-width parameter (window_length = k + 1)
         
@@ -135,19 +137,19 @@ def compute_semantic_exploration_metrics(
     pd.DataFrame
         Long-format dataframe with columns:
         - conversation_id
-        - agent ('user' or 'ai' for single-agent metrics, absent for interleaved)
+        - agent ('author_1' or 'author_2' for single-agent metrics, 'interleaved' for combined)
         - k (bin-width parameter)
         - bin_index (which consecutive window pair)
         - distance (cosine distance between centroids)
     """
     # Parse embeddings
     df = df.copy()
-    df['user_emb'] = df[user_embedding_col].apply(parse_embedding)
-    df['ai_emb'] = df[ai_embedding_col].apply(parse_embedding)
+    df['author_1_emb'] = df[author_1_embedding_col].apply(parse_embedding)
+    df['author_2_emb'] = df[author_2_embedding_col].apply(parse_embedding)
     
     # Filter out invalid embeddings
     before = len(df)
-    df = df[df['user_emb'].notnull() & df['ai_emb'].notnull()].reset_index(drop=True)
+    df = df[df['author_1_emb'].notnull() & df['author_2_emb'].notnull()].reset_index(drop=True)
     print(f"Dropped {before - len(df)} rows with invalid embeddings.")
     
     # Group by story
@@ -155,22 +157,22 @@ def compute_semantic_exploration_metrics(
     
     records = []
     for conversation_id, grp in tqdm(story_groups, desc="Computing semantic exploration"):
-        user_list = grp['user_emb'].tolist()
-        ai_list = grp['ai_emb'].tolist()
+        author_1_list = grp['author_1_emb'].tolist()
+        author_2_list = grp['author_2_emb'].tolist()
         starter = grp['starter']
         llm_type = grp['llm_type']
         
         try:
-            user_embs = np.vstack(user_list)
-            ai_embs = np.vstack(ai_list)
+            author_1_embs = np.vstack(author_1_list)
+            author_2_embs = np.vstack(author_2_list)
         except Exception:
             continue
         
-        if user_embs.shape != ai_embs.shape:
+        if author_1_embs.shape != author_2_embs.shape:
             continue
         
         # Interleave and align
-        E = interleave_and_align(user_embs, ai_embs)
+        E = interleave_and_align(author_1_embs, author_2_embs)
         
         # Compute distances at different window sizes
         for k in range(1, max_k + 1):
@@ -188,7 +190,7 @@ def compute_semantic_exploration_metrics(
                     'llm_type': llm_type.iloc[0]
                 })
                 
-        for agent_name, embs in (("user", user_embs), ("ai", ai_embs)):
+        for agent_name, embs in (("author_1", author_1_embs), ("author_2", author_2_embs)):
             for k in range(1, max_k + 1):
                 window_length = k + 1
                 distances = compute_nonoverlap_distances(embs, window_length)
@@ -333,21 +335,23 @@ def compute_lag_distances(embeddings, max_lag=None):
 
 def compute_lag_exploration_metrics(
     df,
-    user_embedding_col="user_embedding",
-    ai_embedding_col="ai_embedding",
+    user_embedding_col="author_1_embedding",
+    ai_embedding_col="author_2_embedding",
     max_lag=None
 ):
     """
     Compute semantic exploration using lag-based distances.
+    
+    Uses standardized column names: author_1_embedding, author_2_embedding.
     
     Parameters
     ----------
     df : pd.DataFrame
         Input dataframe
     user_embedding_col : str
-        Name of user embedding column
+        Name of author_1 embedding column
     ai_embedding_col : str
-        Name of AI embedding column
+        Name of author_2 embedding column
     max_lag : int
         Maximum lag to compute
         
@@ -358,31 +362,31 @@ def compute_lag_exploration_metrics(
     """
     # Parse embeddings
     df = df.copy()
-    df['user_emb'] = df[user_embedding_col].apply(parse_embedding)
-    df['ai_emb'] = df[ai_embedding_col].apply(parse_embedding)
+    df['author_1_emb'] = df[user_embedding_col].apply(parse_embedding)
+    df['author_2_emb'] = df[ai_embedding_col].apply(parse_embedding)
     
     # Filter out invalid embeddings
-    df = df[df['user_emb'].notnull() & df['ai_emb'].notnull()].reset_index(drop=True)
+    df = df[df['author_1_emb'].notnull() & df['author_2_emb'].notnull()].reset_index(drop=True)
     
     # Group by story
     story_groups = df.groupby(['conversation_id'])
     
     records = []
     for conversation_id, grp in tqdm(story_groups, desc="Computing lag exploration"):
-        user_list = grp['user_emb'].tolist()
-        ai_list = grp['ai_emb'].tolist()
+        author_1_list = grp['author_1_emb'].tolist()
+        author_2_list = grp['author_2_emb'].tolist()
         starter = grp['starter'].iloc[0] if 'starter' in grp else None
         llm_type = grp['llm_type'].iloc[0] if 'llm_type' in grp else None
         
         try:
-            user_embs = np.vstack(user_list)
-            ai_embs = np.vstack(ai_list)
+            author_1_embs = np.vstack(author_1_list)
+            author_2_embs = np.vstack(author_2_list)
         except Exception:
             continue
             
         # Interleaved
-        if user_embs.shape == ai_embs.shape:
-            E = interleave_and_align(user_embs, ai_embs)
+        if author_1_embs.shape == author_2_embs.shape:
+            E = interleave_and_align(author_1_embs, author_2_embs)
             lag_results = compute_lag_distances(E, max_lag)
             for res in lag_results:
                 res.update({
@@ -394,7 +398,7 @@ def compute_lag_exploration_metrics(
                 records.append(res)
                 
         # Individual agents
-        for agent_name, embs in (("user", user_embs), ("ai", ai_embs)):
+        for agent_name, embs in (("author_1", author_1_embs), ("author_2", author_2_embs)):
             lag_results = compute_lag_distances(embs, max_lag)
             for res in lag_results:
                 res.update({

@@ -38,21 +38,18 @@ def main():
     df_interactions = load_csv("interaction_level_stories_filtered_simulated.csv" if simulated else "interaction_level_stories_filtered.csv", stage="interim")
     print(f"Loaded {len(df_full)} full stories and {len(df_interactions)} interaction-level stories")
     
-    # Determine column names based on experiment
-    author_2_col = 'ai' if experiment == 'human-ai' else 'user2'
-    
-    # Compute embeddings
+    # Compute embeddings using standardized column names (author_1, author_2)
     print(f"\nComputing embeddings using {embeddings_config['model_name']}...")
-    df_embedded, story_emb, user_emb, ai_emb = compute_story_embeddings_full_stories(
+    df_embedded, story_emb, author_1_emb, author_2_emb = compute_story_embeddings_full_stories(
         df_full,
         model_name=embeddings_config['model_name'],
         batch_size=embeddings_config['batch_size'],
-        active_dataset=experiment  # Pass experiment as active_dataset for compatibility
+        active_dataset=experiment
     )
     
     df_embedded_interaction, embeddings_interaction_dict = embed_story_columns(
         df_interactions,
-        ['user', author_2_col],
+        ['author_1', 'author_2'],
         model_name=embeddings_config['model_name'],
         batch_size=embeddings_config['batch_size'],
         active_dataset=experiment
@@ -65,8 +62,8 @@ def main():
     
     # Save individual .npy files for numpy arrays
     save_npy(story_emb, "story_embeddings_full_simulated.npy" if simulated else "story_embeddings_full.npy",  stage="processed")
-    save_npy(user_emb, "story_user_embeddings_full_simulated.npy" if simulated else "story_user_embeddings_full.npy", stage="processed")
-    save_npy(ai_emb, "story_ai_embeddings_full_simulated.npy" if simulated else "story_ai_embeddings_full.npy", stage="processed")
+    save_npy(author_1_emb, "story_author_1_embeddings_full_simulated.npy" if simulated else "story_author_1_embeddings_full.npy", stage="processed")
+    save_npy(author_2_emb, "story_author_2_embeddings_full_simulated.npy" if simulated else "story_author_2_embeddings_full.npy", stage="processed")
         
     print(f"\n✓ Computed embeddings for {len(df_embedded)} stories")
     print(f"✓ Embedding dimension: {story_emb.shape[1]}")

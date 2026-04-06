@@ -84,11 +84,17 @@ normalize_schema <- function(df, condition = NULL) {
   }
   
   # Column mappings per condition
+  # NOTE: After standardization in Python pipeline (02_clean_dataset.py),
+  # data already uses author_1/author_2. These mappings handle legacy data
+  # or data loaded from raw sources.
   mappings <- list(
     "human-ai" = c(
+      # Legacy/raw column names -> standardized names
       "user" = "author_1", "ai" = "author_2",
       "user_sentiment_projection" = "author_1_valence",
       "ai_sentiment_projection" = "author_2_valence",
+      "user_sentiment_score" = "author_1_sentiment_score",
+      "ai_sentiment_score" = "author_2_sentiment_score",
       "user_embedding" = "author_1_embedding",
       "ai_embedding" = "author_2_embedding"
     ),
@@ -96,6 +102,8 @@ normalize_schema <- function(df, condition = NULL) {
       "user" = "author_1", "user2" = "author_2",
       "user_sentiment_projection" = "author_1_valence",
       "user2_sentiment_projection" = "author_2_valence",
+      "user_sentiment_score" = "author_1_sentiment_score",
+      "user2_sentiment_score" = "author_2_sentiment_score",
       "user_embedding" = "author_1_embedding",
       "user2_embedding" = "author_2_embedding"
     ),
@@ -108,6 +116,21 @@ normalize_schema <- function(df, condition = NULL) {
     )
   )
   
+  # Also rename new standardized names to the analysis-friendly names
+  # author_1_sentiment_projection -> author_1_valence (for consistency in R analysis)
+  standard_mappings <- c(
+    "author_1_sentiment_projection" = "author_1_valence",
+    "author_2_sentiment_projection" = "author_2_valence"
+  )
+  
+  # Apply standard mappings first
+  for (old_name in names(standard_mappings)) {
+    if (old_name %in% names(df)) {
+      df <- df %>% rename(!!standard_mappings[[old_name]] := !!sym(old_name))
+    }
+  }
+  
+  # Apply condition-specific mappings for legacy data
   if (!is.null(condition) && condition %in% names(mappings)) {
     for (old_name in names(mappings[[condition]])) {
       if (old_name %in% names(df)) {
