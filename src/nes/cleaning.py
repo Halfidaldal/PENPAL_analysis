@@ -435,8 +435,8 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
     
     # Group by conversation and concatenate
     agg_dict = {
-        'author_1': lambda x: ' '.join(x.astype(str)),
-        'author_2': lambda x: ' '.join(x.astype(str)),
+        'author_1': lambda x: ' '.join(x.fillna('').astype(str).tolist()),
+        'author_2': lambda x: ' '.join(x.fillna('').astype(str).tolist()),
     }
     # Add metadata columns if present
     for col in ['language', 'client_id', 'workshop_id', 'timestamp', 
@@ -449,9 +449,9 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
     
     # Padded versions for parsing textdescriptives
     story_df['full_author_1_dot'] = df.groupby(group_col)['author_1'].apply(
-        lambda x: ' '.join((x.astype(str) + '.').tolist())).values
+        lambda x: ' '.join((x.fillna('').astype(str) + '.').tolist())).values
     story_df['full_author_2_dot'] = df.groupby(group_col)['author_2'].apply(
-        lambda x: ' '.join((x.astype(str) + '.').tolist())).values
+        lambda x: ' '.join((x.fillna('').astype(str) + '.').tolist())).values
 
     # Rename columns to full_ prefix
     story_df = story_df.rename(columns={
