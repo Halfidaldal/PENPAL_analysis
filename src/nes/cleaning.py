@@ -412,22 +412,18 @@ def filter_by_respondent_id(
 def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.DataFrame:
     """
     Build full_story, full_author_1, and full_author_2 columns by concatenating
-    text within each conversation_id or story_id.
+    text within each conversation_id.
     
-    Uses standardized column names: author_1, author_2.
+    Uses standardized column names: author_1, author_2, conversation_id.
     
     Args:
-        df: DataFrame with author_1, author_2 columns and grouping column
-        experiment: Experiment type ('human-ai', 'human-human', or 'ai-ai')
+        df: DataFrame with author_1, author_2, conversation_id columns
+        experiment: Experiment type (unused after standardization, kept for API compatibility)
         
     Returns:
-        DataFrame grouped by conversation/story with concatenated text columns
+        DataFrame grouped by conversation_id with concatenated text columns
     """
-    # Determine grouping column based on experiment
-    if experiment == 'ai-ai':
-        group_col = 'story_id'
-    else:
-        group_col = 'conversation_id'
+    group_col = 'conversation_id'
     
     # Validate columns
     if 'author_1' not in df.columns:
@@ -437,7 +433,7 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
     if group_col not in df.columns:
         raise ValueError(f"Expected '{group_col}' column in DataFrame")
     
-    # Group by conversation/story and concatenate
+    # Group by conversation and concatenate
     agg_dict = {
         'author_1': lambda x: ' '.join(x.astype(str)),
         'author_2': lambda x: ' '.join(x.astype(str)),
@@ -451,7 +447,7 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
     
     story_df = df.groupby(group_col).agg(agg_dict).reset_index()
     
-    # Padded versions for parsing textdescriptives (using standardized names)
+    # Padded versions for parsing textdescriptives
     story_df['full_author_1_dot'] = df.groupby(group_col)['author_1'].apply(
         lambda x: ' '.join((x.astype(str) + '.').tolist())).values
     story_df['full_author_2_dot'] = df.groupby(group_col)['author_2'].apply(
@@ -463,18 +459,10 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
         'author_2': 'full_author_2',
     })
     
-    # Also rename group column to conversation_id for consistency
-    if group_col != 'conversation_id':
-        story_df = story_df.rename(columns={group_col: 'conversation_id'})
-    
     # Build full_story by interleaving
     def build_story(row):
         group_val = row['conversation_id']
-        # Handle both original column names
-        if group_col in df.columns:
-            mask = df[group_col] == group_val
-        else:
-            mask = df['conversation_id'] == group_val
+        mask = df['conversation_id'] == group_val
         
         author1s = df[mask]['author_1'].tolist()
         author2s = df[mask]['author_2'].tolist()
@@ -592,6 +580,9 @@ def clean_ai_ai_data(df: pd.DataFrame, max_turns: int = 10) -> pd.DataFrame:
     if 'turn' in df.columns:
         df = df[df['turn'] <= max_turns].copy()
     
+    # Rename story_id to conversation_id for universal naming
+    df = df.rename(columns={'story_id': 'conversation_id'})
+    
     # Add starter column (author_1 always starts in AI-AI)
     df['starter'] = 'author_1'
     
@@ -601,6 +592,7 @@ def clean_ai_ai_data(df: pd.DataFrame, max_turns: int = 10) -> pd.DataFrame:
     # Count prefix removals
     n_prefixes_removed = len(df[df['turn'] == 1])
     print(f"Removed '{STORY_PREFIX}' prefix from {n_prefixes_removed} first turns")
+    print(f"Renamed 'story_id' -> 'conversation_id'")
     print(f"After cleaning: {len(df)} rows")
     
     return df
