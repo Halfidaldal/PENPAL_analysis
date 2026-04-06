@@ -19,7 +19,31 @@ def get_descriptive_metrics_dual_full_long(
     """
     print(f"[INFO:] Loading spaCy model '{spacy_mdl}'...")
     nlp = spacy.load(spacy_mdl)
-    nlp.add_pipe("textdescriptives/all")
+    try:
+        nlp.add_pipe("textdescriptives/all")
+    except Exception as e:
+        if "typing.Tuple" in str(e) or "textdescriptives/quality" in str(e):
+            print("[WARNING:] Caught config validation error with 'textdescriptives/all'. Adding pipes manually...")
+            for comp in [
+                "textdescriptives/descriptive_stats",
+                "textdescriptives/readability",
+                "textdescriptives/dependency_distance",
+                "textdescriptives/pos_proportions",
+                "textdescriptives/coherence",
+                "textdescriptives/information_theory",
+            ]:
+                if not nlp.has_pipe(comp):
+                    nlp.add_pipe(comp)
+            if not nlp.has_pipe("textdescriptives/quality"):
+                nlp.add_pipe(
+                    "textdescriptives/quality",
+                    config={
+                        "top_ngram_range": (2, 4),
+                        "duplicate_n_gram_fraction_range": (5, 10)
+                    }
+                )
+        else:
+            raise e
 
     # ----- AUTHOR 1 -----
     print(f"[INFO:] Extracting Author 1 metrics...")
@@ -59,7 +83,31 @@ def get_descriptive_metrics_dual_inter_long(
     """
     print(f"[INFO:] Loading spaCy model '{spacy_mdl}'...")
     nlp = spacy.load(spacy_mdl)
-    nlp.add_pipe("textdescriptives/all")
+    try:
+        nlp.add_pipe("textdescriptives/all")
+    except Exception as e:
+        if "typing.Tuple" in str(e) or "textdescriptives/quality" in str(e):
+            print("[WARNING:] Caught config validation error with 'textdescriptives/all'. Adding pipes manually...")
+            for comp in [
+                "textdescriptives/descriptive_stats",
+                "textdescriptives/readability",
+                "textdescriptives/dependency_distance",
+                "textdescriptives/pos_proportions",
+                "textdescriptives/coherence",
+                "textdescriptives/information_theory",
+            ]:
+                if not nlp.has_pipe(comp):
+                    nlp.add_pipe(comp)
+            if not nlp.has_pipe("textdescriptives/quality"):
+                nlp.add_pipe(
+                    "textdescriptives/quality",
+                    config={
+                        "top_ngram_range": (2, 4),
+                        "duplicate_n_gram_fraction_range": (5, 10)
+                    }
+                )
+        else:
+            raise e
     
     # Ensure NaNs don't crash the script 
     df[author_1_col] = df[author_1_col].fillna("")
