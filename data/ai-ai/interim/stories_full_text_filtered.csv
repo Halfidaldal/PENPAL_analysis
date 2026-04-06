@@ -1,4 +1,4 @@
-conversation_id,full_author_1,full_author_2,timestamp,interaction_count,starter,model_id,turn,full_user_dot,full_ai_dot,full_story
+conversation_id,full_author_1,full_author_2,timestamp,interaction_count,starter,model_id,turn,full_author_1_dot,full_author_2_dot,full_story
 claude-sonnet-4-5-20250929_story_1,"# The Clockmaker's Daughter
 
 The old shop stood crooked between two newer buildings on Meridian Street, its wooden sign swaying gently in the autumn # The Clockmaker's Daughter
