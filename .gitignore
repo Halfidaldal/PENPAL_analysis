@@ -10,6 +10,8 @@ renv/staging/
 .RData
 .Rproj.user/
 git_cred.sh
+.env
+.env.local
 .RDataTmp
 .RDataTmp1
 environment/the-never-ending-story-a7b5f-firebase-adminsdk-ax73p-9014b38264.json

@@ -4,7 +4,7 @@ Script 03: Compute embeddings for story data.
 
 This script:
 1. Loads cleaned story data
-2. Computes embeddings for full_story, full_user, full_ai
+2. Computes embeddings for full_story, full_author_1, full_author_2
 3. Saves embeddings as both:
    - Parquet file (with embeddings as list columns)
    - Separate .npy files for each embedding type
@@ -21,20 +21,25 @@ import argparse
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.embeddings import compute_story_embeddings_full_stories, embed_story_columns
-from nes.io import load_csv, save_parquet, save_npy, get_project_root, load_config
+from nes.io import load_csv, save_parquet, save_npy, get_project_root, load_config, get_active_experiment, get_experiment_config, get_shared_config
 
 
 def main():
     # Load config
-    config = load_config()
-    active_dataset = config.get('active_dataset', 'TEXT')
-    embeddings_config = config['embeddings'][active_dataset]
-    simulated = config['cleaning'].get('simulated', False)
-    print(f"Active dataset: {active_dataset}")
+    experiment = get_active_experiment()
+    exp_config = get_experiment_config()
+    shared_config = get_shared_config()
+    embeddings_config = shared_config['embeddings']
+    simulated = shared_config['cleaning'].get('simulated', False)
+    
+    print(f"Active experiment: {experiment}")
     
     df_full = load_csv("stories_full_text_filtered_simulated.csv" if simulated else "stories_full_text_filtered.csv", stage="interim")
     df_interactions = load_csv("interaction_level_stories_filtered_simulated.csv" if simulated else "interaction_level_stories_filtered.csv", stage="interim")
     print(f"Loaded {len(df_full)} full stories and {len(df_interactions)} interaction-level stories")
+    
+    # Determine column names based on experiment
+    author_2_col = 'ai' if experiment == 'human-ai' else 'user2'
     
     # Compute embeddings
     print(f"\nComputing embeddings using {embeddings_config['model_name']}...")
@@ -42,15 +47,15 @@ def main():
         df_full,
         model_name=embeddings_config['model_name'],
         batch_size=embeddings_config['batch_size'],
-        active_dataset=config.get('active_dataset', 'TEXT')
+        active_dataset=experiment  # Pass experiment as active_dataset for compatibility
     )
     
     df_embedded_interaction, embeddings_interaction_dict = embed_story_columns(
         df_interactions,
-        ['user', 'ai'],
+        ['user', author_2_col],
         model_name=embeddings_config['model_name'],
         batch_size=embeddings_config['batch_size'],
-        active_dataset=config.get('active_dataset', 'TEXT')
+        active_dataset=experiment
     )
     
     # Save parquet with embeddings as list columns
@@ -65,7 +70,7 @@ def main():
         
     print(f"\n✓ Computed embeddings for {len(df_embedded)} stories")
     print(f"✓ Embedding dimension: {story_emb.shape[1]}")
-    print(f"✓ Saved to data/{config.get('active_dataset', 'TEXT')}/processed/")
+    print(f"✓ Saved to {exp_config['processed_dir']}/")
     print("\n✅ Script 03 complete!")
 
 

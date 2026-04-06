@@ -1,0 +1,432 @@
+---
+title: "Valence Alignment Comparison: Human-AI vs Human-Human vs AI-AI"
+subtitle: "Cross-Condition Statistical Contrasts"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load comparison utilities
+source(here::here("analysis/comparison/_comparison_utils.R"))
+
+# Additional packages
+pacman::p_load(
+  lme4,         # Mixed effects models
+  lmerTest,     # P-values for mixed models
+  patchwork,    # Combine plots
+  emmeans,      # Estimated marginal means
+  effectsize    # Effect size calculations
+)
+
+# Set global theme
+theme_set(theme_comparison())
+```
+
+# Overview
+
+This notebook performs comparative analysis across all three experimental conditions:
+
+- **Human-AI**: Human co-writing with an LLM
+- **Human-Human**: Two humans co-writing together  
+- **AI-AI**: Two AI agents co-writing (simulated baseline)
+
+**Key Questions:**
+1. Do alignment patterns differ across the three conditions?
+2. Is alignment asymmetric in all conditions or condition-specific?
+3. Does the AI-AI baseline show the strongest alignment (as expected)?
+4. How do effect sizes compare across conditions?
+
+# Load Data
+
+```{r load-data}
+# Check data availability
+cat("Data availability:\n")
+avail <- check_data_availability()
+print(avail)
+
+# Load valence data using standardized loader
+df_combined <- tryCatch({
+  load_valence_data(conditions = c("human-ai", "human-human", "ai-ai"))
+}, error = function(e) {
+  # Fallback: try loading whatever is available
+  conditions_available <- c()
+  
+  for (cond in c("human-ai", "human-human", "ai-ai")) {
+    path <- here("data", cond, "processed", "dyadic_sentiment_scores.parquet")
+    if (file.exists(path)) {
+      conditions_available <- c(conditions_available, cond)
+    }
+  }
+  
+  if (length(conditions_available) == 0) {
+    stop("No valence data available for any condition")
+  }
+  
+  cat("Loading available conditions:", paste(conditions_available, collapse = ", "), "\n")
+  load_valence_data(conditions = conditions_available)
+})
+
+# Prepare condition factor
+df_combined <- df_combined %>%
+  prepare_condition_factor(reference = "human-ai")
+
+# Report loaded data
+cat("\nLoaded data summary:\n")
+df_combined %>%
+  group_by(condition) %>%
+  summarise(
+    n_stories = n_distinct(conversation_id),
+    n_turns = n(),
+    .groups = "drop"
+  ) %>%
+  print()
+```
+
+# Preprocessing
+
+```{r preprocess}
+# Compute lagged valence for alignment analysis
+df_analysis <- df_combined %>%
+  group_by(conversation_id, condition) %>%
+  arrange(turn) %>%
+  mutate(
+    author_1_valence_lag1 = lag(author_1_valence, n = 1),
+    author_2_valence_lag1 = lag(author_2_valence, n = 1)
+  ) %>%
+  ungroup() %>%
+  filter(turn > 1) %>%
+  drop_na(author_1_valence, author_2_valence, 
+          author_1_valence_lag1, author_2_valence_lag1)
+
+cat("Analysis dataset:", nrow(df_analysis), "turns across", 
+    n_distinct(df_analysis$conversation_id), "stories\n")
+```
+
+# Descriptive Statistics
+
+```{r descriptives}
+# Valence descriptives by condition
+desc_stats <- df_analysis %>%
+  group_by(condition) %>%
+  summarise(
+    n_stories = n_distinct(conversation_id),
+    n_turns = n(),
+    mean_a1_valence = mean(author_1_valence, na.rm = TRUE),
+    sd_a1_valence = sd(author_1_valence, na.rm = TRUE),
+    mean_a2_valence = mean(author_2_valence, na.rm = TRUE),
+    sd_a2_valence = sd(author_2_valence, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+desc_stats %>%
+  knitr::kable(
+    digits = 3, 
+    caption = "Valence descriptives by condition",
+    col.names = c("Condition", "Stories", "Turns", 
+                  "Author 1 M", "Author 1 SD", 
+                  "Author 2 M", "Author 2 SD")
+  )
+```
+
+```{r valence-distributions, fig.width=12, fig.height=4}
+# Valence distributions by condition
+p_dist_a1 <- df_analysis %>%
+  ggplot(aes(x = author_1_valence, fill = condition)) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = condition_colors) +
+  labs(title = "Author 1 Valence Distribution", x = "Valence", y = "Density") +
+  theme(legend.position = "none")
+
+p_dist_a2 <- df_analysis %>%
+  ggplot(aes(x = author_2_valence, fill = condition)) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = condition_colors) +
+  labs(title = "Author 2 Valence Distribution", x = "Valence", y = "Density")
+
+p_dist_a1 + p_dist_a2 + plot_layout(guides = "collect")
+```
+
+# Alignment Analysis
+
+## Within-Condition Alignment
+
+For each condition, we fit mixed models testing bidirectional alignment:
+
+- **Author 2 → Author 1**: Does Author 1 follow Author 2's previous valence?
+- **Author 1 → Author 2**: Does Author 2 match Author 1's current valence?
+
+```{r within-condition-models}
+# Fit models for each condition and direction
+conditions <- unique(df_analysis$condition)
+
+results_within <- tibble()
+
+for (cond in conditions) {
+  df_cond <- filter(df_analysis, condition == cond)
+  
+  # Skip if insufficient data
+  if (nrow(df_cond) < 50) {
+    cat("Skipping", cond, "- insufficient data\n")
+    next
+  }
+  
+  # A2 → A1 model
+  m_a2_to_a1 <- tryCatch({
+    lmer(author_1_valence ~ author_2_valence_lag1 + (1 | conversation_id),
+         data = df_cond)
+  }, error = function(e) NULL)
+  
+  # A1 → A2 model
+  m_a1_to_a2 <- tryCatch({
+    lmer(author_2_valence ~ author_1_valence + (1 | conversation_id),
+         data = df_cond)
+  }, error = function(e) NULL)
+  
+  # Extract results
+  if (!is.null(m_a2_to_a1)) {
+    coefs <- summary(m_a2_to_a1)$coefficients
+    results_within <- bind_rows(results_within, tibble(
+      condition = cond,
+      direction = "A2 → A1",
+      estimate = coefs["author_2_valence_lag1", "Estimate"],
+      se = coefs["author_2_valence_lag1", "Std. Error"],
+      t = coefs["author_2_valence_lag1", "t value"],
+      p = coefs["author_2_valence_lag1", "Pr(>|t|)"]
+    ))
+  }
+  
+  if (!is.null(m_a1_to_a2)) {
+    coefs <- summary(m_a1_to_a2)$coefficients
+    results_within <- bind_rows(results_within, tibble(
+      condition = cond,
+      direction = "A1 → A2",
+      estimate = coefs["author_1_valence", "Estimate"],
+      se = coefs["author_1_valence", "Std. Error"],
+      t = coefs["author_1_valence", "t value"],
+      p = coefs["author_1_valence", "Pr(>|t|)"]
+    ))
+  }
+}
+
+# Display results
+results_within %>%
+  mutate(
+    sig = case_when(
+      p < 0.001 ~ "***",
+      p < 0.01 ~ "**",
+      p < 0.05 ~ "*",
+      p < 0.1 ~ ".",
+      TRUE ~ ""
+    ),
+    ci_lower = estimate - 1.96 * se,
+    ci_upper = estimate + 1.96 * se
+  ) %>%
+  select(condition, direction, estimate, se, ci_lower, ci_upper, t, p, sig) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Within-condition alignment coefficients"
+  )
+```
+
+## Cross-Condition Comparison
+
+Test whether alignment effects differ significantly across conditions using condition × predictor interactions.
+
+```{r cross-condition-models}
+# A2 → A1 with condition interaction
+model_cross_a2_a1 <- lmer(
+  author_1_valence ~ author_2_valence_lag1 * condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("=== Cross-Condition: Author 2 → Author 1 ===\n")
+print(summary(model_cross_a2_a1))
+
+# A1 → A2 with condition interaction
+model_cross_a1_a2 <- lmer(
+  author_2_valence ~ author_1_valence * condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("\n=== Cross-Condition: Author 1 → Author 2 ===\n")
+print(summary(model_cross_a1_a2))
+```
+
+## Pairwise Condition Contrasts
+
+```{r pairwise-contrasts}
+# Estimated marginal means and pairwise contrasts
+if (length(unique(df_analysis$condition)) > 1) {
+  
+  # A2 → A1 slopes by condition
+  emm_a2_a1 <- emtrends(model_cross_a2_a1, specs = "condition", 
+                         var = "author_2_valence_lag1")
+  
+  cat("=== A2→A1 Alignment Slopes by Condition ===\n")
+  print(emm_a2_a1)
+  
+  cat("\n=== Pairwise Contrasts (A2→A1) ===\n")
+  print(pairs(emm_a2_a1, adjust = "bonferroni"))
+  
+  # A1 → A2 slopes by condition
+  emm_a1_a2 <- emtrends(model_cross_a1_a2, specs = "condition",
+                         var = "author_1_valence")
+  
+  cat("\n=== A1→A2 Alignment Slopes by Condition ===\n")
+  print(emm_a1_a2)
+  
+  cat("\n=== Pairwise Contrasts (A1→A2) ===\n")
+  print(pairs(emm_a1_a2, adjust = "bonferroni"))
+}
+```
+
+# Visualization
+
+```{r alignment-plot, fig.width=14, fig.height=5}
+# Alignment slopes by condition
+p1 <- df_analysis %>%
+  ggplot(aes(x = author_2_valence_lag1, y = author_1_valence, color = condition)) +
+  geom_point(alpha = 0.05, size = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Author 2 → Author 1 Alignment",
+    subtitle = "Does Author 1 follow Author 2's previous valence?",
+    x = "Author 2 Valence (t-1)",
+    y = "Author 1 Valence (t)",
+    color = "Condition"
+  )
+
+p2 <- df_analysis %>%
+  ggplot(aes(x = author_1_valence, y = author_2_valence, color = condition)) +
+  geom_point(alpha = 0.05, size = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Author 1 → Author 2 Alignment",
+    subtitle = "Does Author 2 match Author 1's current valence?",
+    x = "Author 1 Valence (t)",
+    y = "Author 2 Valence (t)",
+    color = "Condition"
+  )
+
+p1 + p2 + plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+```
+
+```{r coefficient-plot, fig.width=10, fig.height=5}
+# Coefficient comparison plot
+if (nrow(results_within) > 0) {
+  results_within %>%
+    mutate(
+      ci_lower = estimate - 1.96 * se,
+      ci_upper = estimate + 1.96 * se
+    ) %>%
+    ggplot(aes(x = condition, y = estimate, fill = condition)) +
+    geom_col(width = 0.6, alpha = 0.8) +
+    geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), width = 0.2) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+    facet_wrap(~direction, scales = "free_x") +
+    scale_fill_manual(values = condition_colors) +
+    labs(
+      title = "Alignment Coefficients by Condition",
+      subtitle = "Error bars show 95% CI",
+      y = "Alignment Coefficient (β)",
+      x = "Condition"
+    ) +
+    theme(legend.position = "none")
+}
+```
+
+# Asymmetry Analysis
+
+Test whether alignment is asymmetric (stronger in one direction) within each condition.
+
+```{r asymmetry-analysis}
+# Compare A2→A1 vs A1→A2 coefficients within each condition
+asymmetry_results <- results_within %>%
+  select(condition, direction, estimate, se) %>%
+  pivot_wider(
+    names_from = direction,
+    values_from = c(estimate, se),
+    names_sep = "_"
+  ) %>%
+  mutate(
+    diff = `estimate_A1 → A2` - `estimate_A2 → A1`,
+    diff_se = sqrt(`se_A1 → A2`^2 + `se_A2 → A1`^2),
+    z = diff / diff_se,
+    p = 2 * pnorm(-abs(z)),
+    interpretation = case_when(
+      p < 0.05 & diff > 0 ~ "A1→A2 stronger",
+      p < 0.05 & diff < 0 ~ "A2→A1 stronger",
+      TRUE ~ "No significant asymmetry"
+    )
+  )
+
+asymmetry_results %>%
+  select(condition, diff, diff_se, z, p, interpretation) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Alignment asymmetry by condition (A1→A2 minus A2→A1)",
+    col.names = c("Condition", "Difference", "SE", "z", "p", "Interpretation")
+  )
+```
+
+# Summary
+
+```{r summary-table}
+# Final summary table
+summary_table <- results_within %>%
+  mutate(
+    sig = case_when(
+      p < 0.001 ~ "***",
+      p < 0.01 ~ "**",
+      p < 0.05 ~ "*",
+      p < 0.1 ~ ".",
+      TRUE ~ "ns"
+    ),
+    effect = paste0(round(estimate, 3), " (", round(se, 3), ") ", sig)
+  ) %>%
+  select(condition, direction, effect) %>%
+  pivot_wider(names_from = direction, values_from = effect)
+
+summary_table %>%
+  knitr::kable(caption = "Summary: Alignment effects by condition and direction (β (SE) sig)")
+```
+
+# Key Findings
+
+Based on the analysis above:
+
+1. **Cross-condition differences**: [Interpret whether alignment patterns differ significantly across Human-AI, Human-Human, and AI-AI conditions]
+
+2. **Asymmetry patterns**: [Discuss whether alignment is bidirectional or asymmetric in each condition]
+
+3. **AI-AI baseline**: [Compare the AI-AI simulation to empirical conditions - is it more aligned as expected?]
+
+4. **Effect sizes**: [Compare the magnitude of alignment effects across conditions]
+
+---
+
+*Analysis completed: `r Sys.time()`*

@@ -1,0 +1,210 @@
+---
+title: "Valence Rubberband Comparison: Human-AI vs Human-Human"
+subtitle: "Cross-Condition Statistical Contrasts"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load required packages
+pacman::p_load(
+  tidyverse,    # Data manipulation and plotting
+  lme4,         # Mixed effects models
+  lmerTest,     # P-values for mixed models
+  arrow,        # Parquet file I/O
+  stringi,      # String operations
+  patchwork,    # Combine plots
+  emmeans,      # Estimated marginal means
+  here          # Path resolution
+)
+
+# Set project root
+PROJECT_ROOT <- here()
+
+# Set global theme
+theme_set(theme_minimal(base_size = 14))
+```
+
+
+```{r}
+# Load human-AI data
+df_human_ai <- read_parquet(here("data/human-ai/processed/dyadic_sentiment_scores.parquet")) %>%
+  mutate(condition = "human-ai")
+
+# Load human-human data
+df_human_human <- read_parquet(here("data/human-human/processed/dyadic_sentiment_scores.parquet")) %>%
+  mutate(condition = "human-human")
+# Combine datasets
+# Note: Column names may differ between conditions
+# Human-AI uses: user, ai
+# Human-human uses: user, user2
+# Normalize to author_1, author_2 for comparison
+
+df_human_ai <- df_human_ai %>%
+  rename(
+    author_1 = user,
+    author_2 = ai,
+    author_1_valence = user_sentiment_projection,
+    author_2_valence = ai_sentiment_projection,
+    author_1_embedding = user_embedding,
+    author_2_embedding = ai_embedding
+  ) %>%
+  select(conversation_id, turn, author_1, author_2, 
+         author_1_valence, author_2_valence, author_1_embedding, author_2_embedding, condition)
+
+df_human_human <- df_human_human %>%
+  rename(
+    author_1 = user,
+    author_2 = user2,
+    author_1_valence = user_sentiment_projection,
+    author_2_valence = user2_sentiment_projection,
+    author_1_embedding = user_embedding,
+    author_2_embedding = user2_embedding
+  ) %>%
+  select(conversation_id, turn, author_1, author_2,
+         author_1_valence, author_2_valence, author_1_embedding, author_2_embedding, condition)
+
+# Bind datasets
+df_combined <- bind_rows(df_human_ai, df_human_human) %>% 
+  mutate(
+    conversation_id = map_chr(conversation_id, as.character),
+    conversation_id = factor(conversation_id)
+)
+cat("Human-AI stories:", n_distinct(df_human_ai$conversation_id), "\n")
+cat("Human-human stories:", n_distinct(df_human_human$conversation_id), "\n")
+cat("Total interactions:", nrow(df_combined), "\n")
+```
+
+```{r}
+df_analysis <- df_combined %>%
+  group_by(conversation_id) %>%
+  arrange(turn) %>%
+  mutate(
+    author_1_valence_lag1 = lag(author_1_valence, n = 1),
+    author_2_valence_lag1 = lag(author_2_valence, n = 1)
+  ) %>%
+  ungroup() %>%
+  filter(turn > 1, turn < 10)
+
+cat("Analysis dataset:", nrow(df_analysis), "turns\n")
+```
+
+```{r}
+
+cosine_sim <- function(x, y) {
+  if (is.null(x) || is.null(y) || any(is.na(x)) || any(is.na(y))) {
+    return(NA_real_)
+  }
+  return(sum(x * y) / (sqrt(sum(x^2)) * sqrt(sum(y^2))))
+}
+
+df_analysis <- df_analysis %>%
+  group_by(conversation_id) %>%
+  arrange(turn, .by_group = TRUE) %>%
+  mutate(
+    author_2_embedding_prev = lag(author_2_embedding)
+  ) %>%
+  rowwise() %>%
+  mutate(
+    cosine_sim_same = cosine_sim(author_1_embedding, author_2_embedding),
+    cosine_sim_prev = cosine_sim(author_1_embedding, author_2_embedding_prev)
+  ) %>%
+  select(-author_1_embedding, -author_2_embedding, -author_2_embedding_prev) %>%
+  ungroup()
+```
+
+```{r}
+df_field_gap <- df_analysis %>%
+  mutate(valence_gap = abs(author_1_valence - author_2_valence),
+         valence_gap_prev = abs(author_2_valence_lag1 - author_1_valence_lag1))
+
+# df_sim_gap <- df_simulated %>%
+#   mutate(valence_gap = abs(user_valence - ai_valence))
+
+
+df_valence_gap_long <- df_field_gap %>%
+  pivot_longer(
+    cols = c(valence_gap, valence_gap_prev),
+    names_to = "lag_type",
+    values_to = "valence_gap"
+  ) %>%
+  mutate(
+    lag_type = factor(
+      lag_type,
+      levels = c("valence_gap", "valence_gap_prev"),
+      labels = c("Same Turn", "Previous Turn")
+    )
+  )
+
+
+# Field data plot
+p_gap_field <- ggplot(df_field_gap, aes(x = turn, y = valence_gap, group = conversation_id, fill = condition)) +
+  geom_line(alpha = 0.2, color = "#E41A1C") +  # Individual stories (faint)
+  stat_summary(aes(group = 1), fun = mean, geom = "line", 
+               color = "#E41A1C", linewidth = 1.5) +  # Aggregate mean (bold)
+  stat_summary(aes(group = 1), fun = mean, geom = "point",
+               color = "#E41A1C", size = 3) +
+  labs(title = "Field Data", x = NULL, y = NULL) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+
+print(p_gap_field)
+```
+
+
+```{r}
+# Function to compute turn-by-turn rubber-band dynamics
+compute_rubberband_turns <- function(df, data_source_label, direction) {
+  df %>%
+    group_by(conversation_id) %>%
+    arrange(turn, .by_group = TRUE) %>%
+    mutate(
+      valence_gap = abs(as.numeric(scale(author_1_valence)) - as.numeric(scale({{ direction }}))),
+      gap_change = valence_gap - lag(valence_gap),  # Change from previous turn
+      gap_change_next = lead(valence_gap) - valence_gap  # Change to next turn
+    ) %>%
+    filter(!is.na(gap_change) & !is.na(gap_change_next)) %>%  # Need both values
+    ungroup() %>%
+    mutate(
+      data_source = data_source_label,
+      n_turns = n_distinct(conversation_id)
+    )
+}
+
+rb_turns_combined <- compute_rubberband_turns(df_analysis, "Field", author_2_valence)
+rb_turns_field_prev <- compute_rubberband_turns(df_analysis, "Field", author_2_valence_lag1)
+```
+
+```{r}
+lm_turns_combined <- lm(gap_change_next ~ gap_change + (1 | conversation_id), data = rb_turns_field)
+
+
+
+```
+
+
+
+

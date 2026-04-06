@@ -1,0 +1,95 @@
+---
+title: "Exploration Comparison: Human-AI vs Human-Human"
+subtitle: "Cross-Condition Statistical Contrasts"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load required packages
+pacman::p_load(
+  tidyverse,    # Data manipulation and plotting
+  lme4,         # Mixed effects models
+  lmerTest,     # P-values for mixed models
+  arrow,        # Parquet file I/O
+  stringi,      # String operations
+  patchwork,    # Combine plots
+  emmeans,      # Estimated marginal means
+  here          # Path resolution
+)
+
+# Set project root
+PROJECT_ROOT <- here()
+
+# Set global theme
+theme_set(theme_minimal(base_size = 14))
+```
+
+# Overview
+
+This notebook performs comparative analysis between the **human-AI** and **human-human** experimental conditions, focusing on valence alignment patterns.
+
+**Key Questions:**
+- Do exploration patterns differ between human-AI and human-human co-writing?
+- How do effect sizes compare across conditions?
+
+# Load Data
+
+```{r load-data}
+
+df_human_ai <- read_parquet(here("data/human-ai/processed/semantic_exploration_binned.parquet")) %>%
+  mutate(condition = "human-ai",
+         distance_log = log(distance)
+)
+
+# Load human-human data
+df_human_human <- read_parquet(here("data/human-human/processed/semantic_exploration_binned.parquet")) %>%
+  mutate(condition = "human-human",
+         distance_log = log(distance)
+)
+         
+
+df_combined <- bind_rows(df_human_ai, df_human_human)
+df_interleaved <- df_combined %>%
+  filter(agent == "interleaved") %>%
+  mutate(
+    # flatten list-column to character
+    conversation_id = map_chr(conversation_id, as.character),
+    # and treat it as a grouping factor
+    conversation_id = factor(conversation_id)
+)
+
+```
+
+
+```{r}
+
+model_cross <- lmer(distance_log ~ k * condition + (1 | conversation_id), data = df_interleaved)
+
+
+summary(model_cross)
+```
+
+
+

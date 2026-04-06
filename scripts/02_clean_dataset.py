@@ -4,9 +4,15 @@ Script 02: Filter and clean story data.
 
 This script:
 1. Loads raw story data
-2. Applies edit distance filtering
-3. Builds full story text (full_story, full_user, full_ai columns)
-4. Saves cleaned data to data/interim/
+2. Applies edit distance filtering (optional, human experiments only)
+3. Removes "This is the story of" prefix
+4. Builds full story text (full_story, full_author_1, full_author_2 columns)
+5. Saves cleaned data to data/<experiment>/interim/
+
+Supports all three conditions:
+- human-ai: Human-AI collaborative stories
+- human-human: Human-Human collaborative stories  
+- ai-ai: Simulated AI-AI stories
 
 Usage:
     python scripts/02_clean_dataset.py
@@ -22,8 +28,8 @@ import argparse
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.process_spelling_openai import correct_spelling, compute_edit_distance
-from nes.cleaning import filter_by_edit_distance, build_full_story_text, filter_by_respondent_id, clean_user_ai_start
-from nes.io import load_csv, save_csv, get_project_root, load_config
+from nes.cleaning import filter_by_edit_distance, build_full_story_text, filter_by_respondent_id, clean_user_ai_start, clean_ai_ai_data
+from nes.io import load_csv, save_csv, get_project_root, load_config, get_active_experiment, get_experiment_config, get_shared_config
 
 
 def main():
@@ -32,8 +38,8 @@ def main():
     parser.add_argument(
         "--input-csv-raw",
         type=str,
-        default="finished_stories_raw.csv",
-        help="Path to input CSV file with raw story data."
+        default=None,
+        help="Path to input CSV file with raw story data (auto-detected based on experiment)"
     )
     parser.add_argument(
         "--api-key",
@@ -44,69 +50,84 @@ def main():
     args = parser.parse_args()
     
     api_key = args.api_key or os.environ.get('OPENAI_API_KEY')
-    if not api_key and args.api_key is not None:
-        print("❌ Error: OpenAI API key required for spell correction!")
-        print("   Set via --api-key flag or OPENAI_API_KEY environment variable")
-        sys.exit(1)
     
     # Load config
-    config = load_config()
-    edit_distance_threshold = config['cleaning']['edit_distance_threshold']
-    active_dataset = config.get('active_dataset', 'TEXT')
-    simulated = config['cleaning']['simulated']
-    max_turns = config['cleaning'][active_dataset]['max_turns']
+    experiment = get_active_experiment()
+    exp_config = get_experiment_config()
+    shared_config = get_shared_config()
+    
+    edit_distance_threshold = shared_config['cleaning']['edit_distance_threshold']
+    simulated = shared_config['cleaning']['simulated']
+    max_turns = exp_config['cleaning']['max_turns']
 
-    print(f"Active dataset: {active_dataset}")
-    print(f"Cleaning Simulated: {simulated}")
+    print("=" * 60)
+    print(f"Script 02: Clean Dataset ({experiment})")
+    print("=" * 60)
+    print(f"Simulated mode: {simulated}")
 
+    # Determine input file based on experiment
+    if args.input_csv_raw:
+        input_file = args.input_csv_raw
+    elif experiment == 'ai-ai':
+        input_file = "simulated_stories.csv"
+    else:
+        input_file = "finished_stories_raw.csv"
+    
     # Load raw data
-    print("Loading raw story data...")
-    df = load_csv(args.input_csv_raw, stage="raw")
+    print(f"\nLoading raw story data from {input_file}...")
+    df = load_csv(input_file, stage="raw")
     print(f"Loaded {len(df)} rows")
     
-    if api_key:
-        print("\nApplying spell correction to user inputs...")
-        df['user_corrected'] = [correct_spelling(text, api_key=api_key) for text in tqdm(df["user"], desc="Spell Correction")]
-        print("Spell correction complete.")
-        #compute edit distance
-        df['edit_distance'] = [compute_edit_distance(row) for _, row in tqdm(df.iterrows(), total=len(df), desc="Edit Distance Computation")]
-        print("Edit distance computation complete.")
+    # AI-AI has its own cleaning path
+    if experiment == 'ai-ai':
+        print("\n--- AI-AI Cleaning Pipeline ---")
+        df_filtered = clean_ai_ai_data(df, max_turns=max_turns)
         
-        # Use corrected user input for further processing
-        df['user'] = df['user_corrected']
-        df.drop(columns=['user_corrected'], inplace=True)
     else:
-        print("\nSkipping spell correction as per user request.")
-    
-    # Filter by edit distance (if column exists)
-    if 'edit_distance' in df.columns:
-        print(f"\nFiltering by edit distance (threshold={edit_distance_threshold})...")
-        df_filtered = filter_by_edit_distance(df, threshold=edit_distance_threshold)
-    else:
-        print("\nNo edit_distance column found, skipping filter")
-        df_filtered = df.copy()
+        # Human experiments: optional spell correction + edit distance filtering
+        if api_key and experiment in ['human-ai', 'human-human']:
+            print("\nApplying spell correction to user inputs...")
+            df['user_corrected'] = [correct_spelling(text, api_key=api_key) for text in tqdm(df["user"], desc="Spell Correction")]
+            print("Spell correction complete.")
+            df['edit_distance'] = [compute_edit_distance(row) for _, row in tqdm(df.iterrows(), total=len(df), desc="Edit Distance Computation")]
+            print("Edit distance computation complete.")
+            
+            df['user'] = df['user_corrected']
+            df.drop(columns=['user_corrected'], inplace=True)
+        else:
+            print("\nSkipping spell correction (no API key or not applicable)")
         
-    # jeg har kommenteret if-statement ud for ellers bliver 'starter' kolonnen ikke tilføjet til interaction level dataset
-    df_filtered = clean_user_ai_start(df_filtered, max_turns = max_turns)# if simulated else df_filtered 
+        # Filter by edit distance (if column exists)
+        if 'edit_distance' in df.columns:
+            print(f"\nFiltering by edit distance (threshold={edit_distance_threshold})...")
+            df_filtered = filter_by_edit_distance(df, threshold=edit_distance_threshold)
+        else:
+            print("\nNo edit_distance column found, skipping filter")
+            df_filtered = df.copy()
         
-    if 'respondent_id' in df.columns:
-        print("\nFiltering by respondent ID...")
-        df_filtered = filter_by_respondent_id(df_filtered, threshold=12)
-        print(f"✓ Filtered to {len(df_filtered)} rows with valid respondent IDs")
-    else:
-        print("\nNo respondent_id column found, skipping filter")
-
+        # Clean starter text and identify who started
+        df_filtered = clean_user_ai_start(df_filtered, max_turns=max_turns, experiment=experiment)
+        
+        # Filter by respondent_id (human-ai only)
+        if 'respondent_id' in df_filtered.columns and experiment == 'human-ai':
+            print("\nFiltering by respondent ID...")
+            df_filtered = filter_by_respondent_id(df_filtered, threshold=12)
+            print(f"✓ Filtered to {len(df_filtered)} rows with valid respondent IDs")
+        else:
+            print("\nNo respondent_id filtering (not applicable for this experiment)")
 
     print("\nBuilding full story text...")
     # Save filtered interaction-level data
-    save_csv(df_filtered, "interaction_level_stories_filtered_simulated.csv" if simulated else "interaction_level_stories_filtered.csv", stage="interim")
-    df_stories = build_full_story_text(df_filtered)
-    save_csv(df_stories, "stories_full_text_filtered_simulated.csv" if simulated else "stories_full_text_filtered.csv", stage="interim")
+    output_interaction = "interaction_level_stories_filtered_simulated.csv" if simulated else "interaction_level_stories_filtered.csv"
+    save_csv(df_filtered, output_interaction, stage="interim")
     
+    df_stories = build_full_story_text(df_filtered, experiment=experiment)
+    output_stories = "stories_full_text_filtered_simulated.csv" if simulated else "stories_full_text_filtered.csv"
+    save_csv(df_stories, output_stories, stage="interim")
     
     print(f"\n✓ Filtered to {len(df_filtered)} interaction rows")
     print(f"✓ Built {len(df_stories)} complete stories")
-    print(f"✓ Saved to data/{config.get('active_dataset', 'TEXT')}/interim/")
+    print(f"✓ Saved to {exp_config['interim_dir']}/")
     print("\n✅ Script 02 complete!")
 
 

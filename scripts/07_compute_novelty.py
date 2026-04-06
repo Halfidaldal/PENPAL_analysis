@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Script 05: Compute novelty and transience scores.
+Script 07: Compute novelty and transience scores.
 
-Uses a causal language model (Mistral-7B) to compute:
+Uses a causal language model (Llama-8B) to compute:
 - Novelty (surprise): how surprising this utterance is given prior context
 - Transience: how surprising future text is given this utterance
 
-Input:  data/interim/clean_stories.csv
-Output: data/processed/novelty_scores.csv
+Input:  data/<experiment>/interim/interaction_level_stories_filtered.csv
+Output: data/<experiment>/processed/novelty_scores.csv
 """
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from nes.io import load_config, load_csv, save_csv
+from nes.io import load_config, load_csv, save_csv, get_active_experiment, get_experiment_config, get_shared_config
 from nes.novelty import load_language_model, compute_novelty_scores, compute_transience_scores
 import argparse
 
@@ -25,11 +25,15 @@ def main():
     parser.add_argument("--output", default="novelty_scores.csv", help="Output CSV path")
     args = parser.parse_args()
     
-    config = load_config()
-    model_name = config['novelty'].get('model_name', 'mistral-7b')
-    window_size = config['novelty'].get('window_size', 128)
-
+    experiment = get_active_experiment()
+    exp_config = get_experiment_config()
+    shared_config = get_shared_config()
     
+    print(f"Active experiment: {experiment}")
+    
+    model_name = shared_config['novelty'].get('model_name', 'mistral-7b')
+    window_size = shared_config['novelty'].get('window_size', 128)
+
     print(f"Loading clean data from {args.input}")
     df = load_csv(Path(args.input).name, stage="interim")
     
@@ -46,7 +50,8 @@ def main():
     df = df.drop(columns=["user_ids", "ai_ids"], errors="ignore")
     
     save_csv(df, Path(args.output).name)
-    print(f"Saved novelty scores to {args.output}")
+    print(f"Saved novelty scores to {exp_config['processed_dir']}/{args.output}")
+    print("\n✅ Script 07 complete!")
 
 
 if __name__ == "__main__":

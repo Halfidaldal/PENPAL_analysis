@@ -5,11 +5,9 @@ Script 08: Compute semantic exploration metrics (binned embedding distances).
 Computes non-overlapping semantic jumps at multiple timescales to measure
 how much narratives explore semantic space over time.
 
-Input:  data/processed/embeddings.csv (needs embedding columns preserved as parquet)
-Output: data/processed/semantic_exploration_binned.csv
-        data/processed/semantic_exploration_ai_ai_binned.csv
+Input:  data/<experiment>/processed/story_embeddings_interaction_level.parquet
+Output: data/<experiment>/processed/semantic_exploration_binned.parquet
 """
-from logging import config
 import sys
 from pathlib import Path
 
@@ -20,29 +18,37 @@ from nes.semantic_exploration import (
     compute_ai_ai_semantic_exploration,
     compute_lag_exploration_metrics
 )
-from nes.io import load_config, get_project_root, save_parquet, load_parquet
+from nes.io import load_config, get_project_root, save_parquet, load_parquet, get_active_experiment, get_experiment_config, get_shared_config
 from tqdm import tqdm
 import pandas as pd
 
 
 def main():
-    config = load_config()
-    exploration_config = config.get('exploration', {})
-    simulated = config['cleaning'].get('simulated', False)
+    experiment = get_active_experiment()
+    exp_config = get_experiment_config()
+    shared_config = get_shared_config()
+    
+    exploration_config = shared_config.get('exploration', {})
+    simulated = shared_config['cleaning'].get('simulated', False)
 
+    print(f"Active experiment: {experiment}")
+    
+    # Determine author_2 embedding column name
+    author_2_emb_col = 'ai_embedding' if experiment == 'human-ai' else 'user2_embedding'
 
-
-    print("Computing semantic exploration for human-AI interactions...")
-    print(f"Loading embeddings from {config['datasets'][config['active_dataset']]['processed_dir']}/embeddings.parquet")
+    print("Computing semantic exploration for interactions...")
+    print(f"Loading embeddings from {exp_config['processed_dir']}/")
     df_interaction_level = load_parquet("story_embeddings_interaction_level_simulated.parquet" if simulated else "story_embeddings_interaction_level.parquet", stage="processed")
+    
     try:
-        #filter first interaction away
-        df_human_ai = df_interaction_level[(df_interaction_level['turn'] > 1) & (df_interaction_level['conversation_id'] != "conv_c8ced99a-c021-4e80-b849-823950d4c29c") & (df_interaction_level['turn'] < 10)].copy()
+        # Filter first interaction away
+        df_filtered = df_interaction_level[(df_interaction_level['turn'] > 1) & (df_interaction_level['turn'] < 10)].copy()
+        
         # Compute exploration metrics
         exploration_df = compute_lag_exploration_metrics(
-            df_human_ai,
+            df_filtered,
             user_embedding_col="user_embedding",
-            ai_embedding_col="ai_embedding",
+            ai_embedding_col=author_2_emb_col,
             max_lag=exploration_config.get('max_k', 10)
         )
         
@@ -57,40 +63,11 @@ def main():
             print(f"  agent={agent}, k={k} (window={k+1}): {dist:.4f}")
         
     except Exception as e:
-        print(f"Error processing human-AI embeddings: {e}")
+        print(f"Error processing embeddings: {e}")
         print("Make sure embeddings are saved as parquet to preserve array columns.")
     
-    # Process AI-AI baseline if available
-    if not simulated:
-        #skipping AI-AI if not simualted data
-        pass
-    else:
-        print(f"\nComputing semantic exploration for AI-AI baseline...")
-        try:
-            df_ai_ai = pd.read_parquet(args.ai_ai_embeddings)
-            
-            exploration_ai_ai = compute_ai_ai_semantic_exploration(
-                df_ai_ai,
-                ai1_embedding_col="ai1_embedding",
-                ai2_embedding_col="ai2_embedding",
-                max_k=exploration_config.get('max_k', 10)
-            )
-            
-            exploration_ai_ai.to_csv(args.ai_ai_output, index=False)
-            print(f"Saved {len(exploration_ai_ai)} AI-AI exploration records to {args.ai_ai_output}")
-            
-            # Compare
-            mean_ai_ai = exploration_ai_ai.groupby('k')['distance'].mean()
-            print(f"\nComparison of mean semantic jumps:")
-            print(f"{'k':<5} {'Human-AI':<12} {'AI-AI':<12} {'Difference':<12}")
-            print("-" * 45)
-            for (agent, k) in range(1, exploration_config.get('max_k', 9) + 1):
-                if k in mean_by_k and k in mean_ai_ai:
-                    diff = mean_by_k[k] - mean_ai_ai[k]
-                    print(f"{k:<5} {mean_by_k[k]:<12.4f} {mean_ai_ai[k]:<12.4f} {diff:<12.4f}")
-            
-        except Exception as e:
-            print(f"Could not process AI-AI baseline: {e}")
+    print(f"\n✓ Saved to {exp_config['processed_dir']}/")
+    print("\n✅ Script 08 complete!")
 
 
 if __name__ == "__main__":

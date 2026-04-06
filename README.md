@@ -65,6 +65,8 @@ pip install -r environment/requirements.txt
 
 Place your Firebase admin SDK JSON file in the appropriate location (see `config.yaml` for the path).
 
+For local API keys, copy `.env.example` to `.env`, fill in the values, and keep `.env` out of git. VS Code terminal sessions in this workspace are configured to read `.env` automatically.
+
 ## Running the Pipeline
 
 The pipeline is designed to be run sequentially. Each script produces output that the next script consumes.

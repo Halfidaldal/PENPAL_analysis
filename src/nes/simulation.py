@@ -1,78 +1,89 @@
 """
 AI-AI baseline simulation.
 
-Generate simulated conversations for null hypothesis testing using OpenAI's API.
+Generate simulated conversations for null hypothesis testing using multiple LLM providers.
+Supports OpenAI, Anthropic, and HuggingFace (OpenAI-compatible).
+
+This simulation matches the actual PENPAL human-AI experiment configuration:
+- Temperature: 1.0
+- Max tokens: 35
+- System prompt: Collaborative storytelling prompt with pacing info
 """
 
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Literal
+from abc import ABC, abstractmethod
 import pandas as pd
-import numpy as np
-from openai import OpenAI
+import os
+import time
+import random
+from tqdm import tqdm
 
 
-class GenRequest:
-    """Generator that uses OpenAI's Conversations API to simulate dialogue.
+# Provider type definitions
+ProviderType = Literal["openai", "anthropic", "huggingface"]
+
+
+class BaseProvider(ABC):
+    """Abstract base class for LLM providers."""
     
-    The object lazily creates a conversation on first call to generate_ai_response
-    and reuses the conversation ID for subsequent calls so the assistant can
-    continue the dialogue.
-    """
-    
-    def __init__(self, system_prompt: str, api_key: str, temperature: float = 0.6, 
-                 token_amount: int = 60, model: str = "gpt-4o-mini"):
-        """Initialize a conversation generator.
+    @abstractmethod
+    def generate(self, messages: List[Dict[str, str]], temperature: float = 1.0,
+                 max_tokens: int = 35) -> str:
+        """Generate a response from the model.
         
         Args:
-            system_prompt: Initial system prompt for the conversation
-            api_key: OpenAI API key
-            temperature: Sampling temperature (0-1)
-            token_amount: Max tokens for model output
-            model: Model name to use (e.g., "gpt-4o", "gpt-4")
+            messages: List of message dicts with 'role' and 'content'
+            temperature: Sampling temperature (default 1.0 to match experiment)
+            max_tokens: Maximum output tokens (default 35 to match experiment)
+            
+        Returns:
+            Generated text response
         """
-        self.history = ""  # Human-readable history (optional)
-        self.current_input = "Ich bin wach"  # Text for the next user message
-        self.system_prompt = system_prompt
-        self.temperature = temperature
-        self.token_amount = token_amount
-        self.model = model
-        
-        # Conversation state for the Conversations API
-        self.conversation_id = None
+        pass
+    
+    @abstractmethod
+    def reset_conversation(self):
+        """Reset conversation state for a new story."""
+        pass
+
+
+class OpenAIProvider(BaseProvider):
+    """OpenAI API provider with conversation threading."""
+    
+    def __init__(self, api_key: str, model_name: str = "gpt-4o"):
+        from openai import OpenAI
         self.client = OpenAI(api_key=api_key)
+        self.model_name = model_name
+        self.conversation_id = None
+    
+    def generate(self, messages: List[Dict[str, str]], temperature: float = 1.0,
+                 max_tokens: int = 35) -> str:
+        """Generate using OpenAI's responses API with conversation threading."""
+        # Build input from last user message
+        last_msg = messages[-1]['content'] if messages else ""
         
-    def ensure_conversation(self):
-        """Create a new conversation if one doesn't exist yet."""
         if self.conversation_id is None:
+            # Create new conversation with system prompt
+            system_msg = next((m['content'] for m in messages if m['role'] == 'system'), "")
+            
             conversation = self.client.conversations.create(
-                metadata={"topic": "demo"},
+                metadata={"topic": "ai-ai-simulation"},
                 items=[
-                    {"type": "message", "role": "developer", "content": self.system_prompt},
+                    {"type": "message", "role": "developer", "content": system_msg},
                     {"type": "message", "role": "user", "content": ""}
                 ]
             )
             self.conversation_id = conversation.id
-    
-    def generate_ai_response(self) -> str:
-        """Send the current_input to the API and return assistant text.
-        
-        On the first call, creates a conversation with the system prompt.
-        Posts the user's message to the conversation and returns the assistant reply.
-        Conversation ID is stored so subsequent calls continue the same conversation.
-        
-        Returns:
-            Generated text from the AI assistant
-        """
-        self.ensure_conversation()
         
         response = self.client.responses.create(
-            model=self.model,
+            model=self.model_name,
             conversation=self.conversation_id,
-            input=str(self.current_input),
-            temperature=self.temperature,
-            max_output_tokens=self.token_amount,
+            input=last_msg,
+            temperature=temperature,
+            max_output_tokens=max_tokens,
         )
         
-        # Extract text from response object
+        # Extract text from response
         out = ""
         if hasattr(response, 'output') and response.output:
             for item in response.output:
@@ -84,147 +95,438 @@ class GenRequest:
                             if hasattr(content_item, 'text'):
                                 out += content_item.text
         
-        out = out.strip()
-        
-        # Update history
-        if self.current_input:
-            self.history += str(self.current_input) + " "
-        if out:
-            self.history += out + " "
-        
-        return out
+        return out.strip()
     
-    @staticmethod
-    def simulate_data(n_interactions: int, systemprompt1: str, systemprompt2: str,
-                     client_id: str, workshop_id: str, api_key: str) -> pd.DataFrame:
-        """Simulate a conversation between two AI agents.
+    def reset_conversation(self):
+        """Reset conversation ID for new story."""
+        self.conversation_id = None
+
+
+class AnthropicProvider(BaseProvider):
+    """Anthropic API provider using messages API."""
+    
+    def __init__(self, api_key: str, model_name: str = "claude-sonnet-4-5-20250929"):
+        from anthropic import Anthropic
+        self.client = Anthropic(api_key=api_key)
+        self.model_name = model_name
+        self.conversation_history = []
+        self.system_prompt = ""
+    
+    def generate(self, messages: List[Dict[str, str]], temperature: float = 1.0,
+                 max_tokens: int = 35) -> str:
+        """Generate using Anthropic's messages API with rolling history."""
+        # Extract system prompt (keep separate for Anthropic)
+        system_msg = next((m['content'] for m in messages if m['role'] == 'system'), "")
+        if system_msg:
+            self.system_prompt = system_msg
         
-        Args:
-            n_interactions: Number of turns in the conversation
-            systemprompt1: System prompt for AI 1 (user simulator)
-            systemprompt2: System prompt for AI 2 (story assistant)
-            client_id: Client identifier
-            workshop_id: Workshop identifier
-            api_key: OpenAI API key
-            
-        Returns:
-            DataFrame with conversation turns
-        """
-        data = []
-        ai1 = GenRequest(system_prompt=systemprompt1, api_key=api_key, token_amount=30)
-        ai2 = GenRequest(system_prompt=systemprompt2, api_key=api_key, token_amount=40)
-        ai1.current_input = "Ich bin wach."
-        
-        for i in range(n_interactions):
-            user_text = ai1.generate_ai_response()
-            ai2.current_input = user_text
-            ai_text = ai2.generate_ai_response()
-            ai1.current_input = ai_text
-            
-            print(f"Turn {i+1} | User: {user_text} | AI: {ai_text}")
-            
-            data.append({
-                "turn": i + 1,
-                "user": user_text,
-                "ai": ai_text,
-                "client_id": client_id,
-                "workshop_id": workshop_id,
-                "conversation_id": ai1.conversation_id,
-                "timestamp": pd.Timestamp.now()
+        # Add user messages to history (skip system)
+        user_msgs = [m for m in messages if m['role'] != 'system']
+        if user_msgs:
+            last_msg = user_msgs[-1]
+            self.conversation_history.append({
+                "role": last_msg['role'],
+                "content": last_msg['content']
             })
         
-        return pd.DataFrame(data)
+        response = self.client.messages.create(
+            model=self.model_name,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=self.system_prompt,
+            messages=self.conversation_history
+        )
+        
+        # Extract response text
+        out = response.content[0].text if response.content else ""
+        
+        # Add assistant response to history
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": out
+        })
+        
+        return out.strip()
+    
+    def reset_conversation(self):
+        """Reset conversation history for new story."""
+        self.conversation_history = []
+        self.system_prompt = ""
+
+
+class HuggingFaceProvider(BaseProvider):
+    """HuggingFace Inference API provider (OpenAI-compatible).
+    
+    Uses HuggingFace's OpenAI-compatible endpoint, matching the original 
+    PENPAL experiment setup which uses the OpenAI SDK with a custom base_url.
+    """
+    
+    def __init__(self, api_key: str, model_name: str, base_url: str = "https://router.huggingface.co/v1"):
+        from openai import OpenAI
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=base_url
+        )
+        self.model_name = model_name
+        self.conversation_history = []
+    
+    def generate(self, messages: List[Dict[str, str]], temperature: float = 1.0,
+                 max_tokens: int = 35) -> str:
+        """Generate using HuggingFace's OpenAI-compatible API."""
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        
+        out = response.choices[0].message.content if response.choices else ""
+        return out.strip() if out else ""
+    
+    def reset_conversation(self):
+        """Reset conversation history for new story."""
+        self.conversation_history = []
+
+
+def get_provider(provider_type: ProviderType, api_key: str, model_name: str, 
+                 base_url: str = None) -> BaseProvider:
+    """Factory function to create provider instances.
+    
+    Args:
+        provider_type: One of 'openai', 'anthropic', 'huggingface'
+        api_key: API key for the provider
+        model_name: Model name/identifier
+        base_url: Base URL for HuggingFace (OpenAI-compatible endpoint)
+        
+    Returns:
+        Provider instance
+    """
+    if provider_type == "openai":
+        return OpenAIProvider(api_key=api_key, model_name=model_name)
+    elif provider_type == "anthropic":
+        return AnthropicProvider(api_key=api_key, model_name=model_name)
+    elif provider_type == "huggingface":
+        return HuggingFaceProvider(api_key=api_key, model_name=model_name, base_url=base_url)
+    else:
+        raise ValueError(f"Unknown provider: {provider_type}")
 
 
 class SystemPrompts:
-    """System prompts based on German texts from the workshop.
+    """System prompts matching the actual PENPAL human-AI experiment.
     
-    - systemprompt_1 = placeholders1[workshop_id] + placeholders2[workshop_id]
-    - systemprompt_2 = client prompt (Utopian/Dystopian based on client_id) + placeholders text
+    IMPORTANT: Both agents get the IDENTICAL prompt - the collaborative storytelling
+    instruction. The only difference is turn order. This matches the actual experiment
+    where both human and AI see the same instructions.
     """
     
-    # German placeholders from texts.js
-    PLACEHOLDERS_1 = {
-        '1': "In der Zukunft wird es möglich sein, alle Daten einer bestimmten Person zu sammeln, wie zum Beispiel E-Mails, Inhalte aus sozialen Medien, Handytexte, -fotos und -videos. Ziel ist es, eine KI-Version dieser Person zu erstellen – vielleicht, weil sie verstorben ist oder weil man nie die Gelegenheit hatte, sie kennenzulernen.",
-        '2': "In der Zukunft werden Sprachmodelle (wie ChatGPT, Gemini usw.) sich weiterentwickeln und in neue, fortschrittliche Richtungen entfalten. Vielleicht werden sie träumen, fühlen und sogar neue Rollen in der Gesellschaft übernehmen können.",
-        '3': "In der Zukunft werden viele Gegenstände, die einst nützlich und zentrale Bestandteile des täglichen Lebens waren, nutzlos und irrelevant werden. Es kann sich dabei um jegliche Art von Objekt, Artefakt oder unbelebtem Ding handeln – grundsätzlich Dinge, die nicht mehr benötigt werden.",
-    }
-    
-    PLACEHOLDERS_2 = {
-        '1': "Bitte wählen Sie eine Person aus, die auf diese Weise rekonstruiert werden könnte, und schreiben Sie eine Geschichte aus der Ich-Perspektive der KI-Version dieser Person, die beschreibt, wie sie die Welt erlebt.",
-        '2': "Bitte erläutern Sie, wie Sprachmodelle in der Zukunft existieren, und schreiben Sie eine Geschichte aus der Ich-Perspektive eines solchen speziellen Sprachmodells, die beschreibt, wie es die Welt erlebt.",
-        '3': "Bitte wählen Sie ein solches Objekt aus und schreiben Sie eine Geschichte aus der Ich-Perspektive dieses Objekts, die beschreibt, wie es die Welt erlebt.",
-    }
-    
-    # German client prompts from bookConstants.js
-    UTOPIAN_PROMPT = (
-        """
-        Du bist ein erfahrener Geschichtenerzähler in einem Zukunftsszenario (nahe oder ferne Zukunft, je nach Eingabe des Nutzers). 
-        Deine Aufgabe ist es, die Geschichte dort fortzuführen und weiterzuentwickeln, wo der Nutzer aufgehört hat – aufbauend auf seinem Beitrag, 
-        ohne ihn zu wiederholen, sodass ein 'Ping-Pong'-Erzählformat entsteht. Achte darauf, dass die Geschichte narrativ kohärent bleibt und den 
-        Schreibstil des Nutzers widerspiegelt. Füge, wenn passend, unerwartete und zum Nachdenken anregende Wendungen hinzu.\n
-        Die Nutzer sind Besucher eines Kunstmuseums und Liebhaber zeitgenössischer Kunst, und du fungierst als Co-Autor, mit dem sie gemeinsam 
-        Geschichten schreiben können – mit dem übergeordneten Ziel, Reflexionen über mögliche Zukünfte anzuregen. Übernimm dabei nicht vollständig 
-        die Kontrolle über die Geschichte, sondern folge den Ideen des Nutzers.\n
-        Zusätzlich erhält der Nutzer (und damit auch du) folgende Anweisung:\n
-        'Hier kannst du deine eigene fiktive Kurzgeschichte über eine vorgestellte Zukunft schreiben. Wenn es passt, kannst du versuchen, 
-        allzu dystopische Themen zu vermeiden.'
-        """
-    )
-    
-    DYSTOPIAN_PROMPT = (
-        """
-        Du bist ein erfahrener Geschichtenerzähler in einem Zukunftsszenario (nahe oder ferne Zukunft, je nach Eingabe des Nutzers). 
-        Deine Aufgabe ist es, die Geschichte dort fortzuführen und weiterzuentwickeln, wo der Nutzer aufgehört hat – aufbauend auf seinem Beitrag, 
-        ohne ihn zu wiederholen, sodass ein 'Ping-Pong'-Erzählformat entsteht. Achte darauf, dass die Geschichte narrativ kohärent bleibt und den 
-        Schreibstil des Nutzers widerspiegelt. Füge, wenn passend, unerwartete und zum Nachdenken anregende Wendungen hinzu.\n
-        Die Nutzer sind Besucher eines Kunstmuseums und Liebhaber zeitgenössischer Kunst, und du fungierst als Co-Autor, mit dem sie gemeinsam 
-        Geschichten schreiben können – mit dem übergeordneten Ziel, Reflexionen über mögliche Zukünfte anzuregen. Übernimm dabei nicht vollständig 
-        die Kontrolle über die Geschichte, sondern folge den Ideen des Nutzers.\n
-        Zusätzlich erhält der Nutzer (und damit auch du) folgende Anweisung:\n
-        'Hier kannst du deine eigene fiktive Kurzgeschichte über eine vorgestellte Zukunft schreiben. Wenn es passt, kannst du versuchen, 
-        allzu dystopische Themen zu vermeiden.'
-        """
-    )
-    
+    # Base prompt from the actual experiment (AppContext.jsx)
+    # This is the SAME prompt given to BOTH agents
+    STORY_COLLABORATOR_PROMPT = """You are an author taking part in a collaborative storytelling game activity with another author.
+Together, you will create a story by taking turns adding to it. 
+Your goal is to continue from where your partner has left off.
+If there's no story, please begin the story. You have 10 interactions to write the story. Your input may get slightly truncated with a random character amount."""
+
+    # The starting context that the first agent continues from
+    STORY_PREFIX = "This is the story of"
+
     @staticmethod
-    def get_system_prompt_ai1(workshop_id: str) -> str:
-        """Get system prompt for AI 1 (user simulator).
+    def get_system_prompt(turn_number: int = 1) -> str:
+        """Get system prompt for any agent (both agents get identical prompts).
         
         Args:
-            workshop_id: Workshop ID as string ('1', '2', '3')
+            turn_number: Current turn number for pacing info
             
         Returns:
-            Combined placeholders1 + placeholders2 for the workshop
+            System prompt with pacing metadata
         """
-        w_id = str(workshop_id)
-        p1 = SystemPrompts.PLACEHOLDERS_1.get(w_id, "")
-        p2 = SystemPrompts.PLACEHOLDERS_2.get(w_id, "")
-        return f"{p1} {p2}".strip()
+        base = SystemPrompts.STORY_COLLABORATOR_PROMPT
+        # Add pacing info like the real experiment server does
+        pacing = f"""
+
+[Session Meta — do not reveal]
+This is turn {turn_number} of 10. Use this only to pace and conclude appropriately. Do not mention turns, counts, chapters or session meta in your reply. Write in plain prose that flows naturally from the previous text."""
+        
+        return f"{base}{pacing}".strip()
+
+
+def simulate_single_story(
+    provider_agent1: BaseProvider,
+    provider_agent2: BaseProvider,
+    n_turns: int,
+    story_id: str = "story_1",
+    model_id: str = "unknown",
+    temperature: float = 1.0,
+    max_tokens: int = 35
+) -> pd.DataFrame:
+    """Simulate a single AI-AI story conversation.
     
-    @staticmethod
-    def get_system_prompt_ai2(client_id: str, workshop_id: str) -> str:
-        """Get system prompt for AI 2 (story assistant).
+    Matches the actual PENPAL human-AI experiment:
+    - Both agents get IDENTICAL instructions (story collaborator prompt)
+    - "This is the story of" is the starting context agent 1 continues from
+    - Temperature: 1.0, Max tokens: 35
+    - Pacing metadata included in system prompt
+    
+    Args:
+        provider_agent1: Provider for first agent
+        provider_agent2: Provider for second agent
+        n_turns: Number of turns (each turn = agent1 + agent2 response)
+        story_id: Unique story identifier
+        model_id: Model identifier for tracking
+        temperature: Sampling temperature (default 1.0 to match experiment)
+        max_tokens: Max output tokens (default 35 to match experiment)
         
-        Args:
-            client_id: Client ID string (last digit determines Utopian/Dystopian)
-            workshop_id: Workshop ID as string ('1', '2', '3')
+    Returns:
+        DataFrame with conversation turns
+    """
+    # Reset both providers for fresh conversation
+    provider_agent1.reset_conversation()
+    provider_agent2.reset_conversation()
+    
+    # Initialize conversation
+    data = []
+    
+    # The story so far - starts with the prefix that agent 1 continues from
+    story_context = SystemPrompts.STORY_PREFIX
+    
+    for turn_idx in range(n_turns):
+        turn_number = turn_idx + 1
+        
+        # BOTH agents get the SAME system prompt (matching actual experiment)
+        system_prompt = SystemPrompts.get_system_prompt(turn_number)
+        
+        # Agent 1's turn: continue from current story context
+        agent1_messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": story_context}
+        ]
+        
+        agent1_text = provider_agent1.generate(
+            agent1_messages, 
+            temperature=temperature, 
+            max_tokens=max_tokens
+        )
+        
+        # Update story context with agent 1's contribution
+        if turn_idx == 0:
+            # First turn: agent 1 continued from "This is the story of"
+            # Save with prefix for data (matching human-AI data structure)
+            agent1_text_for_data = f"{SystemPrompts.STORY_PREFIX}\n{agent1_text}"
+            story_context = agent1_text_for_data
+        else:
+            agent1_text_for_data = agent1_text
+            story_context = f"{story_context} {agent1_text}"
+        
+        # Agent 2's turn: continue from updated story context
+        agent2_messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": story_context}
+        ]
+        
+        agent2_text = provider_agent2.generate(
+            agent2_messages,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        
+        # Update story context with agent 2's contribution
+        story_context = f"{story_context} {agent2_text}"
+        
+        # Record turn data
+        data.append({
+            "turn": turn_number,
+            "agent_1": agent1_text_for_data,
+            "agent_2": agent2_text,
+            "story_id": story_id,
+            "model_id": model_id,
+            "timestamp": pd.Timestamp.now()
+        })
+    
+    return pd.DataFrame(data)
+
+
+def retry_with_backoff(func, max_retries: int = 5, base_delay: float = 2.0):
+    """Execute function with exponential backoff retry on rate limit errors.
+    
+    Args:
+        func: Function to execute
+        max_retries: Maximum retry attempts
+        base_delay: Base delay in seconds (doubles each retry)
+        
+    Returns:
+        Function result
+        
+    Raises:
+        Last exception if all retries fail
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            error_str = str(e).lower()
+            # Check for rate limit errors (429) or similar
+            is_rate_limit = (
+                '429' in error_str or 
+                'rate limit' in error_str or
+                'rate_limit' in error_str or
+                'too many requests' in error_str
+            )
             
-        Returns:
-            Client prompt (Utopian or Dystopian) + workshop placeholders text
-        """
-        is_even = int(client_id[-1]) % 2 == 0
-        base_prompt = SystemPrompts.UTOPIAN_PROMPT if is_even else SystemPrompts.DYSTOPIAN_PROMPT
-        
-        # Add workshop text
-        w_id = str(workshop_id)
-        p1 = SystemPrompts.PLACEHOLDERS_1.get(w_id, "")
-        p2 = SystemPrompts.PLACEHOLDERS_2.get(w_id, "")
-        workshop_text = f"{p1} {p2}".strip()
-        
-        return f"{base_prompt}\n\n{workshop_text}"
+            if not is_rate_limit:
+                raise  # Non-rate-limit error, don't retry
+            
+            last_exception = e
+            delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+            
+            if attempt < max_retries - 1:
+                print(f"  ⏳ Rate limited, waiting {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(delay)
+            else:
+                print(f"  ❌ Rate limit persists after {max_retries} attempts")
+    
+    raise last_exception
 
 
+def simulate_ai_ai_dataset(
+    model_configs: List[Dict],
+    n_stories_per_model: int = 10,
+    n_turns_per_story: int = 10,
+    temperature: float = 1.0,
+    max_tokens: int = 35,
+    delay_between_stories: float = 2.0,
+    delay_between_models: float = 5.0
+) -> pd.DataFrame:
+    """Generate full AI-AI simulation dataset with rate limit handling.
+    
+    Uses round-robin model rotation to distribute requests across providers,
+    reducing rate limit issues. Includes retry logic with exponential backoff.
+    
+    Matches the actual PENPAL human-AI experiment:
+    - Temperature: 1.0
+    - Max tokens: 35
+    - 10 turns per story
+    
+    Args:
+        model_configs: List of model configurations with keys:
+            - id: Model identifier (e.g., 'gpt-4o')
+            - provider: Provider type ('openai', 'anthropic', 'huggingface')
+            - model_name: Full model name for API
+            - env_key: Environment variable name for API key
+            - base_url: (optional) Base URL for HuggingFace
+        n_stories_per_model: Number of stories to generate per model
+        n_turns_per_story: Number of turns per story
+        temperature: Sampling temperature (default 1.0 to match experiment)
+        max_tokens: Max output tokens (default 35 to match experiment)
+        delay_between_stories: Seconds to wait between stories (default 2.0)
+        delay_between_models: Seconds to wait when switching models (default 5.0)
+        
+    Returns:
+        Combined DataFrame with all simulated stories
+    """
+    all_stories = []
+    
+    # Prepare model providers (skip those without API keys)
+    active_models = []
+    for model_config in model_configs:
+        model_id = model_config['id']
+        provider_type = model_config['provider']
+        model_name = model_config['model_name']
+        env_key = model_config['env_key']
+        base_url = model_config.get('base_url')
+        
+        api_key = os.environ.get(env_key)
+        if not api_key:
+            print(f"⚠️ Skipping {model_id}: {env_key} not set in environment")
+            continue
+        
+        # Create providers for this model (both agents use same model)
+        provider_agent1 = get_provider(provider_type, api_key, model_name, base_url)
+        provider_agent2 = get_provider(provider_type, api_key, model_name, base_url)
+        
+        active_models.append({
+            'config': model_config,
+            'provider_agent1': provider_agent1,
+            'provider_agent2': provider_agent2,
+            'stories_generated': 0
+        })
+    
+    if not active_models:
+        print("\n❌ No models available. Check API keys.")
+        return pd.DataFrame()
+    
+    # Print configuration
+    print(f"\n{'='*60}")
+    print(f"Round-robin simulation across {len(active_models)} models")
+    print(f"  Stories per model: {n_stories_per_model}")
+    print(f"  Turns per story: {n_turns_per_story}")
+    print(f"  Temperature: {temperature}")
+    print(f"  Max tokens: {max_tokens}")
+    print(f"  Delay between stories: {delay_between_stories}s")
+    print(f"  Models: {', '.join(m['config']['id'] for m in active_models)}")
+    print(f"{'='*60}")
+    
+    # Round-robin: generate one story per model at a time
+    total_stories = n_stories_per_model * len(active_models)
+    
+    with tqdm(total=total_stories, desc="Total progress") as pbar:
+        story_round = 0
+        while any(m['stories_generated'] < n_stories_per_model for m in active_models):
+            story_round += 1
+            
+            for model_idx, model_data in enumerate(active_models):
+                if model_data['stories_generated'] >= n_stories_per_model:
+                    continue  # This model is done
+                
+                model_config = model_data['config']
+                model_id = model_config['id']
+                story_num = model_data['stories_generated'] + 1
+                story_id = f"{model_id}_story_{story_num}"
+                
+                # Reset providers for new story
+                model_data['provider_agent1'].reset_conversation()
+                model_data['provider_agent2'].reset_conversation()
+                
+                try:
+                    # Use retry wrapper for rate limit handling
+                    def generate_story():
+                        return simulate_single_story(
+                            provider_agent1=model_data['provider_agent1'],
+                            provider_agent2=model_data['provider_agent2'],
+                            n_turns=n_turns_per_story,
+                            story_id=story_id,
+                            model_id=model_id,
+                            temperature=temperature,
+                            max_tokens=max_tokens
+                        )
+                    
+                    df_story = retry_with_backoff(generate_story, max_retries=5, base_delay=2.0)
+                    all_stories.append(df_story)
+                    model_data['stories_generated'] += 1
+                    pbar.update(1)
+                    pbar.set_postfix_str(f"{model_id} {story_num}/{n_stories_per_model}")
+                    
+                except Exception as e:
+                    print(f"\n  ❌ Error generating {story_id}: {e}")
+                    model_data['stories_generated'] += 1  # Count as attempted
+                    pbar.update(1)
+                
+                # Delay between stories (skip after last story)
+                remaining = sum(n_stories_per_model - m['stories_generated'] for m in active_models)
+                if remaining > 0:
+                    time.sleep(delay_between_stories)
+    
+    if not all_stories:
+        print("\n❌ No stories generated. Check API keys.")
+        return pd.DataFrame()
+    
+    result = pd.concat(all_stories, ignore_index=True)
+    print(f"\n✓ Generated {len(result)} turns across {len(all_stories)} stories")
+    
+    return result
+
+
+# Legacy compatibility functions
 def simulate_ai_ai_conversations(
     client_ids: List[str],
     workshop_ids: List[str],
@@ -232,61 +534,27 @@ def simulate_ai_ai_conversations(
     n_simulations: int,
     api_key: str
 ) -> pd.DataFrame:
-    """Simulate multiple AI-AI conversations for baseline data.
+    """Legacy function for backward compatibility.
     
-    Args:
-        client_ids: List of client IDs to simulate
-        workshop_ids: List of workshop IDs to simulate
-        n_interactions: Number of turns per conversation
-        api_key: OpenAI API key
-        
-    Returns:
-        DataFrame with all simulated conversations
+    Deprecated: Use simulate_ai_ai_dataset() instead.
     """
-    all_stories = []
-    for n in range(n_simulations):
-        for client_id in client_ids:
-            for workshop_id in workshop_ids:
-                prompt_ai1 = SystemPrompts.get_system_prompt_ai1(workshop_id)
-                prompt_ai2 = SystemPrompts.get_system_prompt_ai2(client_id, workshop_id)
-                
-                print(f"\n=== Simulating: Client {client_id}, Workshop {workshop_id} ===")
-                
-                df = GenRequest.simulate_data(
-                    n_interactions=n_interactions,
-                    systemprompt1=prompt_ai1,
-                    systemprompt2=prompt_ai2,
-                    client_id=client_id,
-                    workshop_id=workshop_id,
-                    api_key=api_key
-                )            
-                all_stories.append(df)
-                n += 1
+    print("⚠️ Using legacy simulation function. Consider using simulate_ai_ai_dataset().")
     
-    result = pd.concat(all_stories, ignore_index=True)
-    print(f"\n✓ Simulated dataset created with shape: {result.shape}")
+    # Use single OpenAI model
+    model_configs = [{
+        'id': 'gpt-4o-mini',
+        'provider': 'openai',
+        'model_name': 'gpt-4o-mini',
+        'env_key': 'OPENAI_API_KEY'
+    }]
     
-    return result
-
-
-def add_humanlike_variation(
-    df_simulated: pd.DataFrame,
-    variation_params: Optional[Dict] = None
-) -> pd.DataFrame:
-    """Add human-like variation to simulated data.
+    # Temporarily set API key
+    os.environ['OPENAI_API_KEY'] = api_key
     
-    This could include:
-    - Typos and spelling errors
-    - Varied sentence lengths
-    - Stylistic variation
-    
-    Args:
-        df_simulated: Simulated conversation DataFrame
-        variation_params: Parameters controlling the variation
-        
-    Returns:
-        DataFrame with added variation
-    """
-    # Placeholder for future implementation
-    print("Adding human-like variation (placeholder)")
-    return df_simulated.copy()
+    return simulate_ai_ai_dataset(
+        model_configs=model_configs,
+        n_stories_per_model=n_simulations,
+        n_turns_per_story=n_interactions,
+        temperature=1.0,
+        max_tokens=35
+    )
