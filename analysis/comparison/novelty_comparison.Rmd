@@ -1,0 +1,541 @@
+---
+title: "Novelty Comparison: Human-AI vs Human-Human vs AI-AI"
+subtitle: "Cross-Condition Novelty, Transience, and Resonance Analysis"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load comparison utilities
+source(here::here("analysis/comparison/_comparison_utils.R"))
+
+# Additional packages
+pacman::p_load(
+  lme4,         # Mixed effects models
+  lmerTest,     # P-values for mixed models
+  patchwork,    # Combine plots
+  emmeans,      # Estimated marginal means
+  effectsize    # Effect size calculations
+)
+
+# Set global theme
+theme_set(theme_comparison())
+```
+
+# Overview
+
+This notebook compares **novelty metrics** across all three experimental conditions:
+
+- **Human-AI**: Human co-writing with an LLM
+- **Human-Human**: Two humans co-writing together
+- **AI-AI**: Two AI agents co-writing (simulated baseline)
+
+**Key Metrics (Information-Theoretic Framework):**
+
+- **Novelty (Surprisal)**: How unexpected is a turn given past context? Higher = more surprising/novel
+- **Transience**: How quickly does a turn's influence fade? Higher = less lasting impact
+- **Resonance**: Novelty minus Transience — net forward influence on the narrative
+
+**Key Questions:**
+1. Do humans produce higher novelty than AI?
+2. Does novelty lead to greater resonance in human contributions?
+3. How do Human-Human dynamics compare to Human-AI?
+4. Is the AI-AI baseline more predictable (lower novelty)?
+
+# Load Data
+
+```{r load-data}
+# Load novelty data from each condition
+load_novelty_data <- function(conditions = c("human-ai", "human-human", "ai-ai")) {
+  all_data <- list()
+  
+  for (cond in conditions) {
+    # Try different possible filenames
+    filenames <- c("novelty_scores.csv", "novelty_scores_40.csv", "novelty_scores.parquet")
+    
+    for (fname in filenames) {
+      path <- here("data", cond, "processed", fname)
+      if (file.exists(path)) {
+        df <- if (str_detect(fname, "\\.parquet$")) {
+          read_parquet(path)
+        } else {
+          read_csv(path, show_col_types = FALSE)
+        }
+        cat("Loaded", cond, "from", fname, "\n")
+        all_data[[cond]] <- df %>% mutate(condition = cond)
+        break
+      }
+    }
+  }
+  
+  bind_rows(all_data)
+}
+
+# Load data
+df_combined <- load_novelty_data()
+cat("\nLoaded conditions:", paste(unique(df_combined$condition), collapse = ", "), "\n")
+```
+
+# Schema Normalization
+
+```{r normalize}
+# Normalize column names across conditions
+# Human-AI: user_surprise, ai_surprise, user_transience, ai_transience
+# Human-Human: user_surprise, user2_surprise, user_transience, user2_transience
+# AI-AI: agent_1_surprise, agent_2_surprise, agent_1_transience, agent_2_transience
+
+normalize_novelty_columns <- function(df) {
+  # Detect condition and normalize
+  df <- df %>%
+    mutate(
+      # Author 1 metrics
+      author_1_surprise = case_when(
+        !is.na(user_surprise) ~ user_surprise,
+        "agent_1_surprise" %in% names(df) ~ .data[["agent_1_surprise"]],
+        TRUE ~ NA_real_
+      ),
+      author_1_transience = case_when(
+        !is.na(user_transience) ~ user_transience,
+        "agent_1_transience" %in% names(df) ~ .data[["agent_1_transience"]],
+        TRUE ~ NA_real_
+      ),
+      # Author 2 metrics
+      author_2_surprise = case_when(
+        condition == "human-ai" & !is.na(ai_surprise) ~ ai_surprise,
+        condition == "human-human" & "user2_surprise" %in% names(df) ~ .data[["user2_surprise"]],
+        "agent_2_surprise" %in% names(df) ~ .data[["agent_2_surprise"]],
+        TRUE ~ NA_real_
+      ),
+      author_2_transience = case_when(
+        condition == "human-ai" & !is.na(ai_transience) ~ ai_transience,
+        condition == "human-human" & "user2_transience" %in% names(df) ~ .data[["user2_transience"]],
+        "agent_2_transience" %in% names(df) ~ .data[["agent_2_transience"]],
+        TRUE ~ NA_real_
+      )
+    )
+  
+  # Compute resonance (novelty - transience)
+  df <- df %>%
+    mutate(
+      author_1_resonance = author_1_surprise - author_1_transience,
+      author_2_resonance = author_2_surprise - author_2_transience
+    )
+  
+  df
+}
+
+# Check available columns before normalization
+cat("Columns in combined data:\n")
+print(names(df_combined))
+
+# Normalize if we have the expected columns
+if ("user_surprise" %in% names(df_combined) || "agent_1_surprise" %in% names(df_combined)) {
+  df_analysis <- normalize_novelty_columns(df_combined)
+} else {
+  # Fallback: use whatever surprise/transience columns exist
+  df_analysis <- df_combined
+  cat("Using original column names - manual inspection needed\n")
+}
+
+# Prepare condition factor
+df_analysis <- df_analysis %>%
+  prepare_condition_factor(reference = "human-ai")
+
+# Report data summary
+cat("\nAnalysis dataset:\n")
+df_analysis %>%
+  group_by(condition) %>%
+  summarise(
+    n_stories = n_distinct(conversation_id),
+    n_turns = n(),
+    .groups = "drop"
+  ) %>%
+  print()
+```
+
+# Descriptive Statistics
+
+```{r descriptives}
+# Summary statistics by condition
+desc_stats <- df_analysis %>%
+  group_by(condition) %>%
+  summarise(
+    n_stories = n_distinct(conversation_id),
+    n_turns = n(),
+    # Author 1 (Human in Human-AI, User1 in Human-Human, Agent1 in AI-AI)
+    a1_surprise_mean = mean(author_1_surprise, na.rm = TRUE),
+    a1_surprise_sd = sd(author_1_surprise, na.rm = TRUE),
+    a1_transience_mean = mean(author_1_transience, na.rm = TRUE),
+    a1_resonance_mean = mean(author_1_resonance, na.rm = TRUE),
+    # Author 2
+    a2_surprise_mean = mean(author_2_surprise, na.rm = TRUE),
+    a2_surprise_sd = sd(author_2_surprise, na.rm = TRUE),
+    a2_transience_mean = mean(author_2_transience, na.rm = TRUE),
+    a2_resonance_mean = mean(author_2_resonance, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+desc_stats %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Novelty metrics by condition"
+  )
+```
+
+# Novelty (Surprisal) Comparison
+
+## Distribution Visualization
+
+```{r novelty-distributions, fig.width=12, fig.height=5}
+# Pivot to long format for plotting
+df_novelty_long <- df_analysis %>%
+  select(conversation_id, turn, condition, 
+         author_1_surprise, author_2_surprise) %>%
+  pivot_longer(
+    cols = c(author_1_surprise, author_2_surprise),
+    names_to = "author",
+    values_to = "surprise"
+  ) %>%
+  mutate(
+    author = if_else(str_detect(author, "author_1"), "Author 1", "Author 2")
+  ) %>%
+  drop_na(surprise)
+
+# Distribution plots
+p1 <- df_novelty_long %>%
+  ggplot(aes(x = surprise, fill = condition)) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = condition_colors) +
+  facet_wrap(~author) +
+  labs(
+    title = "Novelty (Surprisal) Distributions",
+    x = "Surprisal",
+    y = "Density"
+  )
+
+p2 <- df_novelty_long %>%
+  ggplot(aes(x = condition, y = surprise, fill = condition)) +
+  geom_violin(alpha = 0.5) +
+  geom_boxplot(width = 0.2, alpha = 0.8, outlier.alpha = 0.1) +
+  scale_fill_manual(values = condition_colors) +
+  facet_wrap(~author) +
+  labs(
+    title = "Novelty by Condition",
+    x = "Condition",
+    y = "Surprisal"
+  ) +
+  theme(legend.position = "none")
+
+p1 / p2
+```
+
+## Statistical Comparison
+
+```{r novelty-models}
+# Author 1 novelty comparison
+model_novelty_a1 <- lmer(
+  author_1_surprise ~ condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("=== Author 1 Novelty by Condition ===\n")
+print(summary(model_novelty_a1))
+
+# Pairwise contrasts
+emm_novelty_a1 <- emmeans(model_novelty_a1, specs = "condition")
+cat("\n=== Pairwise Contrasts (Author 1) ===\n")
+print(pairs(emm_novelty_a1, adjust = "bonferroni"))
+
+# Author 2 novelty comparison
+model_novelty_a2 <- lmer(
+  author_2_surprise ~ condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("\n=== Author 2 Novelty by Condition ===\n")
+print(summary(model_novelty_a2))
+
+emm_novelty_a2 <- emmeans(model_novelty_a2, specs = "condition")
+cat("\n=== Pairwise Contrasts (Author 2) ===\n")
+print(pairs(emm_novelty_a2, adjust = "bonferroni"))
+```
+
+# Transience Comparison
+
+```{r transience-comparison, fig.width=12, fig.height=5}
+# Pivot transience to long format
+df_transience_long <- df_analysis %>%
+  select(conversation_id, turn, condition, 
+         author_1_transience, author_2_transience) %>%
+  pivot_longer(
+    cols = c(author_1_transience, author_2_transience),
+    names_to = "author",
+    values_to = "transience"
+  ) %>%
+  mutate(
+    author = if_else(str_detect(author, "author_1"), "Author 1", "Author 2")
+  ) %>%
+  drop_na(transience)
+
+# Visualization
+ggplot(df_transience_long, aes(x = condition, y = transience, fill = condition)) +
+  geom_violin(alpha = 0.5) +
+  geom_boxplot(width = 0.2, alpha = 0.8, outlier.alpha = 0.1) +
+  scale_fill_manual(values = condition_colors) +
+  facet_wrap(~author) +
+  labs(
+    title = "Transience by Condition and Author",
+    subtitle = "Higher transience = influence fades faster",
+    x = "Condition",
+    y = "Transience"
+  ) +
+  theme(legend.position = "none")
+```
+
+```{r transience-models}
+# Author 1 transience
+model_trans_a1 <- lmer(
+  author_1_transience ~ condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("=== Author 1 Transience by Condition ===\n")
+print(summary(model_trans_a1))
+cat("\n=== Pairwise Contrasts ===\n")
+print(pairs(emmeans(model_trans_a1, "condition"), adjust = "bonferroni"))
+
+# Author 2 transience
+model_trans_a2 <- lmer(
+  author_2_transience ~ condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("\n=== Author 2 Transience by Condition ===\n")
+print(summary(model_trans_a2))
+cat("\n=== Pairwise Contrasts ===\n")
+print(pairs(emmeans(model_trans_a2, "condition"), adjust = "bonferroni"))
+```
+
+# Resonance Comparison
+
+Resonance = Novelty - Transience (net forward influence)
+
+```{r resonance-comparison, fig.width=12, fig.height=5}
+# Pivot resonance to long format
+df_resonance_long <- df_analysis %>%
+  select(conversation_id, turn, condition, 
+         author_1_resonance, author_2_resonance) %>%
+  pivot_longer(
+    cols = c(author_1_resonance, author_2_resonance),
+    names_to = "author",
+    values_to = "resonance"
+  ) %>%
+  mutate(
+    author = if_else(str_detect(author, "author_1"), "Author 1", "Author 2")
+  ) %>%
+  drop_na(resonance)
+
+# Visualization
+ggplot(df_resonance_long, aes(x = condition, y = resonance, fill = condition)) +
+  geom_violin(alpha = 0.5) +
+  geom_boxplot(width = 0.2, alpha = 0.8, outlier.alpha = 0.1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
+  facet_wrap(~author) +
+  labs(
+    title = "Resonance by Condition and Author",
+    subtitle = "Positive = lasting forward influence on narrative",
+    x = "Condition",
+    y = "Resonance (Novelty - Transience)"
+  ) +
+  theme(legend.position = "none")
+```
+
+```{r resonance-models}
+# Author 1 resonance
+model_res_a1 <- lmer(
+  author_1_resonance ~ condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("=== Author 1 Resonance by Condition ===\n")
+print(summary(model_res_a1))
+cat("\n=== Pairwise Contrasts ===\n")
+print(pairs(emmeans(model_res_a1, "condition"), adjust = "bonferroni"))
+
+# Author 2 resonance
+model_res_a2 <- lmer(
+  author_2_resonance ~ condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("\n=== Author 2 Resonance by Condition ===\n")
+print(summary(model_res_a2))
+cat("\n=== Pairwise Contrasts ===\n")
+print(pairs(emmeans(model_res_a2, "condition"), adjust = "bonferroni"))
+```
+
+# Novelty-Resonance Relationship
+
+Does higher novelty lead to higher resonance? Is this relationship condition-specific?
+
+```{r novelty-resonance-relationship, fig.width=12, fig.height=5}
+# Author 1: Novelty vs Resonance
+p1 <- df_analysis %>%
+  drop_na(author_1_surprise, author_1_resonance) %>%
+  ggplot(aes(x = author_1_surprise, y = author_1_resonance, color = condition)) +
+  geom_point(alpha = 0.1, size = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Author 1: Novelty → Resonance",
+    x = "Surprisal (Novelty)",
+    y = "Resonance",
+    color = "Condition"
+  )
+
+# Author 2: Novelty vs Resonance
+p2 <- df_analysis %>%
+  drop_na(author_2_surprise, author_2_resonance) %>%
+  ggplot(aes(x = author_2_surprise, y = author_2_resonance, color = condition)) +
+  geom_point(alpha = 0.1, size = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Author 2: Novelty → Resonance",
+    x = "Surprisal (Novelty)",
+    y = "Resonance",
+    color = "Condition"
+  )
+
+p1 + p2 + plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+```{r novelty-resonance-interaction}
+# Test if novelty-resonance slope differs by condition
+
+# Author 1
+model_nr_a1 <- lmer(
+  author_1_resonance ~ author_1_surprise * condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("=== Author 1: Novelty × Condition Interaction ===\n")
+print(summary(model_nr_a1))
+
+# Slopes by condition
+emm_slopes_a1 <- emtrends(model_nr_a1, specs = "condition", var = "author_1_surprise")
+cat("\n=== Novelty-Resonance Slopes by Condition ===\n")
+print(emm_slopes_a1)
+cat("\n=== Pairwise Slope Comparisons ===\n")
+print(pairs(emm_slopes_a1, adjust = "bonferroni"))
+```
+
+# Summary Visualization
+
+```{r summary-plot, fig.width=14, fig.height=10}
+# Compile all metrics for summary comparison
+summary_data <- df_analysis %>%
+  group_by(condition) %>%
+  summarise(
+    # Author 1
+    a1_novelty = mean(author_1_surprise, na.rm = TRUE),
+    a1_novelty_se = sd(author_1_surprise, na.rm = TRUE) / sqrt(n()),
+    a1_transience = mean(author_1_transience, na.rm = TRUE),
+    a1_transience_se = sd(author_1_transience, na.rm = TRUE) / sqrt(n()),
+    a1_resonance = mean(author_1_resonance, na.rm = TRUE),
+    a1_resonance_se = sd(author_1_resonance, na.rm = TRUE) / sqrt(n()),
+    # Author 2
+    a2_novelty = mean(author_2_surprise, na.rm = TRUE),
+    a2_novelty_se = sd(author_2_surprise, na.rm = TRUE) / sqrt(n()),
+    a2_transience = mean(author_2_transience, na.rm = TRUE),
+    a2_transience_se = sd(author_2_transience, na.rm = TRUE) / sqrt(n()),
+    a2_resonance = mean(author_2_resonance, na.rm = TRUE),
+    a2_resonance_se = sd(author_2_resonance, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+# Pivot to long format for faceted plot
+summary_long <- summary_data %>%
+  pivot_longer(
+    cols = -condition,
+    names_to = c("author", "metric", ".value"),
+    names_pattern = "(a[12])_(.+)_(mean|se)$"
+  )
+
+# Alternative pivot that actually works
+summary_long <- summary_data %>%
+  pivot_longer(
+    cols = starts_with("a1_") | starts_with("a2_"),
+    names_to = "var",
+    values_to = "value"
+  ) %>%
+  separate(var, into = c("author", "metric_stat"), sep = "_", extra = "merge") %>%
+  separate(metric_stat, into = c("metric", "stat"), sep = "_(?=se$|mean$)", fill = "right") %>%
+  mutate(stat = if_else(is.na(stat), "mean", stat)) %>%
+  pivot_wider(names_from = stat, values_from = value) %>%
+  rename(mean = `mean`) %>%
+  mutate(
+    author = if_else(author == "a1", "Author 1", "Author 2"),
+    metric = str_to_title(metric)
+  )
+
+# Create summary bar plots
+ggplot(summary_long, aes(x = condition, y = mean, fill = condition)) +
+  geom_col(alpha = 0.8, width = 0.6) +
+  geom_errorbar(aes(ymin = mean - 1.96 * se, ymax = mean + 1.96 * se), 
+                width = 0.2, linewidth = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  facet_grid(author ~ metric, scales = "free_y") +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Summary: Novelty Metrics by Condition and Author",
+    subtitle = "Error bars show 95% CI",
+    x = "Condition",
+    y = "Value"
+  ) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+# Key Findings
+
+Based on the analysis above:
+
+1. **Novelty patterns**: [Interpret which authors/conditions show highest surprisal]
+
+2. **Transience patterns**: [Discuss whether contributions have lasting vs. fleeting influence]
+
+3. **Resonance (net influence)**: [Compare forward narrative influence across conditions]
+
+4. **Innovation bias**: [Discuss novelty-resonance slopes — steeper = innovation more rewarded]
+
+5. **AI-AI baseline**: [Note whether simulated baseline shows characteristic patterns]
+
+---
+
+*Analysis completed: `r Sys.time()`*

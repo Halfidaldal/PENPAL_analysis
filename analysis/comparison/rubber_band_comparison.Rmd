@@ -1,0 +1,520 @@
+---
+title: "Rubber-Band Dynamics Comparison: Human-AI vs Human-Human vs AI-AI"
+subtitle: "Cross-Condition Valence Gap and Re-alignment Analysis"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load comparison utilities
+source(here::here("analysis/comparison/_comparison_utils.R"))
+
+# Additional packages
+pacman::p_load(
+  lme4,         # Mixed effects models
+  lmerTest,     # P-values for mixed models
+  patchwork,    # Combine plots
+  emmeans,      # Estimated marginal means
+  effectsize    # Effect size calculations
+)
+
+# Set global theme
+theme_set(theme_comparison())
+```
+
+# Overview
+
+This notebook compares **rubber-band dynamics** — the tendency for divergent valence to "snap back" toward alignment — across all three experimental conditions:
+
+- **Human-AI**: Human co-writing with an LLM
+- **Human-Human**: Two humans co-writing together
+- **AI-AI**: Two AI agents co-writing (simulated baseline)
+
+**The Rubber-Band Hypothesis:**
+When there is a valence gap (emotional divergence) between co-authors, the subsequent turn should show a correction toward alignment. This is operationalized as:
+
+- **Valence Gap**: Difference between Author 1 and Author 2 valence at turn t
+- **Gap Change**: Change in valence gap from turn t to turn t+1
+- **Rubber-Band Effect**: Negative correlation between gap and gap change (divergence predicts re-convergence)
+
+**Key Questions:**
+1. Is the rubber-band effect present in all conditions?
+2. Is the effect stronger in Human-AI (AI accommodating) vs Human-Human (mutual accommodation)?
+3. Does AI-AI show the strongest correction (most "compliant" dynamic)?
+4. How does the correction direction differ across conditions?
+
+# Load Data
+
+```{r load-data}
+# Load valence data using standardized loader
+df_combined <- load_valence_data(conditions = c("human-ai", "human-human", "ai-ai"))
+cat("Loaded conditions:", paste(unique(df_combined$condition), collapse = ", "), "\n")
+
+# Prepare condition factor
+df_combined <- df_combined %>%
+  prepare_condition_factor(reference = "human-ai")
+
+# Report data summary
+df_combined %>%
+  group_by(condition) %>%
+  summarise(
+    n_stories = n_distinct(conversation_id),
+    n_turns = n(),
+    .groups = "drop"
+  ) %>%
+  print()
+```
+
+# Preprocessing: Valence Gap Computation
+
+```{r preprocess}
+# Compute valence gaps and lagged changes
+df_analysis <- df_combined %>%
+  group_by(conversation_id, condition) %>%
+  arrange(turn) %>%
+  mutate(
+    # Current valence gap (Author 1 - Author 2)
+    valence_gap = author_1_valence - author_2_valence,
+    
+    # Lagged gap values
+    valence_gap_lag1 = lag(valence_gap, n = 1),
+    
+    # Gap change (how much the gap changed from previous turn)
+    gap_change = valence_gap - valence_gap_lag1,
+    
+    # Alternative: Author 2's response to Author 1
+    # Does Author 2 move toward Author 1's previous valence?
+    author_1_valence_lag1 = lag(author_1_valence, n = 1),
+    author_2_valence_lag1 = lag(author_2_valence, n = 1),
+    
+    # Author 2's adjustment
+    author_2_adjustment = author_2_valence - author_1_valence_lag1,
+    
+    # Author 1's adjustment to Author 2's previous valence
+    author_1_adjustment = author_1_valence - author_2_valence_lag1
+  ) %>%
+  ungroup() %>%
+  filter(turn > 1) %>%
+  drop_na(valence_gap, valence_gap_lag1)
+
+cat("Analysis dataset:", nrow(df_analysis), "turns across", 
+    n_distinct(df_analysis$conversation_id), "stories\n")
+```
+
+# Descriptive Statistics
+
+```{r descriptives}
+# Valence gap statistics by condition
+desc_stats <- df_analysis %>%
+  group_by(condition) %>%
+  summarise(
+    n_turns = n(),
+    mean_gap = mean(valence_gap, na.rm = TRUE),
+    sd_gap = sd(valence_gap, na.rm = TRUE),
+    mean_gap_change = mean(gap_change, na.rm = TRUE),
+    sd_gap_change = sd(gap_change, na.rm = TRUE),
+    # Rubber-band correlation (within-condition)
+    rubber_band_r = cor(valence_gap_lag1, gap_change, use = "complete.obs"),
+    .groups = "drop"
+  )
+
+desc_stats %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Valence gap statistics by condition",
+    col.names = c("Condition", "N Turns", "Mean Gap", "SD Gap", 
+                  "Mean Δ Gap", "SD Δ Gap", "Rubber-Band r")
+  )
+```
+
+# Valence Gap Distribution
+
+```{r gap-distribution, fig.width=12, fig.height=5}
+# Gap distributions
+p1 <- df_analysis %>%
+  ggplot(aes(x = valence_gap, fill = condition)) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = condition_colors) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = "Valence Gap Distribution",
+    subtitle = "Author 1 - Author 2 valence",
+    x = "Valence Gap",
+    y = "Density"
+  )
+
+p2 <- df_analysis %>%
+  ggplot(aes(x = condition, y = valence_gap, fill = condition)) +
+  geom_violin(alpha = 0.5) +
+  geom_boxplot(width = 0.2, alpha = 0.8, outlier.alpha = 0.1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Valence Gap by Condition",
+    x = "Condition",
+    y = "Valence Gap"
+  ) +
+  theme(legend.position = "none")
+
+p1 + p2 + plot_layout(guides = "collect")
+```
+
+# Rubber-Band Effect Analysis
+
+## Core Test: Gap → Gap Change
+
+The rubber-band hypothesis predicts that **previous gap negatively predicts gap change** — when there's divergence, the system corrects toward alignment.
+
+```{r rubber-band-scatter, fig.width=12, fig.height=5}
+# Rubber-band scatter plot
+df_analysis %>%
+  ggplot(aes(x = valence_gap_lag1, y = gap_change, color = condition)) +
+  geom_point(alpha = 0.05, size = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Rubber-Band Effect by Condition",
+    subtitle = "Negative slope = divergence predicts re-convergence",
+    x = "Valence Gap (t-1)",
+    y = "Gap Change (t)",
+    color = "Condition"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+## Within-Condition Models
+
+```{r within-condition-rubberband}
+# Fit rubber-band model for each condition
+conditions <- unique(df_analysis$condition)
+
+results_within <- tibble()
+
+for (cond in conditions) {
+  df_cond <- filter(df_analysis, condition == cond)
+  
+  if (nrow(df_cond) < 50) {
+    cat("Skipping", cond, "- insufficient data\n")
+    next
+  }
+  
+  model <- tryCatch({
+    lmer(gap_change ~ valence_gap_lag1 + (1 | conversation_id),
+         data = df_cond)
+  }, error = function(e) NULL)
+  
+  if (!is.null(model)) {
+    coefs <- summary(model)$coefficients
+    results_within <- bind_rows(results_within, tibble(
+      condition = cond,
+      estimate = coefs["valence_gap_lag1", "Estimate"],
+      se = coefs["valence_gap_lag1", "Std. Error"],
+      t = coefs["valence_gap_lag1", "t value"],
+      p = coefs["valence_gap_lag1", "Pr(>|t|)"]
+    ))
+  }
+}
+
+# Display results
+results_within %>%
+  mutate(
+    sig = case_when(
+      p < 0.001 ~ "***",
+      p < 0.01 ~ "**",
+      p < 0.05 ~ "*",
+      p < 0.1 ~ ".",
+      TRUE ~ ""
+    ),
+    ci_lower = estimate - 1.96 * se,
+    ci_upper = estimate + 1.96 * se,
+    interpretation = if_else(estimate < 0, "Rubber-band present", "No rubber-band")
+  ) %>%
+  select(condition, estimate, se, ci_lower, ci_upper, t, p, sig, interpretation) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Rubber-band effect by condition (Gap_t-1 → ΔGap_t)"
+  )
+```
+
+## Cross-Condition Comparison
+
+```{r cross-condition-rubberband}
+# Full model with condition interaction
+model_cross <- lmer(
+  gap_change ~ valence_gap_lag1 * condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("=== Cross-Condition Rubber-Band Model ===\n")
+print(summary(model_cross))
+
+# Slopes by condition
+emm_slopes <- emtrends(model_cross, specs = "condition", var = "valence_gap_lag1")
+cat("\n=== Rubber-Band Slopes by Condition ===\n")
+print(emm_slopes)
+
+cat("\n=== Pairwise Slope Comparisons ===\n")
+print(pairs(emm_slopes, adjust = "bonferroni"))
+```
+
+# Directional Analysis: Who Accommodates?
+
+Beyond the symmetric rubber-band test, we can ask: **Who does the accommodating?**
+
+- Does Author 2 adjust toward Author 1's previous valence?
+- Does Author 1 adjust toward Author 2's previous valence?
+
+```{r directional-accommodation, fig.width=14, fig.height=5}
+# Author 2's accommodation to Author 1
+p1 <- df_analysis %>%
+  drop_na(author_1_valence_lag1, author_2_valence) %>%
+  ggplot(aes(x = author_1_valence_lag1, y = author_2_valence, color = condition)) +
+  geom_point(alpha = 0.05, size = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Author 2 Accommodation",
+    subtitle = "Does Author 2 match Author 1's previous valence?",
+    x = "Author 1 Valence (t-1)",
+    y = "Author 2 Valence (t)",
+    color = "Condition"
+  )
+
+# Author 1's accommodation to Author 2
+p2 <- df_analysis %>%
+  drop_na(author_2_valence_lag1, author_1_valence) %>%
+  ggplot(aes(x = author_2_valence_lag1, y = author_1_valence, color = condition)) +
+  geom_point(alpha = 0.05, size = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Author 1 Accommodation",
+    subtitle = "Does Author 1 match Author 2's previous valence?",
+    x = "Author 2 Valence (t-1)",
+    y = "Author 1 Valence (t)",
+    color = "Condition"
+  )
+
+p1 + p2 + plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+```{r directional-models}
+# Author 2 → Author 1's previous valence
+model_a2_to_a1 <- lmer(
+  author_2_valence ~ author_1_valence_lag1 * condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("=== Author 2 Accommodation (A2 → A1_lag) ===\n")
+emm_a2_to_a1 <- emtrends(model_a2_to_a1, "condition", var = "author_1_valence_lag1")
+print(emm_a2_to_a1)
+cat("\n=== Pairwise Contrasts ===\n")
+print(pairs(emm_a2_to_a1, adjust = "bonferroni"))
+
+# Author 1 → Author 2's previous valence
+model_a1_to_a2 <- lmer(
+  author_1_valence ~ author_2_valence_lag1 * condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("\n=== Author 1 Accommodation (A1 → A2_lag) ===\n")
+emm_a1_to_a2 <- emtrends(model_a1_to_a2, "condition", var = "author_2_valence_lag1")
+print(emm_a1_to_a2)
+cat("\n=== Pairwise Contrasts ===\n")
+print(pairs(emm_a1_to_a2, adjust = "bonferroni"))
+```
+
+# Asymmetry in Accommodation
+
+```{r asymmetry-analysis}
+# Compare who accommodates more within each condition
+accommodation_results <- tibble()
+
+for (cond in unique(df_analysis$condition)) {
+  df_cond <- filter(df_analysis, condition == cond)
+  
+  # A2 → A1_lag
+  m1 <- tryCatch({
+    lmer(author_2_valence ~ author_1_valence_lag1 + (1 | conversation_id), data = df_cond)
+  }, error = function(e) NULL)
+  
+  # A1 → A2_lag
+  m2 <- tryCatch({
+    lmer(author_1_valence ~ author_2_valence_lag1 + (1 | conversation_id), data = df_cond)
+  }, error = function(e) NULL)
+  
+  if (!is.null(m1) && !is.null(m2)) {
+    coef1 <- summary(m1)$coefficients["author_1_valence_lag1", "Estimate"]
+    se1 <- summary(m1)$coefficients["author_1_valence_lag1", "Std. Error"]
+    coef2 <- summary(m2)$coefficients["author_2_valence_lag1", "Estimate"]
+    se2 <- summary(m2)$coefficients["author_2_valence_lag1", "Std. Error"]
+    
+    accommodation_results <- bind_rows(accommodation_results, tibble(
+      condition = cond,
+      a2_accommodates = coef1,
+      a2_se = se1,
+      a1_accommodates = coef2,
+      a1_se = se2,
+      diff = coef1 - coef2,
+      diff_se = sqrt(se1^2 + se2^2),
+      z = diff / diff_se,
+      p = 2 * pnorm(-abs(z))
+    ))
+  }
+}
+
+accommodation_results %>%
+  mutate(
+    dominant_accommodator = case_when(
+      p < 0.05 & diff > 0 ~ "Author 2 (AI/User2)",
+      p < 0.05 & diff < 0 ~ "Author 1 (Human/User1)",
+      TRUE ~ "Symmetric"
+    )
+  ) %>%
+  select(condition, a2_accommodates, a1_accommodates, diff, z, p, dominant_accommodator) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Accommodation asymmetry by condition",
+    col.names = c("Condition", "A2 → A1", "A1 → A2", "Diff", "z", "p", "Dominant Accommodator")
+  )
+```
+
+# Temporal Dynamics
+
+How does the rubber-band effect evolve across the story?
+
+```{r temporal-dynamics, fig.width=12, fig.height=5}
+# Bin turns into early/middle/late
+df_temporal <- df_analysis %>%
+  group_by(conversation_id) %>%
+  mutate(
+    max_turn = max(turn),
+    story_phase = case_when(
+      turn <= max_turn / 3 ~ "Early",
+      turn <= 2 * max_turn / 3 ~ "Middle",
+      TRUE ~ "Late"
+    ),
+    story_phase = factor(story_phase, levels = c("Early", "Middle", "Late"))
+  ) %>%
+  ungroup()
+
+# Plot rubber-band by phase
+df_temporal %>%
+  ggplot(aes(x = valence_gap_lag1, y = gap_change, color = condition)) +
+  geom_point(alpha = 0.03, size = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1) +
+  facet_wrap(~story_phase) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Rubber-Band Effect Across Story Phases",
+    x = "Valence Gap (t-1)",
+    y = "Gap Change (t)",
+    color = "Condition"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+# Summary Visualization
+
+```{r summary-plot, fig.width=12, fig.height=8}
+# Coefficient comparison plot
+if (nrow(results_within) > 0) {
+  p1 <- results_within %>%
+    mutate(
+      ci_lower = estimate - 1.96 * se,
+      ci_upper = estimate + 1.96 * se
+    ) %>%
+    ggplot(aes(x = condition, y = estimate, fill = condition)) +
+    geom_col(width = 0.6, alpha = 0.8) +
+    geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), width = 0.2) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+    scale_fill_manual(values = condition_colors) +
+    labs(
+      title = "Rubber-Band Effect Strength",
+      subtitle = "More negative = stronger re-alignment tendency",
+      y = "Coefficient (β)",
+      x = "Condition"
+    ) +
+    theme(legend.position = "none")
+  
+  # Accommodation comparison
+  if (nrow(accommodation_results) > 0) {
+    acc_long <- accommodation_results %>%
+      select(condition, a2_accommodates, a1_accommodates, a2_se, a1_se) %>%
+      pivot_longer(
+        cols = c(a2_accommodates, a1_accommodates),
+        names_to = "direction",
+        values_to = "coefficient"
+      ) %>%
+      mutate(
+        se = if_else(direction == "a2_accommodates", a2_se, a1_se),
+        direction = if_else(direction == "a2_accommodates", 
+                            "A2 → A1", "A1 → A2")
+      )
+    
+    p2 <- ggplot(acc_long, aes(x = condition, y = coefficient, fill = direction)) +
+      geom_col(position = position_dodge(width = 0.7), alpha = 0.8, width = 0.6) +
+      geom_errorbar(
+        aes(ymin = coefficient - 1.96 * se, ymax = coefficient + 1.96 * se),
+        position = position_dodge(width = 0.7),
+        width = 0.2
+      ) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+      labs(
+        title = "Directional Accommodation",
+        subtitle = "Who follows whom?",
+        y = "Accommodation Coefficient (β)",
+        x = "Condition",
+        fill = "Direction"
+      ) +
+      theme(legend.position = "bottom")
+    
+    p1 / p2
+  } else {
+    p1
+  }
+}
+```
+
+# Key Findings
+
+Based on the analysis above:
+
+1. **Rubber-band presence**: [Interpret whether the effect is present in all conditions]
+
+2. **Effect strength comparison**: [Compare magnitude across Human-AI, Human-Human, AI-AI]
+
+3. **Accommodation asymmetry**: [Discuss who does more accommodating in each condition]
+
+4. **Temporal patterns**: [Note if the effect changes across story phases]
+
+5. **AI-AI baseline**: [Compare simulated baseline to empirical conditions]
+
+---
+
+*Analysis completed: `r Sys.time()`*
