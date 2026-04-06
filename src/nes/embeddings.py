@@ -34,6 +34,61 @@ def _sanitize_text_batch(batch: List) -> List[str]:
     return [_sanitize_text(item) for item in batch]
 
 
+def _is_float_indices_runtime_error(error: RuntimeError) -> bool:
+    """Detect the known embedding-layer error when token indices are float tensors."""
+    message = str(error)
+    return (
+        "Expected tensor for argument #1 'indices'" in message
+        and "FloatTensor" in message
+    )
+
+
+def _encode_batch_with_fallback(
+    model: SentenceTransformer,
+    batch: List[str],
+    task: Optional[str] = None,
+    normalize_embeddings: bool = True,
+) -> np.ndarray:
+    """Encode a batch and retry with forced integer token IDs on known model dtype bug."""
+    try:
+        if task and hasattr(model, 'encode') and 'task' in model.encode.__code__.co_varnames:
+            return model.encode(
+                batch,
+                task=task,
+                show_progress_bar=False,
+                normalize_embeddings=normalize_embeddings,
+            )
+        return model.encode(
+            batch,
+            show_progress_bar=False,
+            normalize_embeddings=normalize_embeddings,
+        )
+    except RuntimeError as e:
+        if not _is_float_indices_runtime_error(e):
+            raise
+
+        if not getattr(model, "_float_indices_fallback_warned", False):
+            print("[WARNING] Caught float token index bug; retrying batches with integer input_ids.")
+            setattr(model, "_float_indices_fallback_warned", True)
+
+        features = model.tokenize(batch)
+        if "input_ids" in features and isinstance(features["input_ids"], torch.Tensor):
+            features["input_ids"] = features["input_ids"].long()
+
+        target_device = next(model.parameters()).device
+        for key, value in features.items():
+            if isinstance(value, torch.Tensor):
+                features[key] = value.to(target_device)
+
+        with torch.no_grad():
+            out_features = model.forward(features)
+            sentence_embeddings = out_features["sentence_embedding"]
+            if normalize_embeddings:
+                sentence_embeddings = torch.nn.functional.normalize(sentence_embeddings, p=2, dim=1)
+
+        return sentence_embeddings.detach().cpu().numpy()
+
+
 def get_device() -> torch.device:
     """Get the appropriate device (CUDA if available, else CPU)."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -75,11 +130,12 @@ def compute_embeddings_batch(
     for i in tqdm(range(0, len(texts), batch_size), desc="Embedding batches"):
         batch = _sanitize_text_batch(texts[i:i+batch_size])
         
-        # Encode with optional task parameter
-        if task and hasattr(model, 'encode') and 'task' in model.encode.__code__.co_varnames:
-            embeddings = model.encode(batch, task=task, show_progress_bar=False, normalize_embeddings=True)
-        else:
-            embeddings = model.encode(batch, show_progress_bar=False, normalize_embeddings=True)
+        embeddings = _encode_batch_with_fallback(
+            model,
+            batch,
+            task=task,
+            normalize_embeddings=True,
+        )
         
         all_embeddings.append(embeddings)
         
@@ -143,11 +199,12 @@ def embed_story_columns(
         for i in tqdm(range(0, len(texts), batch_size), desc="Embedding batches"):
             batch = _sanitize_text_batch(texts[i:i+batch_size])
             
-            # Encode with optional task parameter
-            if task and hasattr(model, 'encode') and 'task' in model.encode.__code__.co_varnames:
-                embeddings = model.encode(batch, task=task, show_progress_bar=False, normalize_embeddings=True)
-            else:
-                embeddings = model.encode(batch, show_progress_bar=False, normalize_embeddings=True)
+            embeddings = _encode_batch_with_fallback(
+                model,
+                batch,
+                task=task,
+                normalize_embeddings=True,
+            )
             
             all_embeddings.append(embeddings)
             
