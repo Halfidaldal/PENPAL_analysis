@@ -1,0 +1,242 @@
+---
+title: "Semantic Exploration Analysis"
+subtitle: "Analysis of Semantic Exploration Bins"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+## Summary
+
+- Semantic distances decrease with larger bin sizes, reflecting expected averaging across longer interaction windows.
+- In the field data, AI contributions show slightly higher centroid distances than user contributions, indicating somewhat greater semantic spread.
+- No significant user–AI interaction: both follow similar decay rates as bin size increases.
+- Starter identity (user vs AI) has minimal effect on exploration patterns.
+- In interleaved AI–AI runs, both models show similar behaviour, with one variant displaying faster semantic compression.
+- Overall, exploration patterns are structured and nonrandom, with AI in the field dataset often making the larger semantic jumps.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load required packages
+pacman::p_load(
+  tidyverse,    # Data manipulation and plotting
+  lme4,         # Mixed effects models
+  lmerTest,     # P-values for mixed models
+  arrow,        # Parquet file I/O
+  stringi,      # String operations
+  lubridate,    # Date/time handling
+  zoo,          # Rolling statistics
+  patchwork,    # Combine plots
+  cowplot,      # Additional plot utilities
+  afex,          # ANOVA
+  here,          # File path management
+  emmeans      # Estimated marginal means
+
+)
+
+# Set project root
+PROJECT_ROOT <- here()
+setwd(PROJECT_ROOT)
+
+# Set global theme
+theme_set(theme_minimal(base_size = 14))
+
+# Define output directories
+GRAPHS_DIR <- file.path(PROJECT_ROOT, "analysis", "figures")
+TABLES_DIR <- file.path(PROJECT_ROOT, "analysis", "tables")
+
+# Create output directories if they don't exist
+dir.create(GRAPHS_DIR, showWarnings = FALSE, recursive = TRUE)
+dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
+```
+
+# 1. Data Loading and Preprocessing
+
+## 1.1 Load Data
+
+```{r load-data}
+
+# Load Field Data
+setwd(PROJECT_ROOT)
+df_res_field <- read_parquet("data/human-ai/processed/semantic_exploration_binned.parquet") %>%
+  mutate(
+    datatype = "Field",
+    distance_log = log(distance)
+    
+  )
+
+
+```
+
+## 1.2 Descriptive Statistics
+
+```{r descriptive-stats}
+desc_stats <- df_res_field %>%
+  group_by(agent) %>%
+  summarise(
+    n = n(),
+    mean_distance = mean(distance, na.rm = TRUE),
+    sd_distance = sd(distance, na.rm = TRUE),
+    mean_log_distance = mean(distance_log, na.rm = TRUE),
+    sd_log_distance = sd(distance_log, na.rm = TRUE)
+  )
+
+knitr::kable(desc_stats, caption = "Descriptive Statistics for Semantic Exploration by Agent", digits = 3)
+```
+
+# 2. Semantic Exploration Analysis
+
+## 2.1 Bin Size vs. Distance Plot
+
+```{r exploration-plot, fig.width=12, fig.height=6}
+
+p_exploration <- df_res_field %>%
+  filter(agent != 'interleaved') %>%
+  mutate(llm_type = as.factor(llm_type)) %>%
+  ggplot(aes(x = k, y = distance_log, color = agent)) +
+  geom_point(alpha = 0.5, size = 1.5) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.2) +
+  scale_color_manual(values = c("user" = "#377EB8", "ai" = "#FF7F00", "User" = "#377EB8", "AI" = "#FF7F00")) +
+  labs(
+    title = "Bin Size vs. Distance",
+    x = "Bin size",
+    y = "Log Distance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+
+print(p_exploration)
+
+ggsave(file.path(GRAPHS_DIR, "exploration_bin_size_distance.png"),
+       p_exploration, width = 12, height = 6, dpi = 300)
+```
+
+## 2.2 Interleaved Distance Plot
+
+```{r interleaved-plot, fig.width=12, fig.height=6}
+p_interleaved <- df_res_field %>%
+  filter(agent == 'interleaved') %>%
+  mutate(llm_type = as.factor(llm_type)) %>%
+  ggplot(aes(x = k, y = distance_log, color = llm_type)) +
+  geom_point(alpha = 0.5, size = 1.5) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.2) +
+  labs(
+    title = "Distance (Interleaved)",
+    x = "Bin size",
+    y = "Log Distance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+
+print(p_interleaved)
+
+ggsave(file.path(GRAPHS_DIR, "exploration_interleaved_distance.png"),
+       p_interleaved, width = 12, height = 6, dpi = 300)
+```
+
+## 2.3 Starter Effect Plot
+
+```{r starter-plot, fig.width=12, fig.height=6}
+p_starter <- df_res_field %>%
+  filter(agent == 'interleaved') %>%
+  mutate(starter = as.factor(starter)) %>%
+  ggplot(aes(x = k, y = distance_log, color = starter)) +
+  geom_point(alpha = 0.5, size = 1.5) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.2) +
+  scale_color_manual(values = c("user" = "#A65628", "ai" = "#1B9E77", "User" = "#A65628", "AI" = "#1B9E77")) +
+  labs(
+    title = "Distance by Starter",
+    x = "Bin size",
+    y = "Log Distance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+
+print(p_starter)
+
+ggsave(file.path(GRAPHS_DIR, "exploration_starter_distance.png"),
+       p_starter, width = 12, height = 6, dpi = 300)
+```
+
+# 3. Statistical Models
+
+## 3.1 Agent Interaction Model
+
+```{r agent-model}
+lm_agent <- df_res_field %>%
+  filter(agent != "interleaved") %>%
+  mutate(
+    # flatten list-column to character
+    conversation_id = map_chr(conversation_id, as.character),
+    # and treat it as a grouping factor
+    conversation_id = factor(conversation_id)
+  )
+
+lm_field <- lmer(distance_log ~ k * factor(agent) + (1 | conversation_id), data = lm_agent)
+
+cat("=== Agent Interaction Model ===\n")
+print(summary(lm_field)$coefficients)
+```
+
+## 3.2 LLM Type Interaction Model (Interleaved)
+
+```{r llm-type-model}
+lm_llm_type <- df_res_field %>%
+  filter(agent == "interleaved") %>%
+  mutate(
+    # flatten list-column to character
+    conversation_id = map_chr(conversation_id, as.character),
+    # and treat it as a grouping factor
+    conversation_id = factor(conversation_id)
+)
+lm_interleaved_llm_type <- lmer(distance_log ~ k * factor(llm_type) + (1 | conversation_id), data = lm_llm_type)
+
+cat("=== LLM Type Interaction Model (Interleaved) ===\n")
+print(summary(lm_interleaved_llm_type)$coefficients)
+```
+
+## 3.3 Starter Interaction Model (Interleaved)
+
+```{r starter-model}
+lm_starter <- df_res_field %>%
+  filter(agent == "interleaved") %>%
+  mutate(
+    # flatten list-column to character
+    conversation_id = map_chr(conversation_id, as.character),
+    # and treat it as a grouping factor
+    conversation_id = factor(conversation_id)
+)
+lm_interleaved_starter <- lmer(distance_log ~ k * factor(starter) + (1 | conversation_id), data = lm_starter)
+
+cat("=== Starter Interaction Model (Interleaved) ===\n")
+print(summary(lm_interleaved_starter)$coefficients)
+```
+
+# 4. Session Information
+
+```{r session-info}
+sessionInfo()
+```
+
+------------------------------------------------------------------------
+
+**Analysis complete.** All figures saved to `analysis/figures/` and tables to `analysis/tables/`.

@@ -182,7 +182,7 @@ load_valence_data <- function(conditions = c("human-ai", "human-human", "ai-ai")
 #' @param conditions Character vector: Which conditions to load
 #' @return Combined tibble with surface metrics
 load_surface_metrics <- function(conditions = c("human-ai", "human-human", "ai-ai")) {
-  filenames <- c("surface_metrics.parquet", "textdescriptives.parquet")
+  filenames <- c("interaction_level_surface_metrics.parquet", "textdescriptives.parquet")
   
   all_data <- list()
   
@@ -214,7 +214,7 @@ load_surface_metrics <- function(conditions = c("human-ai", "human-human", "ai-a
 #' @param conditions Character vector: Which conditions to load
 #' @return Combined tibble with exploration metrics
 load_exploration_data <- function(conditions = c("human-ai", "human-human", "ai-ai")) {
-  filenames <- c("semantic_exploration.parquet", "exploration_metrics.parquet")
+  filenames <- c("semantic_exploration_binned.parquet", "exploration_metrics.parquet")
   
   all_data <- list()
   

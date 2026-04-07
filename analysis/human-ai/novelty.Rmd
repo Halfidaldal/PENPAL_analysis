@@ -74,8 +74,16 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 
 ```{r load-data}
 
-# Load Field Data
-df_res_field <- read_csv(here("data/TEXT/processed/novelty_scores_40.csv")) %>%
+# Load Field Data - using standardized column names
+df_res_field <- read_csv(here("data/human-ai/processed/novelty_scores_40.csv")) %>%
+  rename(
+    user = author_1,
+    ai = author_2,
+    user_surprise = author_1_surprise,
+    ai_surprise = author_2_surprise,
+    user_transience = author_1_transience,
+    ai_transience = author_2_transience
+  ) %>%
   filter(!is.na(user_surprise) & !is.na(ai_surprise)) %>%
   mutate(
     user_resonance = user_surprise - user_transience,

@@ -66,7 +66,7 @@ dir.create(GRAPHS_DIR, showWarnings = FALSE, recursive = TRUE)
 dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 
 # Define colors
-colors <- c("User" = "#377EB8", "AI" = "#FF7F00", "user" = "#377EB8", "ai" = "#FF7F00")
+colors <- c("User 1" = "#377EB8", "User 2" = "#FF7F00", "author_1" = "#377EB8", "author_2" = "#FF7F00")
 ```
 
 # 1. Data Loading and Preprocessing
@@ -74,15 +74,15 @@ colors <- c("User" = "#377EB8", "AI" = "#FF7F00", "user" = "#377EB8", "ai" = "#F
 ## 1.1 Load Data
 
 ```{r load-data}
-# Load Full Story Data
-df_full <- read_parquet(file.path(PROJECT_ROOT, "data/TEXT/processed/full_story_surface_metrics.parquet")) %>%
-  mutate(type = factor(type, levels = c("user", "ai"), labels = c("User", "AI")))
+# Load Full Story Data - type column uses author_1/author_2 from pipeline
+df_full <- read_parquet(file.path(PROJECT_ROOT, "data/human-human/processed/full_story_surface_metrics.parquet")) %>%
+  mutate(type = factor(type, levels = c("author_1", "author_2"), labels = c("User 1", "User 2")))
 
 df_full <- df_full %>% select(!c('pos_prop_SYM', 'pos_prop_X', 'pos_prop_NUM', 'pos_prop_INTJ'))
 
 # Load Interaction Level Data
-df_inter <- read_parquet(file.path(PROJECT_ROOT, "data/TEXT/processed/interaction_level_surface_metrics.parquet")) %>%
-  mutate(type = factor(type, levels = c("user", "ai"), labels = c("User", "AI")))
+df_inter <- read_parquet(file.path(PROJECT_ROOT, "data/human-human/processed/interaction_level_surface_metrics.parquet")) %>%
+  mutate(type = factor(type, levels = c("author_1", "author_2"), labels = c("User 1", "User 2")))
 
 df_inter <- df_inter %>% select(!c('pos_prop_SYM', 'pos_prop_X')) %>% filter(interaction_count > 1)
 

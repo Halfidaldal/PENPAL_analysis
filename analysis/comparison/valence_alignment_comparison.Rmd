@@ -47,15 +47,11 @@ theme_set(theme_comparison())
 
 This notebook performs comparative analysis across all three experimental conditions:
 
-- **Human-AI**: Human co-writing with an LLM
-- **Human-Human**: Two humans co-writing together  
-- **AI-AI**: Two AI agents co-writing (simulated baseline)
+-   **Human-AI**: Human co-writing with an LLM
+-   **Human-Human**: Two humans co-writing together\
+-   **AI-AI**: Two AI agents co-writing (simulated baseline)
 
-**Key Questions:**
-1. Do alignment patterns differ across the three conditions?
-2. Is alignment asymmetric in all conditions or condition-specific?
-3. Does the AI-AI baseline show the strongest alignment (as expected)?
-4. How do effect sizes compare across conditions?
+**Key Questions:** 1. Do alignment patterns differ across the three conditions? 2. Is alignment asymmetric in all conditions or condition-specific? 3. Does the AI-AI baseline show the strongest alignment (as expected)? 4. How do effect sizes compare across conditions?
 
 # Load Data
 
@@ -123,6 +119,82 @@ cat("Analysis dataset:", nrow(df_analysis), "turns across",
     n_distinct(df_analysis$conversation_id), "stories\n")
 ```
 
+## Build Long-Format Directional Dataset
+
+Following the within-condition analysis approach: we stack both alignment directions into a single long-format dataset. This enables proper statistical testing of directional asymmetry via predictor × direction interactions.
+
+-   **A1 → A2** (same-turn): Author 2 responds to Author 1's current valence
+-   **A2 → A1** (cross-turn): Author 1 responds to Author 2's previous valence
+
+```{r build-long-format}
+# Same-turn: A1 → A2 (Author 2 aligns to Author 1's current valence)
+df_a1_to_a2 <- df_analysis %>%
+  transmute(
+    conversation_id,
+    condition,
+    turn,
+    alignment_direction = "A1_to_A2",
+    predictor_valence = author_1_valence,
+    response_valence = author_2_valence
+  )
+
+# Cross-turn: A2 → A1 (Author 1 aligns to Author 2's previous valence)
+df_a2_to_a1 <- df_analysis %>%
+  transmute(
+    conversation_id,
+    condition,
+    turn,
+    alignment_direction = "A2_to_A1",
+    predictor_valence = author_2_valence_lag1,
+    response_valence = author_1_valence
+  )
+
+# Combine into long format
+df_alignment_long <- bind_rows(df_a1_to_a2, df_a2_to_a1) %>%
+  mutate(
+    alignment_direction = factor(
+      alignment_direction,
+      levels = c("A1_to_A2", "A2_to_A1")
+    )
+  )
+
+cat("=== Long-Format Alignment Data ===\n")
+df_alignment_long %>%
+  group_by(condition, alignment_direction) %>%
+  summarise(
+    n_rows = n(),
+    n_stories = n_distinct(conversation_id),
+    mean_predictor = mean(predictor_valence, na.rm = TRUE),
+    mean_response = mean(response_valence, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  print()
+```
+
+## Standardize Within Conversation × Direction
+
+Z-score predictor and response valence within each (conversation_id × direction) cell. This ensures alignment coefficients are comparable across directions and conditions.
+
+```{r standardize}
+df_std <- df_alignment_long %>%
+  group_by(conversation_id, alignment_direction) %>%
+  mutate(
+    predictor_z = as.numeric(scale(predictor_valence)),
+    response_z = as.numeric(scale(response_valence))
+  ) %>%
+  ungroup() %>%
+  drop_na(predictor_z, response_z)
+
+# Set up sum-coded contrasts for direction (for interpretable interaction)
+df_std$alignment_direction <- factor(
+  df_std$alignment_direction,
+  levels = c("A1_to_A2", "A2_to_A1")
+)
+contrasts(df_std$alignment_direction) <- contr.sum(2)
+
+cat("Standardized dataset:", nrow(df_std), "observations\n")
+```
+
 # Descriptive Statistics
 
 ```{r descriptives}
@@ -169,68 +241,101 @@ p_dist_a1 + p_dist_a2 + plot_layout(guides = "collect")
 
 # Alignment Analysis
 
-## Within-Condition Alignment
+## Within-Condition Asymmetry Models
 
-For each condition, we fit mixed models testing bidirectional alignment:
+For each condition, we fit a single mixed model with **predictor × direction** interaction on standardized valence. This properly tests whether alignment strength differs by direction within each condition.
 
-- **Author 2 → Author 1**: Does Author 1 follow Author 2's previous valence?
-- **Author 1 → Author 2**: Does Author 2 match Author 1's current valence?
-
-```{r within-condition-models}
-# Fit models for each condition and direction
-conditions <- unique(df_analysis$condition)
-
-results_within <- tibble()
+```{r within-condition-asymmetry}
+conditions <- unique(df_std$condition)
+within_condition_results <- list()
 
 for (cond in conditions) {
-  df_cond <- filter(df_analysis, condition == cond)
+  df_cond <- filter(df_std, condition == cond)
   
-  # Skip if insufficient data
-  if (nrow(df_cond) < 50) {
+  if (nrow(df_cond) < 100 || n_distinct(df_cond$conversation_id) < 5) {
     cat("Skipping", cond, "- insufficient data\n")
     next
   }
   
-  # A2 → A1 model
-  m_a2_to_a1 <- tryCatch({
-    lmer(author_1_valence ~ author_2_valence_lag1 + (1 | conversation_id),
-         data = df_cond)
-  }, error = function(e) NULL)
+  # Set up contrasts for this subset
+  df_cond$alignment_direction <- factor(
+    df_cond$alignment_direction,
+    levels = c("A1_to_A2", "A2_to_A1")
+  )
+  contrasts(df_cond$alignment_direction) <- contr.sum(2)
   
-  # A1 → A2 model
-  m_a1_to_a2 <- tryCatch({
-    lmer(author_2_valence ~ author_1_valence + (1 | conversation_id),
-         data = df_cond)
-  }, error = function(e) NULL)
+  # Fit model with direction interaction
+  m <- tryCatch({
+    lmer(response_z ~ predictor_z * alignment_direction + 
+           (1 + predictor_z | conversation_id),
+         data = df_cond,
+         control = lmerControl(optimizer = "bobyqa"))
+  }, error = function(e) {
+    # Fallback to simpler random effects if convergence fails
+    tryCatch({
+      lmer(response_z ~ predictor_z * alignment_direction + 
+             (1 | conversation_id),
+           data = df_cond)
+    }, error = function(e2) NULL)
+  })
   
-  # Extract results
-  if (!is.null(m_a2_to_a1)) {
-    coefs <- summary(m_a2_to_a1)$coefficients
-    results_within <- bind_rows(results_within, tibble(
-      condition = cond,
-      direction = "A2 → A1",
-      estimate = coefs["author_2_valence_lag1", "Estimate"],
-      se = coefs["author_2_valence_lag1", "Std. Error"],
-      t = coefs["author_2_valence_lag1", "t value"],
-      p = coefs["author_2_valence_lag1", "Pr(>|t|)"]
-    ))
-  }
-  
-  if (!is.null(m_a1_to_a2)) {
-    coefs <- summary(m_a1_to_a2)$coefficients
-    results_within <- bind_rows(results_within, tibble(
-      condition = cond,
-      direction = "A1 → A2",
-      estimate = coefs["author_1_valence", "Estimate"],
-      se = coefs["author_1_valence", "Std. Error"],
-      t = coefs["author_1_valence", "t value"],
-      p = coefs["author_1_valence", "Pr(>|t|)"]
-    ))
+  if (!is.null(m)) {
+    within_condition_results[[cond]] <- list(
+      model = m,
+      n_obs = nrow(df_cond),
+      n_stories = n_distinct(df_cond$conversation_id)
+    )
+    
+    cat("\n=== ", cond, " ===\n", sep = "")
+    cat("N =", nrow(df_cond), "observations from", 
+        n_distinct(df_cond$conversation_id), "stories\n\n")
+    print(summary(m))
+    
+    # Extract slopes per direction and test difference
+    slopes <- emtrends(m, specs = "alignment_direction", var = "predictor_z")
+    cat("\n--- Slopes by Direction ---\n")
+    print(slopes)
+    
+    cat("\n--- Asymmetry Test (A1→A2 vs A2→A1) ---\n")
+    print(contrast(slopes, method = "revpairwise"))
   }
 }
+```
 
-# Display results
-results_within %>%
+## Summary of Within-Condition Asymmetry
+
+```{r within-asymmetry-summary}
+# Extract key results into a summary table
+asymmetry_summary <- tibble()
+
+for (cond in names(within_condition_results)) {
+  m <- within_condition_results[[cond]]$model
+  
+  # Get slopes
+  slopes <- emtrends(m, specs = "alignment_direction", var = "predictor_z")
+  slopes_df <- as.data.frame(slopes)
+  
+  # Get contrast
+  contrast_result <- contrast(slopes, method = "revpairwise")
+  contrast_df <- as.data.frame(contrast_result)
+  
+  asymmetry_summary <- bind_rows(asymmetry_summary, tibble(
+    condition = cond,
+    slope_A1_to_A2 = slopes_df$predictor_z.trend[slopes_df$alignment_direction == "A1_to_A2"],
+    slope_A2_to_A1 = slopes_df$predictor_z.trend[slopes_df$alignment_direction == "A2_to_A1"],
+    difference = contrast_df$estimate[1],
+    se = contrast_df$SE[1],
+    t = contrast_df$t.ratio[1],
+    p = contrast_df$p.value[1],
+    interpretation = case_when(
+      contrast_df$p.value[1] < 0.05 & contrast_df$estimate[1] > 0 ~ "A1→A2 stronger",
+      contrast_df$p.value[1] < 0.05 & contrast_df$estimate[1] < 0 ~ "A2→A1 stronger",
+      TRUE ~ "No asymmetry"
+    )
+  ))
+}
+
+asymmetry_summary %>%
   mutate(
     sig = case_when(
       p < 0.001 ~ "***",
@@ -238,93 +343,108 @@ results_within %>%
       p < 0.05 ~ "*",
       p < 0.1 ~ ".",
       TRUE ~ ""
-    ),
-    ci_lower = estimate - 1.96 * se,
-    ci_upper = estimate + 1.96 * se
+    )
   ) %>%
-  select(condition, direction, estimate, se, ci_lower, ci_upper, t, p, sig) %>%
   knitr::kable(
     digits = 3,
-    caption = "Within-condition alignment coefficients"
+    caption = "Within-Condition Asymmetry: Does alignment differ by direction?",
+    col.names = c("Condition", "β (A1→A2)", "β (A2→A1)", "Diff", "SE", "t", "p", "Interpretation", "")
   )
 ```
 
-## Cross-Condition Comparison
+# Cross-Condition Comparison
 
-Test whether alignment effects differ significantly across conditions using condition × predictor interactions.
+## Full Model: Condition × Direction × Predictor
 
-```{r cross-condition-models}
-# A2 → A1 with condition interaction
-model_cross_a2_a1 <- lmer(
-  author_1_valence ~ author_2_valence_lag1 * condition + (1 | conversation_id),
-  data = df_analysis
-)
+Test whether asymmetry patterns differ across conditions using a three-way interaction.
 
-cat("=== Cross-Condition: Author 2 → Author 1 ===\n")
-print(summary(model_cross_a2_a1))
+```{r cross-condition-model}
+# Prepare condition factor with sum coding for interpretable interactions
+df_std$condition <- factor(df_std$condition)
+contrasts(df_std$condition) <- contr.sum(length(levels(df_std$condition)))
 
-# A1 → A2 with condition interaction
-model_cross_a1_a2 <- lmer(
-  author_2_valence ~ author_1_valence * condition + (1 | conversation_id),
-  data = df_analysis
-)
+# Full model with three-way interaction
+model_full <- tryCatch({
+  lmer(response_z ~ predictor_z * alignment_direction * condition + 
+         (1 + predictor_z | conversation_id),
+       data = df_std,
+       control = lmerControl(optimizer = "bobyqa"))
+}, error = function(e) {
+  # Fallback to simpler random effects
+  lmer(response_z ~ predictor_z * alignment_direction * condition + 
+         (1 | conversation_id),
+       data = df_std)
+})
 
-cat("\n=== Cross-Condition: Author 1 → Author 2 ===\n")
-print(summary(model_cross_a1_a2))
+cat("=== Full Model: predictor × direction × condition ===\n")
+print(summary(model_full))
 ```
 
-## Pairwise Condition Contrasts
+## Condition Comparison of Asymmetry
 
-```{r pairwise-contrasts}
-# Estimated marginal means and pairwise contrasts
-if (length(unique(df_analysis$condition)) > 1) {
-  
-  # A2 → A1 slopes by condition
-  emm_a2_a1 <- emtrends(model_cross_a2_a1, specs = "condition", 
-                         var = "author_2_valence_lag1")
-  
-  cat("=== A2→A1 Alignment Slopes by Condition ===\n")
-  print(emm_a2_a1)
-  
-  cat("\n=== Pairwise Contrasts (A2→A1) ===\n")
-  print(pairs(emm_a2_a1, adjust = "bonferroni"))
-  
-  # A1 → A2 slopes by condition
-  emm_a1_a2 <- emtrends(model_cross_a1_a2, specs = "condition",
-                         var = "author_1_valence")
-  
-  cat("\n=== A1→A2 Alignment Slopes by Condition ===\n")
-  print(emm_a1_a2)
-  
-  cat("\n=== Pairwise Contrasts (A1→A2) ===\n")
-  print(pairs(emm_a1_a2, adjust = "bonferroni"))
-}
+```{r condition-asymmetry-comparison}
+# Get slopes for each condition × direction combination
+slopes_by_cond <- emtrends(model_full, 
+                            specs = c("condition", "alignment_direction"),
+                            var = "predictor_z")
+
+cat("=== Alignment Slopes by Condition × Direction ===\n")
+print(slopes_by_cond)
+
+# Test asymmetry within each condition (A1→A2 vs A2→A1)
+cat("\n=== Asymmetry Contrasts Within Each Condition ===\n")
+asymmetry_contrasts <- contrast(slopes_by_cond, 
+                                 method = "revpairwise",
+                                 by = "condition")
+print(asymmetry_contrasts)
+
+# Test whether asymmetry differs across conditions
+cat("\n=== Does Asymmetry Differ Across Conditions? ===\n")
+# Compare the A1→A2 vs A2→A1 difference across conditions
+asymmetry_by_cond <- contrast(slopes_by_cond, 
+                               interaction = c("revpairwise", "revpairwise"))
+print(asymmetry_by_cond)
+```
+
+## Pairwise Condition Contrasts for Each Direction
+
+```{r direction-specific-contrasts}
+# Compare conditions within each direction
+cat("=== Condition Contrasts for A1→A2 Direction ===\n")
+a1_to_a2_contrasts <- contrast(slopes_by_cond,
+                                method = "pairwise",
+                                by = "alignment_direction",
+                                adjust = "bonferroni")
+print(a1_to_a2_contrasts)
 ```
 
 # Visualization
 
 ```{r alignment-plot, fig.width=14, fig.height=5}
-# Alignment slopes by condition
-p1 <- df_analysis %>%
-  ggplot(aes(x = author_2_valence_lag1, y = author_1_valence, color = condition)) +
+# Directional alignment by condition
+p1 <- df_alignment_long %>%
+  filter(alignment_direction == "A2_to_A1") %>%
+  ggplot(aes(x = predictor_valence, y = response_valence, color = condition)) +
   geom_point(alpha = 0.05, size = 0.5) +
   geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
   scale_color_manual(values = condition_colors) +
   labs(
-    title = "Author 2 → Author 1 Alignment",
+    title = "A2 → A1 Alignment",
     subtitle = "Does Author 1 follow Author 2's previous valence?",
     x = "Author 2 Valence (t-1)",
     y = "Author 1 Valence (t)",
     color = "Condition"
-  )
+  ) +
+  theme(legend.position = "none")
 
-p2 <- df_analysis %>%
-  ggplot(aes(x = author_1_valence, y = author_2_valence, color = condition)) +
+p2 <- df_alignment_long %>%
+  filter(alignment_direction == "A1_to_A2") %>%
+  ggplot(aes(x = predictor_valence, y = response_valence, color = condition)) +
   geom_point(alpha = 0.05, size = 0.5) +
   geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
   scale_color_manual(values = condition_colors) +
   labs(
-    title = "Author 1 → Author 2 Alignment",
+    title = "A1 → A2 Alignment",
     subtitle = "Does Author 2 match Author 1's current valence?",
     x = "Author 1 Valence (t)",
     y = "Author 2 Valence (t)",
@@ -335,98 +455,101 @@ p1 + p2 + plot_layout(guides = "collect") &
   theme(legend.position = "bottom")
 ```
 
-```{r coefficient-plot, fig.width=10, fig.height=5}
-# Coefficient comparison plot
-if (nrow(results_within) > 0) {
-  results_within %>%
-    mutate(
-      ci_lower = estimate - 1.96 * se,
-      ci_upper = estimate + 1.96 * se
-    ) %>%
-    ggplot(aes(x = condition, y = estimate, fill = condition)) +
+```{r coefficient-plot, fig.width=12, fig.height=6}
+# Extract slopes for visualization
+slopes_df <- as.data.frame(slopes_by_cond) %>%
+  mutate(
+    ci_lower = predictor_z.trend - 1.96 * SE,
+    ci_upper = predictor_z.trend + 1.96 * SE,
+    direction_label = recode(alignment_direction,
+      "A1_to_A2" = "A1 → A2 (same-turn)",
+      "A2_to_A1" = "A2 → A1 (cross-turn)"
+    )
+  )
+
+ggplot(slopes_df, aes(x = condition, y = predictor_z.trend, fill = direction_label)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7, alpha = 0.8) +
+  geom_errorbar(
+    aes(ymin = ci_lower, ymax = ci_upper),
+    position = position_dodge(width = 0.8),
+    width = 0.25
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = c("A1 → A2 (same-turn)" = "#377EB8", 
+                                "A2 → A1 (cross-turn)" = "#FF7F00")) +
+  labs(
+    title = "Alignment Coefficients by Condition and Direction",
+    subtitle = "Standardized slopes (β) with 95% CI",
+    y = "Alignment Coefficient (β)",
+    x = "Condition",
+    fill = "Direction"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+```{r asymmetry-plot, fig.width=10, fig.height=5}
+# Plot asymmetry (difference between directions) by condition
+if (nrow(asymmetry_summary) > 0) {
+  asymmetry_summary %>%
+    ggplot(aes(x = condition, y = difference, fill = condition)) +
     geom_col(width = 0.6, alpha = 0.8) +
-    geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), width = 0.2) +
+    geom_errorbar(
+      aes(ymin = difference - 1.96 * se, ymax = difference + 1.96 * se),
+      width = 0.2
+    ) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-    facet_wrap(~direction, scales = "free_x") +
     scale_fill_manual(values = condition_colors) +
     labs(
-      title = "Alignment Coefficients by Condition",
-      subtitle = "Error bars show 95% CI",
-      y = "Alignment Coefficient (β)",
+      title = "Directional Asymmetry by Condition",
+      subtitle = "Difference: (A1→A2) - (A2→A1). Positive = A1→A2 stronger",
+      y = "Asymmetry (Δβ)",
       x = "Condition"
     ) +
     theme(legend.position = "none")
 }
 ```
 
-# Asymmetry Analysis
-
-Test whether alignment is asymmetric (stronger in one direction) within each condition.
-
-```{r asymmetry-analysis}
-# Compare A2→A1 vs A1→A2 coefficients within each condition
-asymmetry_results <- results_within %>%
-  select(condition, direction, estimate, se) %>%
-  pivot_wider(
-    names_from = direction,
-    values_from = c(estimate, se),
-    names_sep = "_"
-  ) %>%
-  mutate(
-    diff = `estimate_A1 → A2` - `estimate_A2 → A1`,
-    diff_se = sqrt(`se_A1 → A2`^2 + `se_A2 → A1`^2),
-    z = diff / diff_se,
-    p = 2 * pnorm(-abs(z)),
-    interpretation = case_when(
-      p < 0.05 & diff > 0 ~ "A1→A2 stronger",
-      p < 0.05 & diff < 0 ~ "A2→A1 stronger",
-      TRUE ~ "No significant asymmetry"
-    )
-  )
-
-asymmetry_results %>%
-  select(condition, diff, diff_se, z, p, interpretation) %>%
-  knitr::kable(
-    digits = 3,
-    caption = "Alignment asymmetry by condition (A1→A2 minus A2→A1)",
-    col.names = c("Condition", "Difference", "SE", "z", "p", "Interpretation")
-  )
-```
-
 # Summary
 
 ```{r summary-table}
-# Final summary table
-summary_table <- results_within %>%
-  mutate(
-    sig = case_when(
-      p < 0.001 ~ "***",
-      p < 0.01 ~ "**",
-      p < 0.05 ~ "*",
-      p < 0.1 ~ ".",
-      TRUE ~ "ns"
-    ),
-    effect = paste0(round(estimate, 3), " (", round(se, 3), ") ", sig)
-  ) %>%
-  select(condition, direction, effect) %>%
-  pivot_wider(names_from = direction, values_from = effect)
-
-summary_table %>%
-  knitr::kable(caption = "Summary: Alignment effects by condition and direction (β (SE) sig)")
+# Final summary combining slopes and asymmetry
+if (nrow(asymmetry_summary) > 0) {
+  asymmetry_summary %>%
+    mutate(
+      sig = case_when(
+        p < 0.001 ~ "***",
+        p < 0.01 ~ "**",
+        p < 0.05 ~ "*",
+        p < 0.1 ~ ".",
+        TRUE ~ "ns"
+      ),
+      `A1→A2` = round(slope_A1_to_A2, 3),
+      `A2→A1` = round(slope_A2_to_A1, 3),
+      `Asymmetry (p)` = paste0(round(difference, 3), " (", format.pval(p, digits = 2), ") ", sig)
+    ) %>%
+    select(condition, `A1→A2`, `A2→A1`, `Asymmetry (p)`, interpretation) %>%
+    knitr::kable(
+      caption = "Summary: Alignment slopes and asymmetry by condition",
+      col.names = c("Condition", "β A1→A2", "β A2→A1", "Asymmetry (p)", "Interpretation")
+    )
+}
 ```
 
 # Key Findings
 
 Based on the analysis above:
 
-1. **Cross-condition differences**: [Interpret whether alignment patterns differ significantly across Human-AI, Human-Human, and AI-AI conditions]
+1.  **Within-condition asymmetry**: Each condition is tested for directional asymmetry using a predictor × direction interaction within a single model. A significant interaction indicates that alignment strength differs between the A1→A2 and A2→A1 directions.
 
-2. **Asymmetry patterns**: [Discuss whether alignment is bidirectional or asymmetric in each condition]
+2.  **Cross-condition comparison**: The three-way interaction (predictor × direction × condition) tests whether the *pattern* of asymmetry differs across conditions. A significant three-way interaction means some conditions show asymmetry while others do not, or asymmetry is in opposite directions.
 
-3. **AI-AI baseline**: [Compare the AI-AI simulation to empirical conditions - is it more aligned as expected?]
+3.  **Interpretation for Human-AI**: In the human-ai condition, if A1→A2 (User→AI) is significantly stronger than A2→A1 (AI→User), this indicates the AI adapts to human valence but humans do not follow AI valence.
 
-4. **Effect sizes**: [Compare the magnitude of alignment effects across conditions]
+4.  **Comparison insights**:
 
----
+    -   If Human-Human shows no asymmetry but Human-AI does, this suggests asymmetric accommodation is specific to human-AI interaction.
+    -   If AI-AI shows strong symmetric alignment, it serves as a baseline for what "full mutual alignment" looks like.
+
+------------------------------------------------------------------------
 
 *Analysis completed: `r Sys.time()`*

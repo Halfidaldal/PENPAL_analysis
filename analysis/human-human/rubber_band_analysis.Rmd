@@ -1,6 +1,6 @@
 ---
 title: "Rubber_band_analysis"
-subtitle: "Analysis of Field Data and user2-user2 in Rubber-band dynamics"
+subtitle: "Analysis of Field Data and Human-Human in Rubber-band dynamics"
 author: "PENPAL Project"
 date: "`r Sys.Date()`"
 output:
@@ -18,9 +18,9 @@ output:
 ---
 ## Summary
 
-- Analysis of field data (Human-user2) reveals a robust "rubber-band" effect: difference between valence gaps in one turn strongly predict opposite-direction changes in the next turn.
-- This effect is seen when measuring valence gap relative to both the user2's current turn and its previous turn.
-- The effect is also present when using cosine distance between user and user2 embeddings as the alignment metric.
+- Analysis of field data (Human-Human) reveals a robust "rubber-band" effect: difference between valence gaps in one turn strongly predict opposite-direction changes in the next turn.
+- This effect is seen when measuring valence gap relative to both Author 2's current turn and its previous turn.
+- The effect is also present when using cosine distance between Author 1 and Author 2 embeddings as the alignment metric.
 - This indicates that emotional divergence is temporary and snaps back toward alignment.
 - There is an intrinsic stabilising tendency in the co-creation process, ensuring narrative cohesion.
 
@@ -93,18 +93,18 @@ print(names(df_field))
 ## 1.2 Data Preprocessing
 
 ```{r preprocess}
-# Preprocess field data
+# Preprocess field data - using standardized column names
 df_field <- df_field %>%
   rename(
-    user2_valence = user2_sentiment_projection,
-    user_valence = user_sentiment_projection
+    author_1_valence = author_1_sentiment_projection,
+    author_2_valence = author_2_sentiment_projection
   ) %>%
   mutate(
     # Token counts
-    user_token_count = stri_count_words(user),
-    user2_token_count = stri_count_words(user2),
-    token_ratio = if_else(user2_token_count == 0, NA_real_, 
-                         user_token_count / user2_token_count),
+    author_1_token_count = stri_count_words(author_1),
+    author_2_token_count = stri_count_words(author_2),
+    token_ratio = if_else(author_2_token_count == 0, NA_real_, 
+                         author_1_token_count / author_2_token_count),
     
     # Time parsing
     timestamp = ymd_hms(timestamp),
@@ -119,17 +119,17 @@ df_field <- df_field %>%
 # Preprocess simulated data
 # df_simulated <- df_simulated %>%
 #   rename(
-#     user2_valence = user2_sentiment_score,
-#     user_valence = user_sentiment_score
+#     author_1_valence = author_1_sentiment_score,
+#     author_2_valence = author_2_sentiment_score
 #   ) %>%
 #   mutate(
 #     # Token counts
-#     user_token_count = stri_count_words(user),
-#     user2_token_count = stri_count_words(user2),
-#     token_ratio = if_else(user2_token_count == 0, NA_real_, 
-#                          user_token_count / user2_token_count),
+#     author_1_token_count = stri_count_words(author_1),
+#     author_2_token_count = stri_count_words(author_2),
+#     token_ratio = if_else(author_2_token_count == 0, NA_real_, 
+#                          author_1_token_count / author_2_token_count),
 #     
-#     # Time parsing (if avuser2lable)
+#     # Time parsing (if available)
 #     timestamp = if_else(!is.na(timestamp), ymd_hms(timestamp), as.POSIXct(NA)),
 #     
 #     # Data source label
@@ -144,8 +144,8 @@ df_field %>%
     n_conversations = n_distinct(conversation_id),
     n_turns = n(),
     mean_turns_per_story = n() / n_distinct(conversation_id),
-    mean_user_valence = mean(user_valence, na.rm = TRUE),
-    mean_user2_valence = mean(user2_valence, na.rm = TRUE),
+    mean_author_1_valence = mean(author_1_valence, na.rm = TRUE),
+    mean_author_2_valence = mean(author_2_valence, na.rm = TRUE),
   ) %>%
   print()
 
@@ -155,8 +155,8 @@ df_field %>%
 #     n_conversations = n_distinct(conversation_id),
 #     n_turns = n(),
 #     mean_turns_per_story = n() / n_distinct(conversation_id),
-#     mean_user_valence = mean(user_valence, na.rm = TRUE),
-#     mean_user2_valence = mean(user2_valence, na.rm = TRUE)
+#     mean_author_1_valence = mean(author_1_valence, na.rm = TRUE),
+#     mean_author_2_valence = mean(author_2_valence, na.rm = TRUE)
 #   ) %>%
 #   print()
 
@@ -167,7 +167,7 @@ df_field %>%
 ## 1.3 Compute Lagged Variables and Cosine
 
 ```{r compute-lags}
-# Add lagged user2 valence for field data
+# Add lagged author_2 valence for field data
 # Note: lag() within group_by ensures no cross-story contamination
 # Turn 1 of each story will have NA for lagged values (correct behavior)
 
@@ -175,8 +175,8 @@ df_field <- df_field %>%
   group_by(conversation_id) %>%
   arrange(turn, .by_group = TRUE) %>%
   mutate(
-    user2_valence_lag1 = lag(user2_valence, n = 1),
-    user_valence_lag1 = lag(user_valence, n = 1),
+    author_2_valence_lag1 = lag(author_2_valence, n = 1),
+    author_1_valence_lag1 = lag(author_1_valence, n = 1),
   ) %>%
   ungroup()
 
@@ -192,32 +192,32 @@ df_field <- df_field %>%
   group_by(conversation_id) %>%
   arrange(turn, .by_group = TRUE) %>%
   mutate(
-    user2_embedding_prev = lag(user2_embedding)
+    author_2_embedding_prev = lag(author_2_embedding)
   ) %>%
   rowwise() %>%
   mutate(
-    cosine_sim_same = cosine_sim(user_embedding, user2_embedding),
-    cosine_sim_prev = cosine_sim(user_embedding, user2_embedding_prev)
+    cosine_sim_same = cosine_sim(author_1_embedding, author_2_embedding),
+    cosine_sim_prev = cosine_sim(author_1_embedding, author_2_embedding_prev)
   ) %>%
-  select(-user_embedding, -user2_embedding, -user2_embedding_prev) %>%
+  select(-author_1_embedding, -author_2_embedding, -author_2_embedding_prev) %>%
   ungroup()
 
-# Add lagged user2 valence for simulated data
+# Add lagged author_2 valence for simulated data
 # df_simulated <- df_simulated %>%
 #   group_by(conversation_id) %>%
 #   arrange(turn, .by_group = TRUE) %>%
 #   mutate(
-#     user2_valence_lag1 = lag(user2_valence, n = 1),
-#     user_valence_lag1 = lag(user_valence, n = 1)
+#     author_2_valence_lag1 = lag(author_2_valence, n = 1),
+#     author_1_valence_lag1 = lag(author_1_valence, n = 1)
 #   ) %>%
 #   ungroup()
 
 # Verify no cross-story contamination
 cat("=== Lag Variable Verification ===\n")
 cat("Field data - Turn 1 with non-NA lag (should be 0):", 
-    sum(df_field$turn == 1 & !is.na(df_field$user2_valence_lag1)), "\n")
+    sum(df_field$turn == 1 & !is.na(df_field$author_2_valence_lag1)), "\n")
 # cat("Simulated data - Turn 1 with non-NA lag (should be 0):", 
-#     sum(df_simulated$turn == 1 & !is.na(df_simulated$user2_valence_lag1)), "\n")
+#     sum(df_simulated$turn == 1 & !is.na(df_simulated$author_2_valence_lag1)), "\n")
 ```
 
 
@@ -238,7 +238,7 @@ compute_stage_gaps <- function(df, data_source_label) {
     filter(n_turns >= 3) %>%  # Need at least 3 turns
     mutate(
       stage = ntile(turn_idx, 3),
-      valence_gap = abs(user_valence - user2_valence)
+      valence_gap = abs(author_1_valence - author_2_valence)
     ) %>%
     ungroup() %>%
     group_by(conversation_id, stage) %>%
@@ -340,11 +340,11 @@ ggsave(file.path(GRAPHS_DIR, "stage_valence_gap_comparison.png"),
 
 # Compute valence gap for each turn
 df_field_gap <- df_field %>%
-  mutate(valence_gap = abs(user_valence - user2_valence),
-         valence_gap_prev = abs(user2_valence_lag1 - user_valence))
+  mutate(valence_gap = abs(author_1_valence - author_2_valence),
+         valence_gap_prev = abs(author_2_valence_lag1 - author_1_valence))
 
 # df_sim_gap <- df_simulated %>%
-#   mutate(valence_gap = abs(user_valence - user2_valence))
+#   mutate(valence_gap = abs(author_1_valence - author_2_valence))
 
 
 df_valence_gap_long <- df_field_gap %>%
@@ -418,7 +418,7 @@ compute_rubberband <- function(df, data_source_label) {
     mutate(
       turn_idx = row_number(),
       n_turns = n(),
-      valence_gap = abs(as.numeric(scale(user_valence)) - as.numeric(scale(user2_valence)))
+      valence_gap = abs(as.numeric(scale(author_1_valence)) - as.numeric(scale(author_2_valence)))
     ) %>%
     filter(n_turns >= 3) %>%
     mutate(stage = ntile(turn_idx, 3)) %>%
@@ -469,7 +469,7 @@ compute_rubberband_turns <- function(df, data_source_label, direction) {
     group_by(conversation_id) %>%
     arrange(turn, .by_group = TRUE) %>%
     mutate(
-      valence_gap = abs(as.numeric(scale(user_valence)) - as.numeric(scale({{ direction }}))),
+      valence_gap = abs(as.numeric(scale(author_1_valence)) - as.numeric(scale({{ direction }}))),
       gap_change = valence_gap - lag(valence_gap),  # Change from previous turn
       gap_change_next = lead(valence_gap) - valence_gap  # Change to next turn
     ) %>%
@@ -482,15 +482,15 @@ compute_rubberband_turns <- function(df, data_source_label, direction) {
 }
 
 # Compute for both datasets
-rb_turns_field <- compute_rubberband_turns(df_field, "Field", user2_valence)
-rb_turns_field_prev <- compute_rubberband_turns(df_field, "Field", user2_valence_lag1)
+rb_turns_field <- compute_rubberband_turns(df_field, "Field", author_2_valence)
+rb_turns_field_prev <- compute_rubberband_turns(df_field, "Field", author_2_valence_lag1)
 
 rb_all <- bind_rows(
   rb_turns_field %>% mutate(type = "same"),
   rb_turns_field_prev %>% mutate(type = "prev")
 )
 
-# rb_turns_sim <- compute_rubberband_turns(df_simulated, "Simulated", user2_valence)
+# rb_turns_sim <- compute_rubberband_turns(df_simulated, "Simulated", author_2_valence)
 
 lm_turns_field <- lm(gap_change_next ~ gap_change, data = rb_turns_field)
 lm_turns_field_direction <- lmer(gap_change_next ~ gap_change * type + (1 | conversation_id), data = rb_all)
@@ -806,7 +806,7 @@ p_cosine_dist <- ggplot(df_field, aes(x = cosine_sim_same)) +
   geom_vline(aes(xintercept = mean(cosine_sim_same, na.rm = TRUE)),
              color = "#4DAF4A", linetype = "dashed", linewidth = 0.8) +
   labs(
-    title = "Distribution of Cosine Similarity (User vs user2)",
+    title = "Distribution of Cosine Similarity (User 1 vs User 2)",
     x = "Cosine Similarity",
     y = "Density"
   ) +

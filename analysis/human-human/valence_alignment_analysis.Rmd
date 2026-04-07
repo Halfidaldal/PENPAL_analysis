@@ -98,18 +98,18 @@ print(names(df_simulated))
 ## 1.2 Data Preprocessing
 
 ```{r preprocess}
-# Preprocess field data
+# Preprocess field data - using standardized column names
 df_field <- df_field %>%
   rename(
-    user2_valence = user2_sentiment_projection,
-    user_valence = user_sentiment_projection
+    author_1_valence = author_1_sentiment_projection,
+    author_2_valence = author_2_sentiment_projection
   ) %>%
   mutate(
     # Token counts
-    user_token_count = stri_count_words(user),
-    user2_token_count = stri_count_words(user2),
-    token_ratio = if_else(user2_token_count == 0, NA_real_, 
-                         user_token_count / user2_token_count),
+    author_1_token_count = stri_count_words(author_1),
+    author_2_token_count = stri_count_words(author_2),
+    token_ratio = if_else(author_2_token_count == 0, NA_real_, 
+                         author_1_token_count / author_2_token_count),
     
     # Time parsing
     timestamp = ymd_hms(timestamp),
@@ -123,18 +123,18 @@ df_field <- df_field %>%
 
 
 
-# Preprocess simulated data
+# Preprocess simulated data - using standardized column names
 df_simulated <- df_simulated %>%
   rename(
-    ai_valence = ai_sentiment_score,
-    user_valence = user_sentiment_score
+    author_1_valence = author_1_sentiment_score,
+    author_2_valence = author_2_sentiment_score
   ) %>%
   mutate(
     # Token counts
-    user_token_count = stri_count_words(user),
-    ai_token_count = stri_count_words(ai),
-    token_ratio = if_else(ai_token_count == 0, NA_real_, 
-                         user_token_count / ai_token_count),
+    author_1_token_count = stri_count_words(author_1),
+    author_2_token_count = stri_count_words(author_2),
+    token_ratio = if_else(author_2_token_count == 0, NA_real_, 
+                         author_1_token_count / author_2_token_count),
     
     # Time parsing (if available)
     timestamp = if_else(!is.na(timestamp), ymd_hms(timestamp), as.POSIXct(NA)),
@@ -151,8 +151,8 @@ df_field %>%
     n_conversations = n_distinct(conversation_id),
     n_turns = n(),
     mean_turns_per_story = n() / n_distinct(conversation_id),
-    mean_user_valence = mean(user_valence, na.rm = TRUE),
-    mean_user2_valence = mean(user2_valence, na.rm = TRUE)
+    mean_user_valence = mean(author_1_valence, na.rm = TRUE),
+    mean_user2_valence = mean(author_2_valence, na.rm = TRUE)
   ) %>%
   print()
 
@@ -162,7 +162,7 @@ df_simulated %>%
     n_conversations = n_distinct(conversation_id),
     n_turns = n(),
     mean_turns_per_story = n() / n_distinct(conversation_id),
-    mean_user_valence = mean(user_valence, na.rm = TRUE),
+    mean_user_valence = mean(author_1_valence, na.rm = TRUE),
     mean_ai_valence = mean(ai_valence, na.rm = TRUE)
   ) %>%
   print()
@@ -179,8 +179,8 @@ df_field <- df_field %>%
   group_by(conversation_id) %>%
   arrange(turn, .by_group = TRUE) %>%
   mutate(
-    user2_valence_lag1 = lag(user2_valence, n = 1),
-    user_valence_lag1 = lag(user_valence, n = 1),
+    author_2_valence_lag1 = lag(author_2_valence, n = 1),
+    author_1_valence_lag1 = lag(author_1_valence, n = 1),
   ) %>%
   ungroup()
 
@@ -215,7 +215,7 @@ df_simulated <- df_simulated %>%
   arrange(turn, .by_group = TRUE) %>%
   mutate(
     ai_valence_lag1 = lag(ai_valence, n = 1),
-    user_valence_lag1 = lag(user_valence, n = 1)
+    author_1_valence_lag1 = lag(author_1_valence, n = 1)
   ) %>%
   ungroup()
 
@@ -235,10 +235,10 @@ cat("Simulated data - Turn 1 with non-NA lag (should be 0):",
 # Field data token statistics
 token_stats_field <- df_field %>%
   summarise(
-    mean_user_tokens = mean(user_token_count, na.rm = TRUE),
-    sd_user_tokens = sd(user_token_count, na.rm = TRUE),
-    mean_ai_tokens = mean(user2_token_count, na.rm = TRUE),
-    sd_ai_tokens = sd(user2_token_count, na.rm = TRUE),
+    mean_user_tokens = mean(author_1_token_count, na.rm = TRUE),
+    sd_user_tokens = sd(author_1_token_count, na.rm = TRUE),
+    mean_ai_tokens = mean(author_2_token_count, na.rm = TRUE),
+    sd_ai_tokens = sd(author_2_token_count, na.rm = TRUE),
     mean_token_ratio = mean(token_ratio, na.rm = TRUE)
   )
 
@@ -253,7 +253,7 @@ print(token_stats_field)
 # Combined statistics
 valence_stats <- bind_rows(
   df_field %>% 
-    pivot_longer(cols = c(user_valence, user2_valence),
+    pivot_longer(cols = c(author_1_valence, author_2_valence),
                  names_to = "agent", values_to = "valence") %>%
     mutate(agent = str_remove(agent, "_valence")) %>%
     group_by(data_source, agent) %>%
@@ -265,7 +265,7 @@ valence_stats <- bind_rows(
     ),
   
   df_simulated %>%
-    pivot_longer(cols = c(user_valence, ai_valence),
+    pivot_longer(cols = c(author_1_valence, ai_valence),
                  names_to = "agent", values_to = "valence") %>%
     mutate(agent = str_remove(agent, "_valence")) %>%
     group_by(data_source, agent) %>%
@@ -288,11 +288,11 @@ write_csv(valence_stats, file.path(TABLES_DIR, "valence_descriptive_stats.csv"))
 ## 3.1 Valence Distribution Difference Test
 ```{r test-valence-distribution}
 df_field_long <- df_field %>%
-  pivot_longer(cols = c(user_valence, user2_valence),
+  pivot_longer(cols = c(author_1_valence, author_2_valence),
                names_to = "agent", values_to = "valence") %>%
   mutate(agent = recode(agent, 
-                       user_valence = "User", 
-                       user2_valence = "User2"),
+                       author_1_valence = "User", 
+                       author_2_valence = "User2"),
          agent = factor(agent, levels = c("User", "User2"))
          )
 
@@ -308,10 +308,10 @@ df_field_cosine_long <- df_field %>%
          )
 
 df_sim_long <- df_simulated %>%
-  pivot_longer(cols = c(user_valence, ai_valence),
+  pivot_longer(cols = c(author_1_valence, ai_valence),
                names_to = "agent", values_to = "valence") %>%
   mutate(agent = recode(agent, 
-                       user_valence = "AI 1", 
+                       author_1_valence = "AI 1", 
                        ai_valence = "AI 2"))
 
 
@@ -420,7 +420,7 @@ cor_field_same <- df_field %>%
   group_by(conversation_id) %>%
   filter(n() >= 3) %>%  # Require at least 3 turns
   summarise(
-    rho = cor(user_valence, user2_valence, use = "complete.obs"),
+    rho = cor(author_1_valence, author_2_valence, use = "complete.obs"),
     n_turns = n(),
     data_source = "Field",
     .groups = "drop"
@@ -431,7 +431,7 @@ cor_sim_same <- df_simulated %>%
   group_by(conversation_id) %>%
   filter(n() >= 3) %>%
   summarise(
-    rho = cor(user_valence, ai_valence, use = "complete.obs"),
+    rho = cor(author_1_valence, ai_valence, use = "complete.obs"),
     n_turns = n(),
     data_source = "Simulated",
     .groups = "drop"
@@ -461,10 +461,10 @@ cor_same_combined %>%
 # Field data: previous-turn correlation (User response to previous AI)
 cor_field_prev <- df_field %>%
   group_by(conversation_id) %>%
-  filter(!is.na(user2_valence_lag1)) %>%
+  filter(!is.na(author_2_valence_lag1)) %>%
   filter(n() >= 3) %>%
   summarise(
-    rho = cor(user_valence, user2_valence_lag1, use = "complete.obs"),
+    rho = cor(author_1_valence, author_2_valence_lag1, use = "complete.obs"),
     n_turns = n(),
     data_source = "Field",
     .groups = "drop"
@@ -476,7 +476,7 @@ cor_sim_prev <- df_simulated %>%
   filter(!is.na(ai_valence_lag1)) %>%
   filter(n() >= 3) %>%
   summarise(
-    rho = cor(user_valence, ai_valence_lag1, use = "complete.obs"),
+    rho = cor(author_1_valence, ai_valence_lag1, use = "complete.obs"),
     n_turns = n(),
     data_source = "Simulated",
     .groups = "drop"
@@ -504,14 +504,14 @@ cor_prev_combined %>%
 #Violates assumptions since turns are not independent (nested in stories)
 cor_field_same_all_turns <- df_field %>%
   summarise(
-    rho = cor(user_valence, user2_valence, use = "complete.obs"),
+    rho = cor(author_1_valence, author_2_valence, use = "complete.obs"),
     n_turns = n(),
     data_source = "Field"
   )
 
 cor_sim_same_all_turns <- df_simulated %>%
   summarise(
-    rho = cor(user_valence, ai_valence, use = "complete.obs"),
+    rho = cor(author_1_valence, ai_valence, use = "complete.obs"),
     n_turns = n(),
     data_source = "Simulated"
   )
@@ -546,15 +546,15 @@ cat("Simulated: Valid lag observations:", sum(!is.na(df_simulated$ai_valence_lag
 
 cor_field_same_all_turns_prev <- df_field %>%
   summarise(
-    rho = cor(user_valence, user2_valence_lag1, use = "complete.obs"),
+    rho = cor(author_1_valence, author_2_valence_lag1, use = "complete.obs"),
     n_turns = n(),
-    n_valid = sum(!is.na(user2_valence_lag1)),
+    n_valid = sum(!is.na(author_2_valence_lag1)),
     data_source = "Field"
   )
 
 cor_sim_same_all_turns_prev <- df_simulated %>%
   summarise(
-    rho = cor(user_valence, ai_valence_lag1, use = "complete.obs"),
+    rho = cor(author_1_valence, ai_valence_lag1, use = "complete.obs"),
     n_turns = n(),
     n_valid = sum(!is.na(ai_valence_lag1)),
     data_source = "Simulated"
@@ -591,10 +591,10 @@ p_probe_sentiment <- df_field %>%
   mutate(turn_index = row_number()) %>%
   ungroup() %>%
   filter(conversation_id %in% unique(conversation_id)[26:28]) %>%
-  pivot_longer(cols = c(user_valence, user2_valence),
+  pivot_longer(cols = c(author_1_valence, author_2_valence),
                names_to = "source", values_to = "valence") %>%
 mutate(
-  source = recode(source, "user_valence" = "User", "user2_valence" = "User2")
+  source = recode(source, "author_1_valence" = "User", "author_2_valence" = "User2")
 ) %>%
 group_by(conversation_id, source) %>%            # NEW: smooth separately per convo + source
 arrange(turn_index, .by_group = TRUE) %>%        # NEW: make sure order is correct
@@ -767,19 +767,19 @@ df_same_dir <- df_field %>%
     conversation_id,
     turn,
     alignment_direction = "User_to_User2",
-    predictor_valence = user_valence,
-    response_valence = user2_valence
+    predictor_valence = author_1_valence,
+    response_valence = author_2_valence
   )
 
 # Previous-turn: AI -> User (response to previous AI valence)
 df_prev_dir <- df_field %>%
-  filter(!is.na(user2_valence_lag1)) %>%   # ensure valid lag values
+  filter(!is.na(author_2_valence_lag1)) %>%   # ensure valid lag values
   transmute(
     conversation_id,
     turn,
     alignment_direction = "User2_to_User",
-    predictor_valence = user2_valence_lag1,
-    response_valence = user_valence
+    predictor_valence = author_2_valence_lag1,
+    response_valence = author_1_valence
   )
 
 # Combine into one long dataset
@@ -1150,10 +1150,10 @@ ggsave(file.path(GRAPHS_DIR, "cosine_similarity_user_self_vs_interlocutor.png"),
 # Calculate valence distances
 df_field_val <- df_field %>%
   mutate(
-    val_dist_same = abs(user_valence - user2_valence),
-    val_dist_prev = abs(user_valence - user2_valence_lag1),
-    val_dist_user_self = abs(user_valence - user_valence_lag1),
-    val_dist_ai_self = abs(user2_valence - user2_valence_lag1)
+    val_dist_same = abs(author_1_valence - author_2_valence),
+    val_dist_prev = abs(author_1_valence - author_2_valence_lag1),
+    val_dist_user_self = abs(author_1_valence - author_1_valence_lag1),
+    val_dist_ai_self = abs(author_2_valence - author_2_valence_lag1)
   )
 
 # User: Self vs Partner (Prev)
@@ -1226,8 +1226,8 @@ df_dynamics <- df_field %>%
   arrange(turn) %>%
   mutate(
     # Calculate change from previous turn (Velocity)
-    delta_user = user_valence - lag(user_valence),
-    delta_user2   = user2_valence - lag(user2_valence),
+    delta_user = author_1_valence - lag(author_1_valence),
+    delta_user2   = author_2_valence - lag(author_2_valence),
     
     # Define Alignment: Signs of change match
     # Exclude cases where change is exactly 0 (no movement)
@@ -1400,7 +1400,7 @@ beta_ai_to_user <- slopes_summary[slopes_summary$alignment_direction == "User2_t
 
 summary_results <- tribble(
   ~Metric, ~User, ~User2,
-  "Mean Valence", mean(df_field$user_valence, na.rm = TRUE), mean(df_field$user2_valence, na.rm = TRUE),
+  "Mean Valence", mean(df_field$author_1_valence, na.rm = TRUE), mean(df_field$author_2_valence, na.rm = TRUE),
   "Sentiment Alignment (β)", beta_user_to_ai, beta_ai_to_user,
   "Alignment Frequency (%)", alignment_frequency$prop_aligned[alignment_frequency$direction == "is_aligned_prev"] * 100, alignment_frequency$prop_aligned[alignment_frequency$direction == "is_aligned_same"] * 100,
   "Mean Alignment Duration (turns)", duration_stats$mean_duration[duration_stats$direction_label == "prev_turn"], duration_stats$mean_duration[duration_stats$direction_label == "same_turn"],

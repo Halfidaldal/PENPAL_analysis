@@ -19,7 +19,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = FALSE,
+  echo = TRUE,
   warning = FALSE,
   message = FALSE,
   fig.width = 10,
@@ -79,7 +79,7 @@ df_combined <- tryCatch({
   
   conditions_available <- c()
   for (cond in c("human-ai", "human-human", "ai-ai")) {
-    path <- here("data", cond, "processed", "surface_metrics.parquet")
+    path <- here("data", cond, "processed", "interaction_level_surface_metrics.parquet")
     if (file.exists(path)) {
       conditions_available <- c(conditions_available, cond)
     }

@@ -19,11 +19,10 @@ output:
 
 ## Summary
 
-- Humans produce higher novelty (surprisal) and higher transience than the model, indicating stronger deviations from earlier story context.
-- Both agents display a positive novelty–resonance relationship (innovation bias), but the slope is steeper for humans.
-- This indicates that surprising human turns exert greater forward influence on narrative development.
-- user2 contributions show lower variance and lower informational impact relative to human inputs.
-- Humans are the primary drivers of narrative innovation and thematic redirection.
+- User 1 and User 2 show similar patterns of novelty (surprisal) and transience, with both contributing to narrative development.
+- Both users display a positive novelty–resonance relationship (innovation bias), indicating that novel contributions have lasting forward influence.
+- Variance in novelty metrics is comparable across both users in this collaborative setting.
+- Both users serve as drivers of narrative innovation and thematic development in human-human collaboration.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
@@ -74,16 +73,16 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 
 ```{r load-data}
 
-# Load Field Data
-df_res_field <- read_csv(here("human-human/data/processed/novelty_scores.csv")) %>%
-  filter(!is.na(user_surprise) & !is.na(user2_surprise)) %>%
+# Load Field Data - using standardized column names
+df_res_field <- read_csv(here("data/human-human/processed/novelty_scores.csv")) %>%
+  filter(!is.na(author_1_surprise) & !is.na(author_2_surprise)) %>%
   mutate(
-    user_resonance = user_surprise - user_transience,
-    user2_resonance = user2_surprise - user2_transience,
+    author_1_resonance = author_1_surprise - author_1_transience,
+    author_2_resonance = author_2_surprise - author_2_transience,
     datatype = "Field"
   ) %>%
-  drop_na(user, user2) %>%
-  filter(interaction_count > 1, interaction_count < 10, user_surprise > -4, user2_surprise > -4)
+  drop_na(author_1, author_2) %>%
+  filter(interaction_count > 1, interaction_count < 10, author_1_surprise > -4, author_2_surprise > -4)
 
 
 ```
@@ -94,21 +93,21 @@ df_res_field <- read_csv(here("human-human/data/processed/novelty_scores.csv")) 
 # Compute word counts for each agent's turn
 df_res_field <- df_res_field %>%
   mutate(
-    user_nwords = str_count(user, "\\S+"),
-    user2_nwords = str_count(user2, "\\S+")
+    author_1_nwords = str_count(author_1, "\\S+"),
+    author_2_nwords = str_count(author_2, "\\S+")
   )
 
 df_res_long <- df_res_field %>%
   pivot_longer(
-    cols = c(user_surprise, user_transience, user_nwords,
-             user2_surprise, user2_transience, user2_nwords),
+    cols = c(author_1_surprise, author_1_transience, author_1_nwords,
+             author_2_surprise, author_2_transience, author_2_nwords),
     names_to = c("agent", "metric"),
-    names_pattern = "(user|user2)_(surprise|transience|nwords)"
+    names_pattern = "(author_1|author_2)_(surprise|transience|nwords)"
   ) %>%
   pivot_wider(names_from = metric, values_from = value) %>%
   mutate(
     resonance = surprise - transience,
-    agent = factor(agent, levels = c("user", "user2"), labels = c("User", "user2"))
+    agent = factor(agent, levels = c("author_1", "author_2"), labels = c("User 1", "User 2"))
   )
 ```
 
@@ -136,8 +135,8 @@ knitr::kable(desc_stats, caption = "Descriptive Statistics for Novelty Metrics b
 p_novelty_agent <- ggplot(df_res_long, aes(x = agent, y = surprise, fill = agent)) +
   geom_violin(width = 0.6, alpha = 0.7) +
   geom_boxplot(width = 0.2, alpha = 0.5) +
-  scale_fill_manual(values = c("User" = "#377EB8", "user2" = "#FF7F00"), name = "") +
-  scale_color_manual(values = c("User" = "#377EB8", "user2" = "#FF7F00")) +
+  scale_fill_manual(values = c("User 1" = "#377EB8", "User 2" = "#FF7F00"), name = "") +
+  scale_color_manual(values = c("User 1" = "#377EB8", "User 2" = "#FF7F00")) +
   labs(title = "Distributions of Novelty", x = "Novelty", y = NULL) +
   theme(
     legend.position = "top",
@@ -155,8 +154,8 @@ ggsave(
 
 p_transience_agent <- ggplot(df_res_long, aes(x = transience, fill = agent)) +
   geom_density(alpha = 0.4, color = NA) +
-  scale_fill_manual(values = c("User" = "#377EB8", "user2" = "#FF7F00"), name = "") +
-  scale_color_manual(values = c("User" = "#377EB8", "user2" = "#FF7F00")) +
+  scale_fill_manual(values = c("User 1" = "#377EB8", "User 2" = "#FF7F00"), name = "") +
+  scale_color_manual(values = c("User 1" = "#377EB8", "User 2" = "#FF7F00")) +
   labs(title = "Distributions of Transience", x = "Transience", y = NULL) +
   theme(
     legend.position = "top",
@@ -184,7 +183,7 @@ ggsave(
 p_resonance <- ggplot(df_res_long, aes(x = surprise, y = resonance, color = agent)) +
   geom_point(alpha = 0.5, size = 1.5) +
   geom_smooth(method = "lm", se = TRUE, fullrange = TRUE, size = 1.2) +
-  scale_color_manual(values = c("User" = "#377EB8", "user2" = "#FF7F00")) +
+  scale_color_manual(values = c("User 1" = "#377EB8", "User 2" = "#FF7F00")) +
     geom_vline(data = desc_stats,
              aes(xintercept = mean_surprise, color = agent),
              linetype = "dashed", linewidth = 0.8, show.legend = FALSE) +
@@ -208,7 +207,7 @@ ggsave(file.path(GRAPHS_DIR, "novelty_resonance_vs_novelty.png"),
 p_transience <- ggplot(df_res_long, aes(x = surprise, y = transience, color = agent)) +
   geom_point(alpha = 0.5, size = 1.5) +
   geom_smooth(method = "lm", se = TRUE, fullrange = TRUE, size = 1.2) +
-  scale_color_manual(values = c("User" = "#377EB8", "user2" = "#FF7F00")) +
+  scale_color_manual(values = c("User 1" = "#377EB8", "User 2" = "#FF7F00")) +
       geom_vline(data = desc_stats,
              aes(xintercept = mean_surprise, color = agent),
              linetype = "dashed", linewidth = 0.8, show.legend = FALSE) +

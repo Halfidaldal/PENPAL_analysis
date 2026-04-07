@@ -96,8 +96,10 @@ print(names(df_field))
 # Preprocess field data
 df_field <- df_field %>%
   rename(
-    ai_valence = ai_sentiment_projection,
-    user_valence = user_sentiment_projection
+    ai_valence = author_2_sentiment_projection,
+    user_valence = author_1_sentiment_projection,
+    user = author_1,
+    ai = author_2
   ) %>%
   mutate(
     # Token counts
@@ -119,8 +121,10 @@ df_field <- df_field %>%
 # Preprocess simulated data
 # df_simulated <- df_simulated %>%
 #   rename(
-#     ai_valence = ai_sentiment_score,
-#     user_valence = user_sentiment_score
+#     ai_valence = author_2_sentiment_score,
+#     user_valence = author_1_sentiment_score,
+#     user = author_1,
+#     ai = author_2
 #   ) %>%
 #   mutate(
 #     # Token counts

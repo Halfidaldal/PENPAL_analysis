@@ -63,6 +63,7 @@ When there is a valence gap (emotional divergence) between co-authors, the subse
 2. Is the effect stronger in Human-AI (AI accommodating) vs Human-Human (mutual accommodation)?
 3. Does AI-AI show the strongest correction (most "compliant" dynamic)?
 4. How does the correction direction differ across conditions?
+5. Could the rubber-band effect be an inherent mathematical phenomenon, rather than behavioural/psycholinguistical? 
 
 # Load Data
 
@@ -280,128 +281,7 @@ cat("\n=== Pairwise Slope Comparisons ===\n")
 print(pairs(emm_slopes, adjust = "bonferroni"))
 ```
 
-# Directional Analysis: Who Accommodates?
 
-Beyond the symmetric rubber-band test, we can ask: **Who does the accommodating?**
-
-- Does Author 2 adjust toward Author 1's previous valence?
-- Does Author 1 adjust toward Author 2's previous valence?
-
-```{r directional-accommodation, fig.width=14, fig.height=5}
-# Author 2's accommodation to Author 1
-p1 <- df_analysis %>%
-  drop_na(author_1_valence_lag1, author_2_valence) %>%
-  ggplot(aes(x = author_1_valence_lag1, y = author_2_valence, color = condition)) +
-  geom_point(alpha = 0.05, size = 0.5) +
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
-  scale_color_manual(values = condition_colors) +
-  labs(
-    title = "Author 2 Accommodation",
-    subtitle = "Does Author 2 match Author 1's previous valence?",
-    x = "Author 1 Valence (t-1)",
-    y = "Author 2 Valence (t)",
-    color = "Condition"
-  )
-
-# Author 1's accommodation to Author 2
-p2 <- df_analysis %>%
-  drop_na(author_2_valence_lag1, author_1_valence) %>%
-  ggplot(aes(x = author_2_valence_lag1, y = author_1_valence, color = condition)) +
-  geom_point(alpha = 0.05, size = 0.5) +
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
-  scale_color_manual(values = condition_colors) +
-  labs(
-    title = "Author 1 Accommodation",
-    subtitle = "Does Author 1 match Author 2's previous valence?",
-    x = "Author 2 Valence (t-1)",
-    y = "Author 1 Valence (t)",
-    color = "Condition"
-  )
-
-p1 + p2 + plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
-```
-
-```{r directional-models}
-# Author 2 → Author 1's previous valence
-model_a2_to_a1 <- lmer(
-  author_2_valence ~ author_1_valence_lag1 * condition + (1 | conversation_id),
-  data = df_analysis
-)
-
-cat("=== Author 2 Accommodation (A2 → A1_lag) ===\n")
-emm_a2_to_a1 <- emtrends(model_a2_to_a1, "condition", var = "author_1_valence_lag1")
-print(emm_a2_to_a1)
-cat("\n=== Pairwise Contrasts ===\n")
-print(pairs(emm_a2_to_a1, adjust = "bonferroni"))
-
-# Author 1 → Author 2's previous valence
-model_a1_to_a2 <- lmer(
-  author_1_valence ~ author_2_valence_lag1 * condition + (1 | conversation_id),
-  data = df_analysis
-)
-
-cat("\n=== Author 1 Accommodation (A1 → A2_lag) ===\n")
-emm_a1_to_a2 <- emtrends(model_a1_to_a2, "condition", var = "author_2_valence_lag1")
-print(emm_a1_to_a2)
-cat("\n=== Pairwise Contrasts ===\n")
-print(pairs(emm_a1_to_a2, adjust = "bonferroni"))
-```
-
-# Asymmetry in Accommodation
-
-```{r asymmetry-analysis}
-# Compare who accommodates more within each condition
-accommodation_results <- tibble()
-
-for (cond in unique(df_analysis$condition)) {
-  df_cond <- filter(df_analysis, condition == cond)
-  
-  # A2 → A1_lag
-  m1 <- tryCatch({
-    lmer(author_2_valence ~ author_1_valence_lag1 + (1 | conversation_id), data = df_cond)
-  }, error = function(e) NULL)
-  
-  # A1 → A2_lag
-  m2 <- tryCatch({
-    lmer(author_1_valence ~ author_2_valence_lag1 + (1 | conversation_id), data = df_cond)
-  }, error = function(e) NULL)
-  
-  if (!is.null(m1) && !is.null(m2)) {
-    coef1 <- summary(m1)$coefficients["author_1_valence_lag1", "Estimate"]
-    se1 <- summary(m1)$coefficients["author_1_valence_lag1", "Std. Error"]
-    coef2 <- summary(m2)$coefficients["author_2_valence_lag1", "Estimate"]
-    se2 <- summary(m2)$coefficients["author_2_valence_lag1", "Std. Error"]
-    
-    accommodation_results <- bind_rows(accommodation_results, tibble(
-      condition = cond,
-      a2_accommodates = coef1,
-      a2_se = se1,
-      a1_accommodates = coef2,
-      a1_se = se2,
-      diff = coef1 - coef2,
-      diff_se = sqrt(se1^2 + se2^2),
-      z = diff / diff_se,
-      p = 2 * pnorm(-abs(z))
-    ))
-  }
-}
-
-accommodation_results %>%
-  mutate(
-    dominant_accommodator = case_when(
-      p < 0.05 & diff > 0 ~ "Author 2 (AI/User2)",
-      p < 0.05 & diff < 0 ~ "Author 1 (Human/User1)",
-      TRUE ~ "Symmetric"
-    )
-  ) %>%
-  select(condition, a2_accommodates, a1_accommodates, diff, z, p, dominant_accommodator) %>%
-  knitr::kable(
-    digits = 3,
-    caption = "Accommodation asymmetry by condition",
-    col.names = c("Condition", "A2 → A1", "A1 → A2", "Diff", "z", "p", "Dominant Accommodator")
-  )
-```
 
 # Temporal Dynamics
 
@@ -462,43 +342,10 @@ if (nrow(results_within) > 0) {
     ) +
     theme(legend.position = "none")
   
-  # Accommodation comparison
-  if (nrow(accommodation_results) > 0) {
-    acc_long <- accommodation_results %>%
-      select(condition, a2_accommodates, a1_accommodates, a2_se, a1_se) %>%
-      pivot_longer(
-        cols = c(a2_accommodates, a1_accommodates),
-        names_to = "direction",
-        values_to = "coefficient"
-      ) %>%
-      mutate(
-        se = if_else(direction == "a2_accommodates", a2_se, a1_se),
-        direction = if_else(direction == "a2_accommodates", 
-                            "A2 → A1", "A1 → A2")
-      )
     
-    p2 <- ggplot(acc_long, aes(x = condition, y = coefficient, fill = direction)) +
-      geom_col(position = position_dodge(width = 0.7), alpha = 0.8, width = 0.6) +
-      geom_errorbar(
-        aes(ymin = coefficient - 1.96 * se, ymax = coefficient + 1.96 * se),
-        position = position_dodge(width = 0.7),
-        width = 0.2
-      ) +
-      geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-      labs(
-        title = "Directional Accommodation",
-        subtitle = "Who follows whom?",
-        y = "Accommodation Coefficient (β)",
-        x = "Condition",
-        fill = "Direction"
-      ) +
-      theme(legend.position = "bottom")
-    
-    p1 / p2
-  } else {
     p1
   }
-}
+
 ```
 
 # Key Findings
@@ -508,8 +355,6 @@ Based on the analysis above:
 1. **Rubber-band presence**: [Interpret whether the effect is present in all conditions]
 
 2. **Effect strength comparison**: [Compare magnitude across Human-AI, Human-Human, AI-AI]
-
-3. **Accommodation asymmetry**: [Discuss who does more accommodating in each condition]
 
 4. **Temporal patterns**: [Note if the effect changes across story phases]
 

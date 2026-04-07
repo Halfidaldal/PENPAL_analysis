@@ -1,6 +1,6 @@
 ---
-title: "Valence Alignment in AI-AI Story Co-Creatio (Needs refactoring)"
-subtitle: "Analysis of Field Data and AI-AI Baseline Comparison"
+title: "Valence Alignment in AI-AI Story Co-Creation"
+subtitle: "Analysis of AI-AI Baseline Condition"
 author: "PENPAL Project"
 date: "`r Sys.Date()`"
 output:
@@ -52,8 +52,8 @@ theme_set(theme_minimal(base_size = 14))
 format_alignment_label <- function(x) {
   parsed <- dplyr::recode(
     x,
-    same_turn = "'(' * U[t] * ', ' * U2[t] * ')'",
-    prev_turn = "'(' * U2[t-1] * ', ' * U[t] * ')'"
+    same_turn = "'(' * A1[t] * ', ' * A2[t] * ')'",
+    prev_turn = "'(' * A2[t-1] * ', ' * A1[t] * ')'"
   )
   parse(text = parsed)
 }
@@ -76,91 +76,51 @@ dir.create(TABLES_DIR, showWarnings = FALSE, recursive = TRUE)
 
 ```{r load-data}
 # Load dyadic sentiment scores
-
-df_field <- read_parquet(here("/data/ai-ai/processed/dyadic_sentiment_scores.parquet"))
-df_simulated <- read_parquet(here("data/Berlin/processed/dyadic_sentiment_scores_simulated.parquet"))
+df_field <- read_parquet(here("data/ai-ai/processed/dyadic_sentiment_scores.parquet"))
 
 # Display structure
 cat("Field data dimensions:", dim(df_field), "\n")
-cat("Simulated data dimensions:", dim(df_simulated), "\n")
 
 # Show column names
 cat("\nField data columns:\n")
 print(names(df_field))
-
-cat("\nSimulated data columns:\n")
-print(names(df_simulated))
 ```
 
 ## 1.2 Data Preprocessing
 
 ```{r preprocess}
-# Preprocess field data
+# Preprocess AI-AI data - using standardized column names
 df_field <- df_field %>%
   rename(
-    ai2_valence = ai2_sentiment_projection,
-    ai1_valence = ai1_sentiment_projection
+    author_1_valence = author_1_sentiment_projection,
+    author_2_valence = author_2_sentiment_projection
   ) %>%
   mutate(
     # Token counts
-    ai1_token_count = stri_count_words(ai1),
-    ai2_token_count = stri_count_words(ai2),
-    token_ratio = if_else(ai2_token_count == 0, NA_real_, 
-                         ai1_token_count / ai2_token_count),
+    author_1_token_count = stri_count_words(author_1),
+    author_2_token_count = stri_count_words(author_2),
+    token_ratio = if_else(author_2_token_count == 0, NA_real_, 
+                         author_1_token_count / author_2_token_count),
     
     # Time parsing
     timestamp = ymd_hms(timestamp),
     
     # Data source label
-    data_source = "Field"
+    data_source = "AI-AI"
   ) %>%
   # Ensure conversation_id is a character/factor
   mutate(conversation_id = as.character(conversation_id)) %>%
-    filter(turn > 1, turn < 10, conversation_id != "X2iRgHKaWAgwzt9mfDzD")
-
-
-
-# Preprocess simulated data
-df_simulated <- df_simulated %>%
-  rename(
-    ai_valence = ai_sentiment_score,
-    ai1_valence = ai1_sentiment_score
-  ) %>%
-  mutate(
-    # Token counts
-    ai1_token_count = stri_count_words(ai1),
-    ai_token_count = stri_count_words(ai),
-    token_ratio = if_else(ai_token_count == 0, NA_real_, 
-                         ai1_token_count / ai_token_count),
-    
-    # Time parsing (if available)
-    timestamp = if_else(!is.na(timestamp), ymd_hms(timestamp), as.POSIXct(NA)),
-    
-    # Data source label
-    data_source = "Simulated"
-  ) %>%
-  mutate(conversation_id = as.character(conversation_id))
+    filter(turn > 1, turn < 10)
 
 # Summary statistics
-cat("\n=== Field Data Summary ===\n")
+cat("\n=== AI-AI Data Summary ===\n")
 df_field %>%
   summarise(
     n_conversations = n_distinct(conversation_id),
     n_turns = n(),
     mean_turns_per_story = n() / n_distinct(conversation_id),
-    mean_ai1_valence = mean(ai1_valence, na.rm = TRUE),
-    mean_ai2_valence = mean(ai2_valence, na.rm = TRUE)
-  ) %>%
-  print()
-
-cat("\n=== Simulated Data Summary ===\n")
-df_simulated %>%
-  summarise(
-    n_conversations = n_distinct(conversation_id),
-    n_turns = n(),
-    mean_turns_per_story = n() / n_distinct(conversation_id),
-    mean_ai1_valence = mean(ai1_valence, na.rm = TRUE),
-    mean_ai_valence = mean(ai_valence, na.rm = TRUE)
+    mean_author_1_valence = mean(author_1_valence, na.rm = TRUE),
+    mean_author_2_valence = mean(author_2_valence, na.rm = TRUE)
   ) %>%
   print()
 ```
@@ -168,7 +128,7 @@ df_simulated %>%
 ## 1.3 Compute Lagged Variables and Cosine
 
 ```{r compute-lags}
-# Add lagged AI valence for field data
+# Add lagged agent valence
 # Note: lag() within group_by ensures no cross-story contamination
 # Turn 1 of each story will have NA for lagged values (correct behavior)
 
@@ -176,8 +136,8 @@ df_field <- df_field %>%
   group_by(conversation_id) %>%
   arrange(turn, .by_group = TRUE) %>%
   mutate(
-    ai2_valence_lag1 = lag(ai2_valence, n = 1),
-    ai1_valence_lag1 = lag(ai1_valence, n = 1),
+    author_2_valence_lag1 = lag(author_2_valence, n = 1),
+    author_1_valence_lag1 = lag(author_1_valence, n = 1)
   ) %>%
   ungroup()
 
@@ -193,35 +153,22 @@ df_field <- df_field %>%
   group_by(conversation_id) %>%
   arrange(turn, .by_group = TRUE) %>%
   mutate(
-    ai2_embedding_prev = lag(ai2_embedding),
-    ai1_embedding_prev = lag(ai1_embedding)
+    author_2_embedding_prev = lag(author_2_embedding),
+    author_1_embedding_prev = lag(author_1_embedding)
   ) %>%
   rowwise() %>%
   mutate(
-    cosine_sim_same = cosine_sim(ai1_embedding, ai2_embedding),
-    cosine_sim_prev = cosine_sim(ai1_embedding, ai2_embedding_prev),
-    cosine_sim_ai1_self = cosine_sim(ai1_embedding, ai1_embedding_prev),
-    cosine_sim_ai_self = cosine_sim(ai2_embedding, ai2_embedding_prev)
-  ) %>%
-  select(-ai1_embedding, -ai2_embedding, -ai1_embedding_prev, -ai2_embedding_prev) %>%
-  ungroup()
-
-# Add lagged AI valence for simulated data
-df_simulated <- df_simulated %>%
-  group_by(conversation_id) %>%
-  arrange(turn, .by_group = TRUE) %>%
-  mutate(
-    ai_valence_lag1 = lag(ai_valence, n = 1),
-    ai1_valence_lag1 = lag(ai1_valence, n = 1)
+    cosine_sim_same = cosine_sim(author_1_embedding, author_2_embedding),
+    cosine_sim_prev = cosine_sim(author_1_embedding, author_2_embedding_prev),
+    cosine_sim_author_1_self = cosine_sim(author_1_embedding, author_1_embedding_prev),
+    cosine_sim_author_2_self = cosine_sim(author_2_embedding, author_2_embedding_prev)
   ) %>%
   ungroup()
 
 # Verify no cross-story contamination
 cat("=== Lag Variable Verification ===\n")
 cat("Field data - Turn 1 with non-NA lag (should be 0):", 
-    sum(df_field$turn == 1 & !is.na(df_field$ai_valence_lag1)), "\n")
-cat("Simulated data - Turn 1 with non-NA lag (should be 0):", 
-    sum(df_simulated$turn == 1 & !is.na(df_simulated$ai_valence_lag1)), "\n")
+    sum(df_field$turn == 1 & !is.na(df_field$author_2_valence_lag1)), "\n")
 ```
 
 # 2. Descriptive Statistics
@@ -232,10 +179,10 @@ cat("Simulated data - Turn 1 with non-NA lag (should be 0):",
 # Field data token statistics
 token_stats_field <- df_field %>%
   summarise(
-    mean_ai1_tokens = mean(ai1_token_count, na.rm = TRUE),
-    sd_ai1_tokens = sd(ai1_token_count, na.rm = TRUE),
-    mean_ai_tokens = mean(ai2_token_count, na.rm = TRUE),
-    sd_ai_tokens = sd(ai2_token_count, na.rm = TRUE),
+    mean_author_1_tokens = mean(author_1_token_count, na.rm = TRUE),
+    sd_author_1_tokens = sd(author_1_token_count, na.rm = TRUE),
+    mean_author_2_tokens = mean(author_2_token_count, na.rm = TRUE),
+    sd_author_2_tokens = sd(author_2_token_count, na.rm = TRUE),
     mean_token_ratio = mean(token_ratio, na.rm = TRUE)
   )
 
@@ -250,19 +197,7 @@ print(token_stats_field)
 # Combined statistics
 valence_stats <- bind_rows(
   df_field %>% 
-    pivot_longer(cols = c(ai1_valence, ai2_valence),
-                 names_to = "agent", values_to = "valence") %>%
-    mutate(agent = str_remove(agent, "_valence")) %>%
-    group_by(data_source, agent) %>%
-    summarise(
-      mean_valence = mean(valence, na.rm = TRUE),
-      sd_valence = sd(valence, na.rm = TRUE),
-      median_valence = median(valence, na.rm = TRUE),
-      .groups = "drop"
-    ),
-  
-  df_simulated %>%
-    pivot_longer(cols = c(ai1_valence, ai_valence),
+    pivot_longer(cols = c(author_1_valence, author_2_valence),
                  names_to = "agent", values_to = "valence") %>%
     mutate(agent = str_remove(agent, "_valence")) %>%
     group_by(data_source, agent) %>%
@@ -285,13 +220,12 @@ write_csv(valence_stats, file.path(TABLES_DIR, "valence_descriptive_stats.csv"))
 ## 3.1 Valence Distribution Difference Test
 ```{r test-valence-distribution}
 df_field_long <- df_field %>%
-  pivot_longer(cols = c(ai1_valence, ai2_valence),
+  pivot_longer(cols = c(author_1_valence, author_2_valence),
                names_to = "agent", values_to = "valence") %>%
   mutate(agent = recode(agent, 
-                       ai1_valence = "ai1", 
-                       ai2_valence = "ai2"),
-         agent = factor(agent, levels = c("ai1", "ai2"))
-         )
+                       author_1_valence = "author_1", 
+                       author_2_valence = "author_2"),
+         agent = factor(agent, levels = c("author_1", "author_2")))
 
 
 
@@ -304,25 +238,14 @@ df_field_cosine_long <- df_field %>%
          direction = factor(direction, levels = c("Same", "Prev"))
          )
 
-df_sim_long <- df_simulated %>%
-  pivot_longer(cols = c(ai1_valence, ai_valence),
-               names_to = "agent", values_to = "valence") %>%
-  mutate(agent = recode(agent, 
-                       ai1_valence = "AI 1", 
-                       ai_valence = "AI 2"))
-
-
 # Calculate means for vertical lines
 means_field <- df_field_long %>%
   group_by(agent) %>%
   summarise(mean_val = mean(valence, na.rm = TRUE), .groups = "drop")
 
-means_sim <- df_sim_long %>%
-  group_by(agent) %>%
-  summarise(mean_val = mean(valence, na.rm = TRUE), .groups = "drop")
 
 
-valence_difference_mixed_model <- lmer(valence ~ agent + (1 | conversation_id), data=df_field_long)
+valence_difference_mixed_model <- lmer(valence ~ agent + (1 | conversation_id), data = df_field_long)
 cat("=== Valence Difference Model Coefficients ===\n")
 print(round(summary(valence_difference_mixed_model)$coefficients, 4))
 
@@ -335,8 +258,8 @@ print(round(summary(valence_difference_mixed_model)$coefficients, 4))
 # Prepare data for plotting
 
 # Calculate KS distance and means
-ks_test <- ks.test(df_field_long %>% filter(agent == "ai1") %>% pull(valence),
-           df_field_long %>% filter(agent == "ai2") %>% pull(valence))
+ks_test <- ks.test(df_field_long %>% filter(agent == "author_1") %>% pull(valence),
+           df_field_long %>% filter(agent == "author_2") %>% pull(valence))
 
 means_field <- df_field_long %>%
   group_by(agent) %>%
@@ -348,8 +271,16 @@ p_field <- ggplot(df_field_long, aes(x = valence, fill = agent, color = agent)) 
   geom_vline(data = means_field,
        aes(xintercept = mean_val, color = agent),
        linetype = "dashed", linewidth = 1.2, show.legend = FALSE) +
-  scale_fill_manual(values = c("ai1" = "#377EB8", "ai2" = "#FF7F00"), name = "Agent") +
-  scale_color_manual(values = c("ai1" = "#377EB8", "ai2" = "#FF7F00"), name = "Agent") +
+  scale_fill_manual(
+    values = c("author_1" = "#377EB8", "author_2" = "#FF7F00"), 
+    name = "Agent",
+    labels = c("author_1" = "Agent 1", "author_2" = "Agent 2")
+  ) +
+  scale_color_manual(
+    values = c("author_1" = "#377EB8", "author_2" = "#FF7F00"), 
+    name = "Agent",
+    labels = c("author_1" = "Agent 1", "author_2" = "Agent 2")
+  ) +
   labs(
   title = "Valence Distribution: Field Data",
   subtitle = sprintf("Kolmogorov-Smirnov D = %.3f, p-value = %.4f", 
@@ -370,41 +301,8 @@ ggsave(file.path(GRAPHS_DIR, "valence_distribution_comparison_density_ks.png"),
      p_field, width = 10, height = 6, dpi = 300)
 
 # Print KS test results
-cat("\n=== Kolmogorov-Smirnov Test: ai1 vs LLM Valence Distribution ===\n")
+cat("\n=== Kolmogorov-Smirnov Test: Agent 1 vs Agent 2 Valence Distribution ===\n")
 print(ks_test)
-
-# Simulated data plot
-#p_sim <- ggplot(df_sim_long, aes(x = valence, fill = agent)) +
-#  geom_density(alpha = 0.4, color = NA) +
-#  geom_vline(data = means_sim,
-#             aes(xintercept = mean_val, color = agent),
-#             linetype = "dashed", linewidth = 0.8, show.legend = FALSE) +
-#  scale_fill_brewer(palette = "Set2", name = "") +
-#  scale_color_brewer(palette = "Set2") +
-#  labs(title = "Simulated Data", x = NULL, y = NULL) +
-#  theme(
-#    legend.position = "top",
-#    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
-#    axis.text = element_text(size = 12)
-#  )
-
-# Combine plots
-#combined_plot <- (p_field) +
-#  plot_annotation(
-#    title = "Distribution of Valence Scores: Field vs Simulated Data",
-#    theme = theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold"))
-#  )
-#
-# Add axis labels using cowplot
-#final_valence_dist <- ggdraw() +
-#  draw_plot(combined_plot, 0, 0, 1, 1) +
-#  draw_label("Valence Score", x = 0.5, y = 0.02, size = 16) +
-#  draw_label("Density", x = 0.02, y = 0.5, angle = 90, size = 16)
-
-#print(final_valence_dist)
-
-#ggsave(file.path(GRAPHS_DIR, "valence_distribution_comparison.png"), 
-#       final_valence_dist, width = 12, height = 6, dpi = 300)
 ```
 
 # 4. Valence Alignment Analysis
@@ -417,25 +315,16 @@ cor_field_same <- df_field %>%
   group_by(conversation_id) %>%
   filter(n() >= 3) %>%  # Require at least 3 turns
   summarise(
-    rho = cor(ai1_valence, ai2_valence, use = "complete.obs"),
+    rho = cor(author_1_valence, author_2_valence, use = "complete.obs"),
     n_turns = n(),
     data_source = "Field",
     .groups = "drop"
   )
 
-# Simulated data: same-turn correlation
-cor_sim_same <- df_simulated %>%
-  group_by(conversation_id) %>%
-  filter(n() >= 3) %>%
-  summarise(
-    rho = cor(ai1_valence, ai_valence, use = "complete.obs"),
-    n_turns = n(),
-    data_source = "Simulated",
-    .groups = "drop"
-  )
+
 
 # Combine
-cor_same_combined <- bind_rows(cor_field_same, cor_sim_same) %>%
+cor_same_combined <- bind_rows(cor_field_same) %>%
   mutate(alignment_type = "same_turn")
 
 # Summary
@@ -455,32 +344,20 @@ cor_same_combined %>%
 ## 4.2 Per-Story Correlation (Previous Turn)
 
 ```{r alignment-prev-turn}
-# Field data: previous-turn correlation (ai1 response to previous AI)
+# Field data: previous-turn correlation (author_1 response to previous author_2)
 cor_field_prev <- df_field %>%
   group_by(conversation_id) %>%
-  filter(!is.na(ai2_valence_lag1)) %>%
+  filter(!is.na(author_2_valence_lag1)) %>%
   filter(n() >= 3) %>%
   summarise(
-    rho = cor(ai1_valence, ai2_valence_lag1, use = "complete.obs"),
+    rho = cor(author_1_valence, author_2_valence_lag1, use = "complete.obs"),
     n_turns = n(),
     data_source = "Field",
     .groups = "drop"
   )
 
-# Simulated data: previous-turn correlation
-cor_sim_prev <- df_simulated %>%
-  group_by(conversation_id) %>%
-  filter(!is.na(ai_valence_lag1)) %>%
-  filter(n() >= 3) %>%
-  summarise(
-    rho = cor(ai1_valence, ai_valence_lag1, use = "complete.obs"),
-    n_turns = n(),
-    data_source = "Simulated",
-    .groups = "drop"
-  )
-
 # Combine
-cor_prev_combined <- bind_rows(cor_field_prev, cor_sim_prev) %>%
+cor_prev_combined <- bind_rows(cor_field_prev) %>%
   mutate(alignment_type = "prev_turn")
 
 # Summary
@@ -501,20 +378,15 @@ cor_prev_combined %>%
 #Violates assumptions since turns are not independent (nested in stories)
 cor_field_same_all_turns <- df_field %>%
   summarise(
-    rho = cor(ai1_valence, ai2_valence, use = "complete.obs"),
+    rho = cor(author_1_valence, author_2_valence, use = "complete.obs"),
     n_turns = n(),
     data_source = "Field"
   )
 
-cor_sim_same_all_turns <- df_simulated %>%
-  summarise(
-    rho = cor(ai1_valence, ai_valence, use = "complete.obs"),
-    n_turns = n(),
-    data_source = "Simulated"
-  )
 
-cor_same_combined_all_turns <- bind_rows(cor_field_same_all_turns, cor_sim_same_all_turns) %>%
-  mutate(alignment_tupe = "Same Turn All Turns")
+
+cor_same_combined_all_turns <- bind_rows(cor_field_same_all_turns) %>%
+  mutate(alignment_type = "Same Turn All Turns")
 
 cat("=== Same-Turn All Turns Alignment Summary ===\n")
 cor_same_combined_all_turns %>%
@@ -531,33 +403,23 @@ cor_same_combined_all_turns %>%
 
 ```{r previous-turn-alignment-all-turns}
 # Violates independence assumption (turns nested in stories)
-# Note: use="complete.obs" automatically excludes turn 1 (where ai_valence_lag1 is NA)
-# This ensures ai1_t1 is never paired with ai from previous story
+# Note: use="complete.obs" automatically excludes turn 1 (where author_2_valence_lag1 is NA)
+# This ensures author_1_t1 is never paired with author_2 from previous story
 
 # Verify exclusion of turn 1
 cat("=== Previous-Turn Aggregate Correlation ===\n")
 cat("Field: Turn 1 observations (excluded):", sum(df_field$turn == 1), "\n")
-cat("Field: Valid lag observations:", sum(!is.na(df_field$ai_valence_lag1)), "\n")
-cat("Simulated: Turn 1 observations (excluded):", sum(df_simulated$turn == 1), "\n")
-cat("Simulated: Valid lag observations:", sum(!is.na(df_simulated$ai_valence_lag1)), "\n\n")
+cat("Field: Valid lag observations:", sum(!is.na(df_field$author_2_valence_lag1)), "\n")
 
 cor_field_same_all_turns_prev <- df_field %>%
   summarise(
-    rho = cor(ai1_valence, ai2_valence_lag1, use = "complete.obs"),
+    rho = cor(author_1_valence, author_2_valence_lag1, use = "complete.obs"),
     n_turns = n(),
-    n_valid = sum(!is.na(ai2_valence_lag1)),
+    n_valid = sum(!is.na(author_2_valence_lag1)),
     data_source = "Field"
   )
 
-cor_sim_same_all_turns_prev <- df_simulated %>%
-  summarise(
-    rho = cor(ai1_valence, ai_valence_lag1, use = "complete.obs"),
-    n_turns = n(),
-    n_valid = sum(!is.na(ai_valence_lag1)),
-    data_source = "Simulated"
-  )
-
-cor_same_combined_all_turns_prev <- bind_rows(cor_field_same_all_turns_prev, cor_sim_same_all_turns_prev) %>%
+cor_same_combined_all_turns_prev <- bind_rows(cor_field_same_all_turns_prev) %>%
   mutate(alignment_type = "Previous Turn All Turns")
 
 cat("=== Previous-Turn All Turns Alignment Summary ===\n")
@@ -582,39 +444,41 @@ cor_same_combined_all_turns_prev %>%
 
 p_probe_sentiment <- df_field %>%
   mutate(time = ymd_hms(timestamp)) %>%
-  
   group_by(conversation_id) %>%
   arrange(time, .by_group = TRUE) %>%
   mutate(turn_index = row_number()) %>%
   ungroup() %>%
   filter(conversation_id %in% unique(conversation_id)[26:28]) %>%
-  pivot_longer(cols = c(ai1_valence, ai2_valence),
+  pivot_longer(cols = c(author_1_valence, author_2_valence),
                names_to = "source", values_to = "valence") %>%
-mutate(
-  source = recode(source, "ai1_valence" = "ai1", "ai2_valence" = "ai2")
-) %>%
-group_by(conversation_id, source) %>%            # NEW: smooth separately per convo + source
-arrange(turn_index, .by_group = TRUE) %>%        # NEW: make sure order is correct
-mutate(
-  valence_smoothed = rollmean(valence, k = 1,    # CHANGE: k = 3 (or 5 if you want very smooth)
-                              fill = NA,
-                              align = "center")
-) %>%
-ungroup() %>%
-ggplot(aes(x = turn_index, y = valence_smoothed, color = source)) +
-  geom_line(size = 1.2) +                                # thicker lines
-  geom_point(aes(y = valence), size = 1.2, alpha = 0.5) +# optional: show raw points faintly
-  scale_color_manual(values = c("ai1" = "#377EB8", "ai2" = "#FF7F00")) +
+  mutate(
+    source = recode(source, "author_1_valence" = "author_1", "author_2_valence" = "author_2")
+  ) %>%
+  group_by(conversation_id, source) %>%
+  arrange(turn_index, .by_group = TRUE) %>%
+  mutate(
+    valence_smoothed = rollmean(valence, k = 1,
+                                fill = NA,
+                                align = "center")
+  ) %>%
+  ungroup() %>%
+  ggplot(aes(x = turn_index, y = valence_smoothed, color = source)) +
+  geom_line(size = 1.2) +
+  geom_point(aes(y = valence), size = 1.2, alpha = 0.5) +
+  scale_color_manual(
+    values = c("author_1" = "#377EB8", "author_2" = "#FF7F00"),
+    labels = c("author_1" = "Agent 1", "author_2" = "Agent 2")
+  ) +
   facet_wrap(~ conversation_id, scales = "free_x") +
   labs(
-    title = "Smoothed valence over turns (rolling mean, k = 2)",  # keep this in sync with k
+    title = "Smoothed valence over turns (rolling mean, k = 1)",
     x = "Turn index",
     y = "Valence",
     color = NULL
   ) +
-  theme_minimal(base_size = 14) +                        # nicer base size
+  theme_minimal(base_size = 14) +
   theme(
-    legend.position = "bottom",                          # cleaner legend
+    legend.position = "bottom",
     panel.grid.minor = element_blank(),
     strip.text = element_text(face = "bold"),
     plot.title = element_text(face = "bold", hjust = 0)
@@ -758,25 +622,25 @@ print(comparison_summary)
 
 # 1) Build long-format dataset with both directions in a common structure
 
-# Same-turn: ai1 -> AI
+# Same-turn: author_1 → author_2
 df_same_dir <- df_field %>%
   transmute(
     conversation_id,
     turn,
-    alignment_direction = "ai1_to_ai2",
-    predictor_valence = ai1_valence,
-    response_valence = ai2_valence
+    alignment_direction = "author_1_to_author_2",
+    predictor_valence = author_1_valence,
+    response_valence = author_2_valence
   )
 
-# Previous-turn: AI -> ai1 (response to previous AI valence)
+# Previous-turn: author_2(t-1) → author_1(t) (response to previous author_2 valence)
 df_prev_dir <- df_field %>%
-  filter(!is.na(ai2_valence_lag1)) %>%   # ensure valid lag values
+  filter(!is.na(author_2_valence_lag1)) %>%
   transmute(
     conversation_id,
     turn,
-    alignment_direction = "ai2_to_ai1",
-    predictor_valence = ai2_valence_lag1,
-    response_valence = ai1_valence
+    alignment_direction = "author_2_to_author_1",
+    predictor_valence = author_2_valence_lag1,
+    response_valence = author_1_valence
   )
 
 # Combine into one long dataset
@@ -784,7 +648,7 @@ df_alignment_long <- bind_rows(df_same_dir, df_prev_dir) %>%
   mutate(
     alignment_direction = factor(
       alignment_direction,
-      levels = c("ai1_to_ai2", "ai2_to_ai1")
+      levels = c("author_1_to_author_2", "author_2_to_author_1")
     )
   )
 
@@ -813,7 +677,7 @@ df_std <- df_alignment_long %>%
   ungroup()
 
 df_std$alignment_direction <- factor(df_std$alignment_direction,
-                                     levels = c("ai1_to_ai2","ai2_to_ai1"))
+                                     levels = c("author_1_to_author_2", "author_2_to_author_1"))
 contrasts(df_std$alignment_direction) <- contr.sum(2)
 
 m <- lmer(response_z ~ predictor_z * alignment_direction + (1 + predictor_z | conversation_id),
@@ -867,7 +731,7 @@ p_direction_alignment <- df_alignment_long %>%
     size = 1.2
   ) +
   scale_color_manual(
-    values = c("ai1_to_ai2" = "#377EB8", "ai2_to_ai1" = "#FF7F00"),
+    values = c("author_1_to_author_2" = "#377EB8", "author_2_to_author_1" = "#FF7F00"),
     name = "Alignment Direction",
     labels = c(expression((U[t] * ", " * A[t])), expression((A[t-1] * ", " * U[t])))
   ) +
@@ -900,12 +764,12 @@ ggsave(
 
 ```{r alignment-stats}
 # Test 1: Same-turn alignment difference
-t_test_same <- t.test(rho ~ data_source, data = cor_same_combined)
+#t_test_same <- t.test(rho ~ data_source, data = cor_same_combined)
 #cat("=== T-test: Same-Turn Alignment ===\n")
 #print(t_test_same)
 
 # Test 2: Previous-turn alignment difference
-t_test_prev <- t.test(rho ~ data_source, data = cor_prev_combined)
+#t_test_prev <- t.test(rho ~ data_source, data = cor_prev_combined)
 #cat("\n=== T-test: Previous-Turn Alignment ===\n")
 #print(t_test_prev)
 
@@ -943,30 +807,16 @@ mean_z_same <- mean(atanh(pairs_field$rho_same), na.rm = TRUE)
 mean_z_prev <- mean(atanh(pairs_field$rho_prev), na.rm = TRUE)
 
 cat("\n--- Interpretation (Back-transformed means) ---\n")
-cat("Mean Same-Turn r (ai1->ai2):", round(tanh(mean_z_same), 3), "\n")
-cat("Mean Prev-Turn r (ai2->ai1):", round(tanh(mean_z_prev), 3), "\n")
-
-# Prepare Simulated pairs
-pairs_sim <- inner_join(
-  cor_sim_same %>% select(conversation_id, rho_same = rho),
-  cor_sim_prev %>% select(conversation_id, rho_prev = rho),
-  by = "conversation_id"
-)
-
-# Apply Fisher z-transformation before t-test
-t_test_paired_sim <- t.test(atanh(pairs_sim$rho_same), atanh(pairs_sim$rho_prev), paired = TRUE)
-cat("\nSimulated Data: Paired t-test (Fisher z-transformed Same Turn - Previous Turn)\n")
-print(t_test_paired_sim)
+cat("Mean Same-Turn r (author_1->author_2):", round(tanh(mean_z_same), 3), "\n")
+cat("Mean Prev-Turn r (author_2->author_1):", round(tanh(mean_z_prev), 3), "\n")
 
 # Save results
 alignment_test_results <- tibble(
-  test = c("Same-turn: Field vs Simulated", "Previous-turn: Field vs Simulated"),
-  t_statistic = c(t_test_same$statistic, t_test_prev$statistic),
-  p_value = c(t_test_same$p.value, t_test_prev$p.value),
+  test = c("Same-turn", "Previous-turn"),
+  #t_statistic = c(t_test_same$statistic, t_test_prev$statistic),
+  #p_value = c(t_test_same$p.value, t_test_prev$p.value),
   mean_field = c(mean(cor_field_same$rho, na.rm = TRUE), 
-                 mean(cor_field_prev$rho, na.rm = TRUE)),
-  mean_sim = c(mean(cor_sim_same$rho, na.rm = TRUE), 
-               mean(cor_sim_prev$rho, na.rm = TRUE))
+                 mean(cor_field_prev$rho, na.rm = TRUE))
 )
 
 write_csv(alignment_test_results, 
@@ -988,21 +838,20 @@ df_field_cosine_long <- df_field %>%
          direction = factor(direction, levels = c("same_turn", "prev_turn"))
          )
 df_field_cosine_long_prev_self <- df_field %>%
-  pivot_longer(cols = c(cosine_sim_ai1_self, cosine_sim_prev),
+  pivot_longer(cols = c(cosine_sim_author_1_self, cosine_sim_prev),
                names_to = "direction", values_to = "cosine_sim") %>%
   mutate(direction = recode(direction,
-                            cosine_sim_ai1_self = "Self",
+                            cosine_sim_author_1_self = "Self",
                             cosine_sim_prev = "Interlocutor"),
          direction = factor(direction, levels = c("Self", "Interlocutor"))
          )
-df_field_cosine_long_prev_self_ai <- df_field %>%
-  pivot_longer(cols = c(cosine_sim_ai_self, cosine_sim_same),
+df_field_cosine_long_prev_self_author_2 <- df_field %>%
+  pivot_longer(cols = c(cosine_sim_author_2_self, cosine_sim_same),
                names_to = "direction", values_to = "cosine_sim") %>%
   mutate(direction = recode(direction,
-                            cosine_sim_ai_self = "Self",
+                            cosine_sim_author_2_self = "Self",
                             cosine_sim_same = "Interlocutor"),
-         direction = factor(direction, levels = c("Self", "Interlocutor"))
-         )
+         direction = factor(direction, levels = c("Self", "Interlocutor")))
 
 
 # Calculate means for vertical lines
@@ -1013,15 +862,15 @@ means_field <- df_field_cosine_long %>%
 
 
 
-cosine_difference_mixed_model_self_ai1 <- lmer(cosine_sim ~ direction + (direction | conversation_id), data=df_field_cosine_long_prev_self)
-cat("\n=== Cosine Sim: ai1 (Self vs Interlocutor) ===\n")
-print(round(summary(cosine_difference_mixed_model_self_ai1)$coefficients, 4))
+cosine_difference_mixed_model_self_author_1 <- lmer(cosine_sim ~ direction + (direction | conversation_id), data=df_field_cosine_long_prev_self)
+cat("\n=== Cosine Sim: Agent 1 (Self vs Interlocutor) ===\n")
+print(round(summary(cosine_difference_mixed_model_self_author_1)$coefficients, 4))
 
-cosine_difference_mixed_model_self_ai <- lmer(cosine_sim ~ direction + (direction | conversation_id), data=df_field_cosine_long_prev_self_ai)
-cat("\n=== Cosine Sim: AI (Self vs Interlocutor) ===\n")
-print(round(summary(cosine_difference_mixed_model_self_ai)$coefficients, 4))
+cosine_difference_mixed_model_self_author_2 <- lmer(cosine_sim ~ direction + (direction | conversation_id), data = df_field_cosine_long_prev_self_author_2)
+cat("\n=== Cosine Sim: Agent 2 (Self vs Interlocutor) ===\n")
+print(round(summary(cosine_difference_mixed_model_self_author_2)$coefficients, 4))
 
-cosine_difference_mixed_model <- lmer(cosine_sim ~ direction + (direction | conversation_id), data=df_field_cosine_long)
+cosine_difference_mixed_model <- lmer(cosine_sim ~ direction + (direction | conversation_id), data = df_field_cosine_long)
 cat("\n=== Cosine Sim: General Direction Comparison ===\n")
 print(round(summary(cosine_difference_mixed_model)$coefficients, 4))
 ```
@@ -1116,16 +965,16 @@ ggsave(file.path(GRAPHS_DIR, "combined_valence_semantic_alignment.png"),
 
 
 ```{r cosine-self-vs-interlocutor-plot, fig.width=10, fig.height=6}
-# Plot for ai1: Self vs Interlocutor Cosine Similarity
-p_cosine_ai1_self_vs_interlocutor <- df_field_cosine_long_prev_self %>%
+# Plot for Agent 1: Self vs Interlocutor Cosine Similarity
+p_cosine_author_1_self_vs_interlocutor <- df_field_cosine_long_prev_self %>%
   ggplot(aes(x = direction, y = cosine_sim, fill = direction)) +
   geom_violin(width = 0.6, alpha = 0.7) +
   geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.5,
                position = position_dodge(width = 0.75)) +
   scale_fill_manual(values = c("Self" = "#377EB8", "Interlocutor" = "#FF7F00")) +
   labs(
-    title = "ai1 Semantic Alignment: Self vs. Interlocutor",
-    subtitle = "Cosine Similarity: ai1(t) ↔ ai1(t-1) vs. ai1(t) ↔ ai2(t-1)",
+    title = "Agent 1 Semantic Alignment: Self vs. Interlocutor",
+    subtitle = "Cosine Similarity: Agent 1(t) ↔ Agent 1(t-1) vs. Agent 1(t) ↔ Agent 2(t-1)",
     x = "Alignment Target",
     y = "Cosine Similarity"
   ) +
@@ -1135,10 +984,10 @@ p_cosine_ai1_self_vs_interlocutor <- df_field_cosine_long_prev_self %>%
     plot.subtitle = element_text(hjust = 0.5, size = 12, color = "grey40")
   )
 
-print(p_cosine_ai1_self_vs_interlocutor)
+print(p_cosine_author_1_self_vs_interlocutor)
 
-ggsave(file.path(GRAPHS_DIR, "cosine_similarity_ai1_self_vs_interlocutor.png"),
-       p_cosine_ai1_self_vs_interlocutor, width = 10, height = 6, dpi = 300)
+ggsave(file.path(GRAPHS_DIR, "cosine_similarity_author_1_self_vs_interlocutor.png"),
+       p_cosine_author_1_self_vs_interlocutor, width = 10, height = 6, dpi = 300)
 ```
 
 ## Valence Distance Difference Test
@@ -1147,46 +996,46 @@ ggsave(file.path(GRAPHS_DIR, "cosine_similarity_ai1_self_vs_interlocutor.png"),
 # Calculate valence distances
 df_field_val <- df_field %>%
   mutate(
-    val_dist_same = abs(ai1_valence - ai2_valence),
-    val_dist_prev = abs(ai1_valence - ai2_valence_lag1),
-    val_dist_ai1_self = abs(ai1_valence - ai1_valence_lag1),
-    val_dist_ai_self = abs(ai2_valence - ai2_valence_lag1)
+    val_dist_same = abs(author_1_valence - author_2_valence),
+    val_dist_prev = abs(author_1_valence - author_2_valence_lag1),
+    val_dist_author_1_self = abs(author_1_valence - author_1_valence_lag1),
+    val_dist_author_2_self = abs(author_2_valence - author_2_valence_lag1)
   )
 
-# ai1: Self vs Partner (Prev)
-df_field_val_long_ai1 <- df_field_val %>%
-  pivot_longer(cols = c(val_dist_ai1_self, val_dist_prev),
+# Author 1: Self vs Partner (Prev)
+df_field_val_long_author_1 <- df_field_val %>%
+  pivot_longer(cols = c(val_dist_author_1_self, val_dist_prev),
                names_to = "direction", values_to = "val_dist") %>%
   mutate(direction = recode(direction,
-                            val_dist_ai1_self = "Self",
+                            val_dist_author_1_self = "Self",
                             val_dist_prev = "Interlocutor"),
          direction = factor(direction, levels = c("Self", "Interlocutor")))
 
-# AI: Self vs Partner (Same)
-df_field_val_long_ai <- df_field_val %>%
-  pivot_longer(cols = c(val_dist_ai_self, val_dist_same),
+# Author 2: Self vs Partner (Same)
+df_field_val_long_author_2 <- df_field_val %>%
+  pivot_longer(cols = c(val_dist_author_2_self, val_dist_same),
                names_to = "direction", values_to = "val_dist") %>%
   mutate(direction = recode(direction,
-                            val_dist_ai_self = "Self",
+                            val_dist_author_2_self = "Self",
                             val_dist_same = "Interlocutor"),
          direction = factor(direction, levels = c("Self", "Interlocutor")))
 
-cat("\n=== Valence Distance Model: ai1 (Self vs Interlocutor) ===\n")
-val_model_ai1 <- lmer(val_dist ~ direction + (direction | conversation_id), 
-                       data = df_field_val_long_ai1)
-print(round(summary(val_model_ai1)$coefficients, 4))
+cat("\n=== Valence Distance Model: Agent 1 (Self vs Interlocutor) ===\n")
+val_model_author_1 <- lmer(val_dist ~ direction + (direction | conversation_id), 
+                       data = df_field_val_long_author_1)
+print(round(summary(val_model_author_1)$coefficients, 4))
 
-cat("\n=== Valence Distance Model: AI (Self vs Interlocutor) ===\n")
-val_model_ai <- lmer(val_dist ~ direction + (direction | conversation_id), 
-                     data = df_field_val_long_ai)
-print(round(summary(val_model_ai)$coefficients, 4))
+cat("\n=== Valence Distance Model: Agent 2 (Self vs Interlocutor) ===\n")
+val_model_author_2 <- lmer(val_dist ~ direction + (direction | conversation_id), 
+                      data = df_field_val_long_author_2)
+print(round(summary(val_model_author_2)$coefficients, 4))
 ```
 
 ```{r valence-distance-plot, fig.width=12, fig.height=6}
 # Combine for plotting
 df_val_plot <- bind_rows(
-  df_field_val_long_ai1 %>% mutate(agent = "ai1"),
-  df_field_val_long_ai %>% mutate(agent = "ai2")
+  df_field_val_long_author_1 %>% mutate(agent = "author_1"),
+  df_field_val_long_author_2 %>% mutate(agent = "author_2")
 )
 
 p_val_dist <- df_val_plot %>%
@@ -1223,21 +1072,20 @@ df_dynamics <- df_field %>%
   arrange(turn) %>%
   mutate(
     # Calculate change from previous turn (Velocity)
-    delta_ai1 = ai1_valence - lag(ai1_valence),
-    delta_ai2   = ai2_valence - lag(ai2_valence),
+    delta_author_1 = author_1_valence - lag(author_1_valence),
+    delta_author_2 = author_2_valence - lag(author_2_valence),
     
     # Define Alignment: Signs of change match
     # Exclude cases where change is exactly 0 (no movement)
     
-    # DIRECTION 1: ai1 -> AI (Same Turn Response)
-    # Does AI move in same direction ai1 just moved?
-    is_aligned_same = sign(delta_ai1) == sign(delta_ai2) & delta_ai1 != 0 & delta_ai2 != 0,
+    # DIRECTION 1: author_1 → author_2 (Same Turn Response)
+    # Does author_2 move in same direction author_1 just moved?
+    is_aligned_same = sign(delta_author_1) == sign(delta_author_2) & delta_author_1 != 0 & delta_author_2 != 0,
     
-    # DIRECTION 2: AI -> ai1 (Next Turn Response)
-    # Does ai1 move in same direction AI moved in previous turn?
-    # Compare ai1(t) delta with AI(t-1) delta
-    # lag(delta_ai) is delta at t-1 (Change from t-2 to t-1)
-    is_aligned_prev = sign(delta_ai1) == sign(lag(delta_ai2)) & delta_ai1 != 0 & lag(delta_ai2) != 0
+    # DIRECTION 2: author_2(t-1) → author_1(t) (Next Turn Response)
+    # Does author_1 move in same direction author_2 moved in previous turn?
+    # Compare author_1(t) delta with author_2(t-1) delta
+    is_aligned_prev = sign(delta_author_1) == sign(lag(delta_author_2)) & delta_author_1 != 0 & lag(delta_author_2) != 0
   ) %>%
   ungroup()
 
@@ -1392,19 +1240,19 @@ print(wilcox_test)
 ```{r summary-table}
 # Create summary table
 slopes_summary <- as.data.frame(slopes)
-beta_ai1_to_ai <- slopes_summary[slopes_summary$alignment_direction == "ai1_to_ai2", "predictor_z.trend"]
-beta_ai_to_ai1 <- slopes_summary[slopes_summary$alignment_direction == "ai2_to_ai1", "predictor_z.trend"]
+beta_author_1_to_author_2 <- slopes_summary[slopes_summary$alignment_direction == "author_1_to_author_2", "predictor_z.trend"]
+beta_author_2_to_author_1 <- slopes_summary[slopes_summary$alignment_direction == "author_2_to_author_1", "predictor_z.trend"]
 
 summary_results <- tribble(
-  ~Metric, ~ai1, ~ai2,
-  "Mean Valence", mean(df_field$ai1_valence, na.rm = TRUE), mean(df_field$ai2_valence, na.rm = TRUE),
-  "Sentiment Alignment (β)", beta_ai1_to_ai, beta_ai_to_ai1,
+  ~Metric, ~author_1, ~author_2,
+  "Mean Valence", mean(df_field$author_1_valence, na.rm = TRUE), mean(df_field$author_2_valence, na.rm = TRUE),
+  "Sentiment Alignment (β)", beta_author_1_to_author_2, beta_author_2_to_author_1,
   "Alignment Frequency (%)", alignment_frequency$prop_aligned[alignment_frequency$direction == "is_aligned_prev"] * 100, alignment_frequency$prop_aligned[alignment_frequency$direction == "is_aligned_same"] * 100,
   "Mean Alignment Duration (turns)", duration_stats$mean_duration[duration_stats$direction_label == "prev_turn"], duration_stats$mean_duration[duration_stats$direction_label == "same_turn"],
   "Semantic Alignment (Cosine)", mean(df_field_cosine_long_prev_self$cosine_sim[df_field_cosine_long_prev_self$direction == "Interlocutor"], na.rm = TRUE), mean(df_field_cosine_long$cosine_sim[df_field_cosine_long$direction == "same_turn"], na.rm = TRUE)
 ) %>%
   mutate(
-    across(c(ai1, ai2), ~round(., 3))
+    across(c(author_1, author_2), ~round(., 3))
   )
 
 print(summary_results)
@@ -1414,6 +1262,135 @@ write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
 
 
 # 7. Supplementary: Interaction Effects
+
+
+## 7.2 LLM Type Interaction Effects
+
+### 7.2.1 Same-Turn Alignment by LLM Type
+```{r llm-same-turn}
+# Mixed model with LLM type interaction
+df_field_llm <- df_field %>% 
+  filter(!is.na(model_id)) %>%
+  filter(interaction_count > 1) %>%
+  mutate(
+    model_id_name = recode(model_id, 
+                           "1" = "Gpt-4.1", 
+                           "2" = "Claude-sonnet-4-5", 
+                           "3" = "Llama-3.3-70B-Instruct", 
+                           "4" = "Qwen2.5-72B-Instruct")
+  )
+
+model_llm_same <- lmer(author_2_valence ~ author_1_valence * factor(model_id) + (1 | conversation_id), 
+                       data = df_field_llm)
+
+cat("=== Same-Turn Alignment: LLM Type Interaction ===\n")
+print(round(summary(model_llm_same)$coefficients, 4))
+
+p_llm_same <- df_field_llm %>%
+  mutate(model_id_name = as.factor(model_id_name)) %>%
+  ggplot(aes(x = author_1_valence, y = author_2_valence, color = model_id_name)) +
+  geom_point(alpha = 0.5, size = 1.5) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.2) +
+  labs(
+    title = "Agent 2 Valence Same Turn by LLM (Agent 1 → Agent 2)",
+    x = "Agent 1 Valence",
+    y = "Agent 2 Valence",
+    color = "LLM Model"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+
+print(p_llm_same)
+
+ggsave(file.path(GRAPHS_DIR, "alignment_llm_same.png"),
+       p_llm_same, width = 12, height = 6, dpi = 300)
+
+```
+
+### 7.2.2 Previous-Turn Alignment by LLM Type
+```{r llm-prev-turn}
+# Mixed model with LLM type interaction
+df_field_llm_lag <- df_field %>% 
+  filter(!is.na(model_id), !is.na(author_2_valence_lag1)) %>%   mutate(
+    model_id_name = recode(model_id, 
+                           "1" = "Gpt-4.1", 
+                           "2" = "Claude-sonnet-4-5", 
+                           "3" = "Llama-3.3-70B-Instruct", 
+                           "4" = "Qwen2.5-72B-Instruct")
+  )
+
+model_llm_prev <- lmer(author_1_valence ~ author_2_valence_lag1 * factor(model_id) + (1 | conversation_id), 
+                       data = df_field_llm_lag)
+
+cat("=== Previous-Turn Alignment: LLM Type Interaction ===\n")
+print(round(summary(model_llm_prev)$coefficients, 4))
+
+p_llm_prev <- df_field_llm_lag %>%
+  mutate(model_id_name = as.factor(model_id_name)) %>%
+  ggplot(aes(x = author_2_valence_lag1, y = author_1_valence, color = model_id_name)) +
+  geom_point(alpha = 0.5, size = 1.5) +
+  geom_smooth(method = "lm", se = TRUE, fullrange= TRUE, size = 1.2) +
+  labs(
+    title = "Agent 1 Valence by Previous Agent 2 (Agent 2 → Agent 1)",
+    x = "Previous Agent 2 Valence",
+    y = "Agent 1 Valence"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+
+print(p_llm_prev)
+
+ggsave(file.path(GRAPHS_DIR, "alignment_llm_prev.png"),
+       p_llm_prev, width = 12, height = 6, dpi = 300)
+```
+
+### 7.2.3 Per-Story Correlations by LLM Type
+```{r llm-per-story}
+# Same-turn correlations stratified by LLM type
+cor_llm_same <- df_field %>%
+  filter(!is.na(model_id)) %>%
+  group_by(conversation_id, model_id) %>%
+  filter(n() >= 3) %>%
+  summarise(
+    rho = cor(author_1_valence, author_2_valence, use = "complete.obs"),
+    n_turns = n(),
+    .groups = "drop"
+  )
+
+cat("=== Same-Turn Correlations by LLM Type ===\n")
+cor_llm_same %>%
+  group_by(model_id) %>%
+  summarise(
+    mean_rho = mean(rho, na.rm = TRUE),
+    sd_rho = sd(rho, na.rm = TRUE),
+    n_stories = n()
+  ) %>%
+  print()
+
+# ANOVA test
+anova_llm <- aov(rho ~ factor(model_id), data = cor_llm_same)
+cat("\nANOVA (LLM type effect on same-turn rho):\n")
+print(summary(anova_llm))
+```
+
+
+## 7.3 Valence Distribution by Conditions
+
+### 7.3.2 Valence by LLM Type
+```{r valence-llm}
+df_field %>%
+  filter(!is.na(model_id)) %>%
+  pivot_longer(cols = c(author_1_valence, author_2_valence),
+               names_to = "agent", values_to = "valence") %>%
+  group_by(model_id, agent) %>%
+  summarise(
+    mean_valence = mean(valence, na.rm = TRUE),
+    sd_valence = sd(valence, na.rm = TRUE),
+    n_turns = n(),
+    .groups = "drop"
+  ) %>%
+  print()
+```
 
 ## 7.1 Starter Interaction Effects
 
@@ -1434,9 +1411,9 @@ write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
 ### 7.1.2 Previous-Turn Alignment by Starter (Removed for now)
 ```{r starter-prev-turn}
 # Mixed model with starter interaction
-#df_field_lag <- df_field %>% filter(!is.na(ai_valence_lag1))
+#df_field_lag <- df_field %>% filter(!is.na(author_2_valence_lag1))
 
-#model_starter_prev <- lmer(ai1_valence ~ ai_valence_lag1 * starter + (1 | conversation_id), 
+#model_starter_prev <- lmer(author_1_valence ~ author_2_valence_lag1 * starter + (1 | conversation_id), 
 #                           data = df_field_lag)
 
 #cat("=== Previous-Turn Alignment: Starter Interaction ===\n")
@@ -1451,7 +1428,7 @@ write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
 #  group_by(conversation_id, starter) %>%
 #  filter(n() >= 3) %>%
 #  summarise(
-#    rho = cor(ai1_valence, ai_valence, use = "complete.obs"),
+#    rho = cor(author_1_valence, author_2_valence, use = "complete.obs"),
 #    n_turns = n(),
 #    .groups = "drop"
 #  )
@@ -1481,7 +1458,7 @@ write_csv(summary_results, file.path(TABLES_DIR, "analysis_summary.csv"))
 ```{r valence-starter}
 #df_field %>%
 #  filter(!is.na(starter)) %>%
-#  pivot_longer(cols = c(ai1_valence, ai_valence),
+#  pivot_longer(cols = c(author_1_valence, author_2_valence),
 #               names_to = "agent", values_to = "valence") %>%
 #  group_by(starter, agent) %>%
 #  summarise(
