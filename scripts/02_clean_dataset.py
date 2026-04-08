@@ -28,7 +28,7 @@ import argparse
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.process_spelling_openai import correct_spelling, compute_edit_distance
-from nes.cleaning import filter_by_edit_distance, build_full_story_text, filter_by_respondent_id, clean_user_ai_start, clean_ai_ai_data
+from nes.cleaning import filter_by_edit_distance, build_full_story_text, filter_by_respondent_id, clean_user_ai_start, clean_ai_ai_data, randomize_author_assignment
 from nes.io import load_csv, save_csv, get_project_root, load_config, get_active_experiment, get_experiment_config, get_shared_config
 
 
@@ -88,6 +88,11 @@ def main():
         print("\n--- AI-AI Cleaning Pipeline ---")
         df_filtered = clean_ai_ai_data(df, max_turns=max_turns)
         
+        # Randomize author assignment to match human-ai starter randomness
+        print("\nRandomizing author assignment (50/50 swap)...")
+        random_seed = shared_config['analysis']['random_seed']
+        df_filtered = randomize_author_assignment(df_filtered, group_col='conversation_id', seed=random_seed)
+        
     else:
         # Human experiments: optional spell correction + edit distance filtering
         if api_key and experiment in ['human-ai', 'human-human']:
@@ -120,6 +125,12 @@ def main():
             print(f"✓ Filtered to {len(df_filtered)} rows with valid respondent IDs")
         else:
             print("\nNo respondent_id filtering (not applicable for this experiment)")
+        
+        # Randomize author assignment for human-human (to match human-ai randomness)
+        if experiment == 'human-human':
+            print("\nRandomizing author assignment (50/50 swap)...")
+            random_seed = shared_config['analysis']['random_seed']
+            df_filtered = randomize_author_assignment(df_filtered, group_col='conversation_id', seed=random_seed)
 
     print("\nBuilding full story text...")
     # Save filtered interaction-level data

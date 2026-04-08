@@ -483,6 +483,12 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_tu
     """
     Clean starter text and identify which author started.
     
+    For human-ai experiment:
+    - If author_1's first turn is ONLY "This is the story of" (no additional content),
+      then author_2 (AI) started the story
+    - If author_1's first turn has "This is the story of" + additional content,
+      then author_1 (human) started the story
+    
     Uses standardized column names: author_1, author_2.
     
     Args:
@@ -494,52 +500,56 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_tu
     Returns:
         Cleaned DataFrame with 'starter' column
     """
-    # Determine respondent column based on experiment
-    if experiment == 'human-ai':
-        respondent_col = 'respondent_id'
-        author_2_starter_label = 'author_2'
-    else:
-        respondent_col = 'respondent_id_u1' if 'respondent_id_u1' in df.columns else 'respondent_id'
-        author_2_starter_label = 'author_2'
+    BASELINE = "This is the story of"
+    MIN_CONTENT_LENGTH = 10  # Minimum chars beyond baseline to count as "started"
     
-    # Identify starters (who started with "This is the story of" placeholder)
-    if respondent_col in df.columns:
-        df['turn'] = df.groupby(respondent_col).cumcount() + 1
-        starter_map = (df['author_1'] == 'This is the story of').groupby(df[respondent_col]).any().map(
-            {True: author_2_starter_label, False: 'author_1'}
-        )
-        df['starter'] = df[respondent_col].map(starter_map)
-        print(f"Identified starters for {len(df[df['starter'] == author_2_starter_label][respondent_col].unique())} {author_2_starter_label}")
-        print(f"Identified starters for {len(df[df['starter'] == 'author_1'][respondent_col].unique())} author_1")
+    df = df.copy()
+    
+    # Determine respondent/grouping column based on experiment
+    if experiment == 'human-ai':
+        group_col = 'respondent_id'
+    else:
+        group_col = 'respondent_id_u1' if 'respondent_id_u1' in df.columns else 'conversation_id'
+    
+    # Add turn numbers within each group
+    df['turn'] = df.groupby(group_col).cumcount() + 1
+    
+    # Identify starters based on first turn content
+    def detect_starter(group):
+        """Detect who started based on first turn's author_1 content."""
+        first_row = group[group['turn'] == 1]
+        if first_row.empty:
+            return 'author_1'  # Default
+        
+        author_1_text = str(first_row['author_1'].iloc[0]) if pd.notna(first_row['author_1'].iloc[0]) else ''
+        
+        # Remove baseline and check remaining content
+        remainder = author_1_text.replace(BASELINE, '').strip()
+        
+        # If author_1 only had the baseline placeholder (no real content), author_2 started
+        if len(remainder) < MIN_CONTENT_LENGTH:
+            return 'author_2'
+        else:
+            return 'author_1'
+    
+    # Build starter map
+    starter_map = df.groupby(group_col, group_keys=False).apply(detect_starter, include_groups=False)
+    df['starter'] = df[group_col].map(starter_map)
+    
+    # Report starter distribution
+    author_1_started = (starter_map == 'author_1').sum()
+    author_2_started = (starter_map == 'author_2').sum()
+    print(f"Starter detection: {author_1_started} author_1-started, {author_2_started} author_2-started")
     
     # Filter by max_turns
-    if interaction_count:
+    if interaction_count and 'interaction_count' in df.columns:
         df = df[df['interaction_count'] <= max_turns].copy()
     else:
         df = df[df['turn'] <= max_turns].copy()
     
-    # Remove baseline text
-    df['author_1'] = df['author_1'].str.replace("This is the story of", "", regex=False).str.strip()
-    df['author_2'] = df['author_2'].str.replace("This is the story of", "", regex=False).str.strip()
-
-    # Handle starter adjustments
-    for rid, group in df.groupby(respondent_col):
-        if group['starter'].iloc[0] != author_2_starter_label:
-            continue
-        
-        first_author1_idx = group[group['author_1'].notna()].index.min()
-        first_author2_idx = group[group['author_2'].notna()].index.min()
-        last_author2_idx = group[group['author_2'].isna()].index
-        
-        if pd.isna(first_author1_idx) or pd.isna(first_author2_idx):
-            continue
-        
-        author1_text = df.loc[first_author1_idx, 'author_1']
-        author2_text = df.loc[first_author2_idx, 'author_2']
-        
-        df.loc[first_author2_idx, 'author_2'] = f"{author1_text} {author2_text}"
-        df.loc[first_author1_idx, 'author_1'] = ""
-        df.loc[last_author2_idx, 'author_2'] = ""
+    # Remove baseline text from both columns
+    df['author_1'] = df['author_1'].str.replace(BASELINE, "", regex=False).str.strip()
+    df['author_2'] = df['author_2'].str.replace(BASELINE, "", regex=False).str.strip()
 
     return df 
 
@@ -594,5 +604,65 @@ def clean_ai_ai_data(df: pd.DataFrame, max_turns: int = 10) -> pd.DataFrame:
     print(f"Removed '{STORY_PREFIX}' prefix from {n_prefixes_removed} first turns")
     print(f"Renamed 'story_id' -> 'conversation_id'")
     print(f"After cleaning: {len(df)} rows")
+    
+    return df
+
+
+def randomize_author_assignment(
+    df: pd.DataFrame,
+    group_col: str = 'conversation_id',
+    seed: int = 42,
+    swap_probability: float = 0.5
+) -> pd.DataFrame:
+    """
+    Randomly swap author_1 and author_2 for each story to remove starter confound.
+    
+    In conditions where author_1 always starts (human-human, ai-ai), this introduces
+    randomness matching the human-ai condition where starter was randomly assigned.
+    
+    When swapped:
+    - author_1 <-> author_2 columns are swapped
+    - starter column is updated to reflect who now has turn 1 content
+    
+    Args:
+        df: DataFrame with author_1, author_2, conversation_id, starter columns
+        group_col: Column to group stories by
+        seed: Random seed for reproducibility
+        swap_probability: Probability of swapping each story (default 0.5)
+        
+    Returns:
+        DataFrame with randomized author assignment
+    """
+    import numpy as np
+    
+    df = df.copy()
+    rng = np.random.default_rng(seed)
+    
+    # Get unique stories
+    story_ids = df[group_col].unique()
+    
+    # Decide which stories to swap
+    swap_mask = rng.random(len(story_ids)) < swap_probability
+    stories_to_swap = set(story_ids[swap_mask])
+    
+    n_swapped = len(stories_to_swap)
+    n_total = len(story_ids)
+    print(f"Author randomization: swapping {n_swapped}/{n_total} stories ({100*n_swapped/n_total:.1f}%)")
+    
+    # Swap author columns for selected stories
+    swap_rows = df[group_col].isin(stories_to_swap)
+    
+    # Swap author_1 and author_2
+    df.loc[swap_rows, ['author_1', 'author_2']] = df.loc[swap_rows, ['author_2', 'author_1']].values
+    
+    # Update starter column: if we swapped, the original author_1 (now author_2) was the starter
+    # So starter becomes 'author_2' for swapped stories
+    if 'starter' in df.columns:
+        # For swapped stories, flip the starter label
+        original_starter = df.loc[swap_rows, 'starter'].copy()
+        df.loc[swap_rows, 'starter'] = original_starter.map({
+            'author_1': 'author_2',
+            'author_2': 'author_1'
+        })
     
     return df
