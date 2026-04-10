@@ -24,10 +24,14 @@ from pathlib import Path
 from tqdm import tqdm
 import argparse
 
+from dotenv import load_dotenv
+load_dotenv()
+
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from nes.process_spelling_openai import correct_spelling, compute_edit_distance
+from nes.process_spelling_openai import correct_spelling, compute_edit_distance_values
 from nes.cleaning import filter_by_edit_distance, build_full_story_text, filter_by_respondent_id, clean_user_ai_start, clean_ai_ai_data, randomize_author_assignment
 from nes.io import load_csv, save_csv, get_project_root, load_config, get_active_experiment, get_experiment_config, get_shared_config
 
@@ -49,7 +53,7 @@ def main():
     )
     args = parser.parse_args()
     
-    api_key = args.api_key or os.environ.get('OPENAI_API_KEY')
+    api_key = os.environ.get('OPENAI_API_KEY')
     
     # Load config
     experiment = get_active_experiment()
@@ -99,7 +103,14 @@ def main():
             print("\nApplying spell correction to author_1 inputs...")
             df['author_1_corrected'] = [correct_spelling(text, api_key=api_key) for text in tqdm(df["author_1"], desc="Spell Correction")]
             print("Spell correction complete.")
-            df['edit_distance'] = [compute_edit_distance(row) for _, row in tqdm(df.iterrows(), total=len(df), desc="Edit Distance Computation")]
+            df['edit_distance'] = [
+                compute_edit_distance_values(orig, corr)
+                for orig, corr in tqdm(
+                    zip(df["author_1"], df["author_1_corrected"]),
+                    total=len(df),
+                    desc="Edit Distance Computation"
+                )
+            ]
             print("Edit distance computation complete.")
             
             df['author_1'] = df['author_1_corrected']

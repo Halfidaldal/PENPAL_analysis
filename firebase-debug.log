@@ -1,0 +1,18 @@
+[debug] [2026-04-10T04:10:49.724Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-10T04:10:49.728Z] > authorizing via signed-in user (kontakt@tinketek.dk)
+[debug] [2026-04-10T04:10:51.107Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-10T04:10:51.108Z] > authorizing via signed-in user (kontakt@tinketek.dk)
+[debug] [2026-04-10T04:10:51.108Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-10T04:10:51.108Z] > authorizing via signed-in user (kontakt@tinketek.dk)
+[debug] [2026-04-10T04:10:51.294Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-10T04:10:51.294Z] > authorizing via signed-in user (kontakt@tinketek.dk)
+[debug] [2026-04-10T04:10:51.295Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-10T04:10:51.295Z] > authorizing via signed-in user (kontakt@tinketek.dk)
+[debug] [2026-04-10T04:10:52.294Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-10T04:10:52.294Z] > authorizing via signed-in user (kontakt@tinketek.dk)
+[debug] [2026-04-10T04:10:52.295Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-10T04:10:52.295Z] > authorizing via signed-in user (kontakt@tinketek.dk)
+[debug] [2026-04-10T04:10:52.458Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-10T04:10:52.458Z] > authorizing via signed-in user (kontakt@tinketek.dk)
+[debug] [2026-04-10T04:10:52.459Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-10T04:10:52.459Z] > authorizing via signed-in user (kontakt@tinketek.dk)

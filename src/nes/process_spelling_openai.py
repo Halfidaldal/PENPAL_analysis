@@ -26,8 +26,9 @@ def correct_spelling(text, api_key: str) -> str:
     )
     return response.choices[0].message.content
 
-# Function to calculate edit distance
-def compute_edit_distance(row):
-    if pd.isna(row["user"]) or pd.isna(row["user_corrected"]):
+
+def compute_edit_distance_values(original_text, corrected_text):
+    """Compute Levenshtein distance directly from two text values."""
+    if pd.isna(original_text) or pd.isna(corrected_text):
         return None
-    return levenshtein_distance(str(row["user"]), str(row["user_corrected"]))
+    return levenshtein_distance(str(original_text), str(corrected_text))
