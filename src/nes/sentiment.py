@@ -17,6 +17,28 @@ from sentence_transformers import SentenceTransformer
 import os
 
 
+_MISSING_TEXT_VALUES = {"", "nan", "none", "null"}
+
+
+def _normalize_metric_text(value) -> Optional[str]:
+    """Normalize arbitrary cell values; return None for missing/non-substantive text."""
+    if value is None:
+        return None
+    if isinstance(value, float) and np.isnan(value):
+        return None
+
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+
+    text = str(value).strip()
+    if text.lower() in _MISSING_TEXT_VALUES:
+        return None
+    return text
+
+
 def get_device() -> torch.device:
     """Get the appropriate device (CUDA if available, else CPU)."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,13 +126,21 @@ def compute_sentiment_batch(
     Returns:
         NumPy array of sentiment scores (float, range approx -1 to +1)
     """
+    normalized_texts = [_normalize_metric_text(text) for text in texts]
+    valid_positions = [idx for idx, text in enumerate(normalized_texts) if text is not None]
+    scores_out = np.full(len(texts), np.nan, dtype=float)
+
+    if not valid_positions:
+        return scores_out
+
     tokenizer, model, device = load_sentiment_model(model_name, device)
-    
-    all_scores = []
-    print(f"Computing sentiment for {len(texts)} texts (batch_size={batch_size})...")
-    
-    for i in tqdm(range(0, len(texts), batch_size), desc="Sentiment batches"):
-        batch = texts[i:i+batch_size]
+
+    valid_texts = [normalized_texts[idx] for idx in valid_positions]
+    valid_scores = []
+    print(f"Computing sentiment for {len(valid_texts)} substantive texts (batch_size={batch_size})...")
+
+    for i in tqdm(range(0, len(valid_texts), batch_size), desc="Sentiment batches"):
+        batch = valid_texts[i:i+batch_size]
         inputs = tokenizer(
             batch,
             return_tensors="pt",
@@ -122,9 +152,10 @@ def compute_sentiment_batch(
             outputs = model(**inputs)
             probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
             valence = continuous_valence_score(probs, method=valence_method)
-            all_scores.extend(valence.cpu().numpy())
-    
-    return np.array(all_scores)
+            valid_scores.extend(valence.cpu().numpy())
+
+    scores_out[valid_positions] = np.array(valid_scores, dtype=float)
+    return scores_out
 
 
 def add_sentiment_to_dataframe(
@@ -191,11 +222,20 @@ def compute_dyadic_sentiment(
     """
         
     
-    # Compute relative turn position
-    df["pct_turn"] = (
-        df.groupby("conversation_id")["turn"]
-        .transform(lambda x: (x - x.min()) / (x.max() - x.min()) if x.max() > x.min() else 0)
-    )
+    turn_axis = "analysis_turn" if "analysis_turn" in df.columns and df["analysis_turn"].notna().any() else "turn"
+
+    def _scale_turn_positions(series: pd.Series) -> pd.Series:
+        valid = series.dropna()
+        out = pd.Series(np.nan, index=series.index, dtype=float)
+        if valid.empty:
+            return out
+        if valid.max() > valid.min():
+            out.loc[valid.index] = (valid - valid.min()) / (valid.max() - valid.min())
+        else:
+            out.loc[valid.index] = 0.0
+        return out
+
+    df["pct_turn"] = df.groupby("conversation_id")[turn_axis].transform(_scale_turn_positions)
     
     # Compute sentiment for all turns using standardized column names
     print(f"\nComputing sentiment for {len(df)} turns...")
@@ -213,7 +253,12 @@ def compute_dyadic_sentiment(
     )
     df['author_1_sentiment_score'] = author_1_scores
     df['author_2_sentiment_score'] = author_2_scores
-    df = df.sort_values(['conversation_id', 'turn']).reset_index(drop=True)
+    sort_columns = ['conversation_id']
+    if 'turn' in df.columns:
+        sort_columns.append('turn')
+    elif turn_axis in df.columns:
+        sort_columns.append(turn_axis)
+    df = df.sort_values(sort_columns).reset_index(drop=True)
     return df
 
 
@@ -292,5 +337,15 @@ def compute_semantic_projection_batch(
     Returns:
         NumPy array of sentiment scores
     """
+    normalized_texts = [_normalize_metric_text(text) for text in texts]
+    valid_positions = [idx for idx, text in enumerate(normalized_texts) if text is not None]
+    scores_out = np.full(len(texts), np.nan, dtype=float)
+
+    if not valid_positions:
+        return scores_out
+
     projector = SemanticProjectionSentiment(model_name, vector_path, device)
-    return projector.compute_score(texts, batch_size)
+    valid_texts = [normalized_texts[idx] for idx in valid_positions]
+    valid_scores = projector.compute_score(valid_texts, batch_size)
+    scores_out[valid_positions] = valid_scores
+    return scores_out

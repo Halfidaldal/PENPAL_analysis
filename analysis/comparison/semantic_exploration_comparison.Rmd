@@ -1,6 +1,6 @@
 ---
 title: "Semantic Exploration Comparison: Human-AI vs Human-Human vs AI-AI"
-subtitle: "Cross-Condition Semantic Space Analysis"
+subtitle: "Cross-Condition Analysis of Lag-Binned Semantic Distance"
 author: "PENPAL Project"
 date: "`r Sys.Date()`"
 output:
@@ -27,401 +27,231 @@ knitr::opts_chunk$set(
   dpi = 300
 )
 
-# Load comparison utilities
 source(here::here("analysis/comparison/_comparison_utils.R"))
 
-# Additional packages
 pacman::p_load(
-  lme4,         # Mixed effects models
-  lmerTest,     # P-values for mixed models
-  patchwork,    # Combine plots
-  emmeans       # Estimated marginal means
+  lme4,
+  lmerTest,
+  patchwork,
+  emmeans
 )
 
-# Set global theme
 theme_set(theme_comparison())
 ```
 
 # Overview
 
-This notebook compares semantic exploration patterns across experimental conditions:
+The semantic exploration outputs now use the **new lag-binned structure**:
 
-- **Human-AI**: Human co-writing with an LLM
-- **Human-Human**: Two humans co-writing together
-- **AI-AI**: Two AI agents co-writing (simulated baseline)
+- `k`: lag bin
+- `distance`: mean semantic distance for that lag
+- `agent`: `"interleaved"` for the full exchange sequence, or `author_1` / `author_2` for speaker-specific trajectories
 
-**Key Metrics:**
-- Semantic distance between consecutive turns
-- Cumulative semantic exploration (story-level trajectory)
-- Local vs global novelty
-- Embedding space coverage
+This notebook therefore no longer assumes old turn-level exploration tables. Instead it analyses:
 
-**Key Questions:**
-1. Do humans introduce more semantic novelty than AI?
-2. Is Human-Human exploration more divergent than Human-AI?
-3. Does AI-AI show characteristic patterns (e.g., staying "on script")?
+1. **Interleaved sequence exploration** across conditions
+2. **Speaker-specific exploration** using recovered role metadata
 
 # Load Data
 
 ```{r load-data}
-# Check data availability
-cat("Data availability:\n")
-avail <- check_data_availability()
-print(avail)
-
-# Load exploration data
-df_combined <- tryCatch({
-  load_exploration_data(conditions = c("human-ai", "human-human", "ai-ai"))
-}, error = function(e) {
-  cat("Primary load failed:", e$message, "\n")
-  cat("Attempting fallback loading...\n")
-  
-  conditions_available <- c()
-  for (cond in c("human-ai", "human-human", "ai-ai")) {
-    for (fname in c("semantic_exploration.parquet", "exploration_metrics.parquet", "novelty_scores.parquet")) {
-      path <- here("data", cond, "processed", fname)
-      if (file.exists(path)) {
-        conditions_available <- c(conditions_available, cond)
-        break
-      }
-    }
-  }
-  
-  conditions_available <- unique(conditions_available)
-  
-  if (length(conditions_available) == 0) {
-    stop("No exploration data available for any condition")
-  }
-  
-  load_exploration_data(conditions = conditions_available)
-})
-
-# Prepare condition factor
-df_combined <- df_combined %>%
+df_combined <- load_exploration_data(c("human-ai", "human-human", "ai-ai")) %>%
   prepare_condition_factor(reference = "human-ai")
 
-# Report loaded data
-cat("\nLoaded data summary:\n")
 df_combined %>%
-  group_by(condition) %>%
+  group_by(condition, agent) %>%
   summarise(
     n_stories = n_distinct(conversation_id),
-    n_turns = n(),
+    n_rows = n(),
+    min_k = min(k, na.rm = TRUE),
+    max_k = max(k, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  print()
+  knitr::kable(caption = "Loaded semantic exploration rows by condition and agent view")
 ```
 
 # Preprocessing
 
 ```{r preprocess}
-# Identify available exploration metrics
-potential_metrics <- c(
-  # Distance-based
-  "semantic_distance", "cosine_distance", "euclidean_distance",
-  "embedding_distance", "turn_distance",
-  # Novelty
-  "novelty", "local_novelty", "global_novelty", "novelty_score",
-  # Cumulative
-  "cumulative_exploration", "cumulative_distance",
-  "trajectory_length", "semantic_trajectory"
-)
+df_interleaved <- df_combined %>%
+  filter(agent == "interleaved") %>%
+  drop_na(distance, k)
 
-available_metrics <- intersect(potential_metrics, names(df_combined))
-cat("Available exploration metrics:", paste(available_metrics, collapse = ", "), "\n")
+df_speaker <- df_combined %>%
+  filter(agent != "interleaved") %>%
+  drop_na(distance, k)
 
-if (length(available_metrics) == 0) {
-  # Try to find any numeric columns that might be exploration metrics
-  numeric_cols <- names(df_combined)[sapply(df_combined, is.numeric)]
-  exploration_like <- numeric_cols[str_detect(numeric_cols, "dist|novel|explor|semantic|embed")]
-  
-  if (length(exploration_like) > 0) {
-    available_metrics <- exploration_like
-    cat("Found exploration-like metrics:", paste(available_metrics, collapse = ", "), "\n")
-  } else {
-    stop("No exploration metrics found in the data")
-  }
-}
+cat("Interleaved rows:", nrow(df_interleaved), "\n")
+cat("Speaker rows:", nrow(df_speaker), "\n")
 ```
 
-# Descriptive Statistics
+# Interleaved Sequence Analysis
 
-```{r descriptives}
-# Compute summary statistics for exploration metrics
-desc_stats <- df_combined %>%
-  group_by(condition) %>%
+```{r interleaved-descriptives}
+df_interleaved %>%
+  group_by(condition, k) %>%
   summarise(
-    n_stories = n_distinct(conversation_id),
-    n_turns = n(),
-    across(all_of(available_metrics[1:min(4, length(available_metrics))]),
-           list(
-             mean = ~mean(., na.rm = TRUE),
-             sd = ~sd(., na.rm = TRUE),
-             median = ~median(., na.rm = TRUE)
-           ),
-           .names = "{.col}_{.fn}"),
+    mean_distance = mean(distance, na.rm = TRUE),
+    sd_distance = sd(distance, na.rm = TRUE),
+    n = n(),
     .groups = "drop"
-  )
-
-# Display first metric's stats
-first_metric <- available_metrics[1]
-desc_stats %>%
-  select(condition, n_stories, n_turns, starts_with(first_metric)) %>%
+  ) %>%
   knitr::kable(
     digits = 3,
-    caption = paste("Summary statistics for", first_metric)
+    caption = "Interleaved semantic distance by lag and condition"
   )
 ```
 
-# Exploration Distributions
-
-```{r exploration-distributions, fig.width=12, fig.height=6}
-# Plot distributions for main exploration metric
-main_metric <- available_metrics[1]
-
-p1 <- df_combined %>%
-  ggplot(aes(x = !!sym(main_metric), fill = condition)) +
-  geom_density(alpha = 0.5) +
-  scale_fill_manual(values = condition_colors) +
-  labs(
-    title = paste(main_metric, "Distribution"),
-    x = main_metric,
-    y = "Density"
-  )
-
-p2 <- df_combined %>%
-  ggplot(aes(x = condition, y = !!sym(main_metric), fill = condition)) +
-  geom_violin(alpha = 0.5) +
-  geom_boxplot(width = 0.2, alpha = 0.8, outlier.alpha = 0.1) +
-  scale_fill_manual(values = condition_colors) +
-  labs(
-    title = paste(main_metric, "by Condition"),
-    x = "Condition",
-    y = main_metric
-  ) +
-  theme(legend.position = "none")
-
-p1 + p2 + plot_layout(guides = "collect")
-```
-
-# Cross-Condition Comparison
-
-## Primary Exploration Metric
-
-```{r primary-exploration}
-main_metric <- available_metrics[1]
-
-model_exploration <- lmer(
-  as.formula(paste(main_metric, "~ condition + turn + (1 | conversation_id)")),
-  data = df_combined
-)
-
-cat("===", main_metric, "by Condition (controlling for turn) ===\n")
-print(summary(model_exploration))
-
-# Estimated marginal means
-emm_exploration <- emmeans(model_exploration, specs = "condition")
-cat("\n=== Estimated Marginal Means ===\n")
-print(emm_exploration)
-
-cat("\n=== Pairwise Contrasts ===\n")
-print(pairs(emm_exploration, adjust = "bonferroni"))
-```
-
-## Turn-by-Turn Evolution
-
-```{r turn-evolution, fig.width=12, fig.height=5}
-# How does exploration change across turns?
-main_metric <- available_metrics[1]
-
-turn_summary <- df_combined %>%
-  group_by(condition, turn) %>%
+```{r interleaved-plot, fig.width=12, fig.height=5}
+interleaved_summary <- df_interleaved %>%
+  group_by(condition, k) %>%
   summarise(
-    mean_exploration = mean(!!sym(main_metric), na.rm = TRUE),
-    se_exploration = sd(!!sym(main_metric), na.rm = TRUE) / sqrt(n()),
+    mean_distance = mean(distance, na.rm = TRUE),
+    se_distance = sd(distance, na.rm = TRUE) / sqrt(n()),
     .groups = "drop"
   )
 
-ggplot(turn_summary, aes(x = turn, y = mean_exploration, color = condition)) +
-  geom_line(linewidth = 1) +
+ggplot(interleaved_summary, aes(x = k, y = mean_distance, color = condition)) +
+  geom_line(linewidth = 1.1) +
   geom_point(size = 2) +
-  geom_ribbon(aes(ymin = mean_exploration - 1.96 * se_exploration,
-                  ymax = mean_exploration + 1.96 * se_exploration,
-                  fill = condition),
-              alpha = 0.2, color = NA) +
+  geom_ribbon(
+    aes(ymin = mean_distance - 1.96 * se_distance,
+        ymax = mean_distance + 1.96 * se_distance,
+        fill = condition),
+    alpha = 0.18,
+    color = NA
+  ) +
   scale_color_manual(values = condition_colors) +
   scale_fill_manual(values = condition_colors) +
   labs(
-    title = "Semantic Exploration Across Story Turns",
-    subtitle = "Shaded area = 95% CI",
-    x = "Turn",
-    y = main_metric,
-    color = "Condition"
+    title = "Interleaved Semantic Exploration by Lag",
+    subtitle = "Mean distance with 95% confidence intervals",
+    x = "Lag Bin (k)",
+    y = "Semantic Distance"
   ) +
   theme(legend.position = "bottom")
 ```
 
-## Condition × Turn Interaction
-
-```{r condition-turn-interaction}
-main_metric <- available_metrics[1]
-
-model_interaction <- lmer(
-  as.formula(paste(main_metric, "~ condition * turn + (1 | conversation_id)")),
-  data = df_combined
+```{r interleaved-model}
+model_interleaved <- lmer(
+  distance ~ k * condition + (1 | conversation_id),
+  data = df_interleaved
 )
 
-cat("=== Condition × Turn Interaction ===\n")
-print(summary(model_interaction))
+cat("Interleaved model summary:\n")
+print(summary(model_interleaved))
 
-# Test interaction significance
-cat("\n=== ANOVA Table ===\n")
-print(anova(model_interaction))
+emm_interleaved <- emmeans(model_interleaved, specs = "condition")
+
+cat("\nCondition contrasts (interleaved view):\n")
+print(pairs(emm_interleaved, adjust = "bonferroni"))
 ```
 
-# Author-Level Exploration
+# Speaker-Level Analysis
 
-```{r author-exploration}
-# Check for author-specific exploration columns
-author_1_cols <- names(df_combined)[str_detect(names(df_combined), "^author_1_")]
-author_2_cols <- names(df_combined)[str_detect(names(df_combined), "^author_2_")]
-
-exploration_author_1 <- author_1_cols[str_detect(author_1_cols, "novel|explor|dist")]
-exploration_author_2 <- author_2_cols[str_detect(author_2_cols, "novel|explor|dist")]
-
-if (length(exploration_author_1) > 0 && length(exploration_author_2) > 0) {
-  cat("Author-level exploration metrics found:\n")
-  cat("  Author 1:", paste(exploration_author_1, collapse = ", "), "\n")
-  cat("  Author 2:", paste(exploration_author_2, collapse = ", "), "\n")
-  
-  # Use first matching metric
-  a1_metric <- exploration_author_1[1]
-  a2_metric <- exploration_author_2[1]
-  
-  # Compare authors within conditions
-  df_author <- df_combined %>%
-    select(conversation_id, turn, condition, 
-           !!sym(a1_metric), !!sym(a2_metric)) %>%
-    pivot_longer(
-      cols = c(!!sym(a1_metric), !!sym(a2_metric)),
-      names_to = "author",
-      values_to = "exploration"
-    ) %>%
-    mutate(author = if_else(str_detect(author, "author_1"), "Author 1", "Author 2"))
-  
-  # Plot
-  ggplot(df_author, aes(x = author, y = exploration, fill = condition)) +
-    geom_boxplot(alpha = 0.7, outlier.alpha = 0.1) +
-    facet_wrap(~condition) +
-    scale_fill_manual(values = condition_colors) +
-    labs(
-      title = "Semantic Exploration by Author and Condition",
-      x = "Author",
-      y = "Exploration Metric"
-    ) +
-    theme(legend.position = "none")
-  
-} else {
-  cat("No author-level exploration metrics found.\n")
-}
-```
-
-# Story-Level Analysis
-
-```{r story-level}
-# Aggregate to story level
-main_metric <- available_metrics[1]
-
-story_summary <- df_combined %>%
-  group_by(conversation_id, condition) %>%
+```{r speaker-descriptives}
+df_speaker %>%
+  group_by(condition, condition_role, k) %>%
   summarise(
-    n_turns = n(),
-    total_exploration = sum(!!sym(main_metric), na.rm = TRUE),
-    mean_exploration = mean(!!sym(main_metric), na.rm = TRUE),
-    sd_exploration = sd(!!sym(main_metric), na.rm = TRUE),
-    max_exploration = max(!!sym(main_metric), na.rm = TRUE),
+    mean_distance = mean(distance, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Speaker-level semantic distance by condition, role, and lag"
+  )
+```
+
+```{r speaker-plot, fig.width=12, fig.height=6}
+speaker_summary <- df_speaker %>%
+  filter(!is.na(condition_role)) %>%
+  group_by(condition, condition_role, k) %>%
+  summarise(
+    mean_distance = mean(distance, na.rm = TRUE),
+    se_distance = sd(distance, na.rm = TRUE) / sqrt(n()),
     .groups = "drop"
   )
 
-# Story-level comparison
-model_story <- lm(total_exploration ~ condition, data = story_summary)
-cat("=== Total Story Exploration by Condition ===\n")
-print(summary(model_story))
-
-# Visualization
-ggplot(story_summary, aes(x = condition, y = total_exploration, fill = condition)) +
-  geom_violin(alpha = 0.5) +
-  geom_boxplot(width = 0.2, alpha = 0.8, outlier.alpha = 0.3) +
-  scale_fill_manual(values = condition_colors) +
-  labs(
-    title = "Total Semantic Exploration per Story",
-    x = "Condition",
-    y = "Cumulative Exploration"
+ggplot(speaker_summary, aes(x = k, y = mean_distance, color = condition_role)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.8) +
+  geom_ribbon(
+    aes(ymin = mean_distance - 1.96 * se_distance,
+        ymax = mean_distance + 1.96 * se_distance,
+        fill = condition_role),
+    alpha = 0.15,
+    color = NA
   ) +
-  theme(legend.position = "none")
+  facet_wrap(~condition) +
+  labs(
+    title = "Speaker-Level Semantic Exploration",
+    subtitle = "Human / AI in Human-AI; Starter-side / Non-starter-side in same-type conditions",
+    x = "Lag Bin (k)",
+    y = "Semantic Distance",
+    color = "Role",
+    fill = "Role"
+  ) +
+  theme(legend.position = "bottom")
 ```
 
-# Summary Visualization
+```{r speaker-models}
+for (cond_name in levels(df_speaker$condition)) {
+  df_subset <- df_speaker %>%
+    filter(condition == cond_name, !is.na(condition_role))
 
-```{r summary-plot, fig.width=12, fig.height=5}
-# Effect size comparison plot
-if (length(unique(df_combined$condition)) > 1) {
-  
-  # Compute effect sizes relative to human-ai baseline
-  baseline_mean <- df_combined %>%
-    filter(condition == "Human-AI") %>%
-    pull(!!sym(main_metric)) %>%
-    mean(na.rm = TRUE)
-  
-  baseline_sd <- df_combined %>%
-    filter(condition == "Human-AI") %>%
-    pull(!!sym(main_metric)) %>%
-    sd(na.rm = TRUE)
-  
-  effect_sizes <- df_combined %>%
-    group_by(condition) %>%
-    summarise(
-      mean = mean(!!sym(main_metric), na.rm = TRUE),
-      se = sd(!!sym(main_metric), na.rm = TRUE) / sqrt(n()),
-      .groups = "drop"
-    ) %>%
-    mutate(
-      cohens_d = (mean - baseline_mean) / baseline_sd,
-      d_se = se / baseline_sd
-    )
-  
-  p1 <- ggplot(effect_sizes, aes(x = condition, y = mean, fill = condition)) +
-    geom_col(alpha = 0.8, width = 0.6) +
-    geom_errorbar(aes(ymin = mean - 1.96 * se, ymax = mean + 1.96 * se), width = 0.2) +
-    geom_hline(yintercept = baseline_mean, linetype = "dashed", color = "gray50") +
-    scale_fill_manual(values = condition_colors) +
-    labs(title = "Mean Exploration by Condition", y = main_metric) +
-    theme(legend.position = "none")
-  
-  p2 <- ggplot(effect_sizes, aes(x = condition, y = cohens_d, fill = condition)) +
-    geom_col(alpha = 0.8, width = 0.6) +
-    geom_errorbar(aes(ymin = cohens_d - 1.96 * d_se, ymax = cohens_d + 1.96 * d_se), width = 0.2) +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-    scale_fill_manual(values = condition_colors) +
-    labs(title = "Effect Size (Cohen's d) vs Human-AI", y = "Cohen's d") +
-    theme(legend.position = "none")
-  
-  p1 + p2
+  if (nrow(df_subset) < 40 || n_distinct(df_subset$condition_role) < 2) {
+    next
+  }
+
+  model <- lmer(
+    distance ~ k * condition_role + (1 | conversation_id),
+    data = df_subset
+  )
+
+  cat("\n===", cond_name, "===\n")
+  print(summary(model))
+  print(emmeans(model, specs = "condition_role"))
 }
 ```
 
-# Key Findings
+# Interleaved vs Speaker View
 
-Based on the analysis above:
+```{r view-comparison, fig.width=12, fig.height=5}
+view_summary <- bind_rows(
+  df_interleaved %>%
+    mutate(view = "Interleaved sequence") %>%
+    select(condition, conversation_id, k, distance, view),
+  df_speaker %>%
+    mutate(view = "Speaker-specific") %>%
+    select(condition, conversation_id, k, distance, view)
+) %>%
+  group_by(condition, view, k) %>%
+  summarise(
+    mean_distance = mean(distance, na.rm = TRUE),
+    .groups = "drop"
+  )
 
-1. **Exploration patterns**: [Interpret which condition shows greatest/least semantic exploration]
+ggplot(view_summary, aes(x = k, y = mean_distance, color = condition)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.8) +
+  facet_wrap(~view) +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Interleaved vs Speaker-Specific Semantic Distance",
+    x = "Lag Bin (k)",
+    y = "Mean Semantic Distance"
+  ) +
+  theme(legend.position = "bottom")
+```
 
-2. **Turn dynamics**: [Discuss how exploration changes across the story arc]
+# Summary
 
-3. **Author contributions**: [Compare who introduces more novelty - Author 1 or Author 2]
+This notebook is now adapted to the new semantic exploration output by:
 
-4. **AI-AI baseline**: [Note characteristic exploration patterns in simulated data]
-
----
+- reading the current `semantic_exploration_binned.parquet` files,
+- modelling **lag bin `k`** instead of the obsolete raw-turn structure,
+- separating **interleaved** and **speaker-specific** exploration views,
+- using recovered speaker-role metadata where that interpretation is valid.
 
 *Analysis completed: `r Sys.time()`*

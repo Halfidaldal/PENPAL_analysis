@@ -21,21 +21,24 @@ import argparse
 
 def main():
     parser = argparse.ArgumentParser(description="Compute novelty and transience scores")
-    parser.add_argument("--input", default="interaction_level_stories_filtered.csv", help="Input CSV path")
-    parser.add_argument("--output", default="novelty_scores.csv", help="Output CSV path")
+    parser.add_argument("--input", default=None, help="Input CSV path")
+    parser.add_argument("--output", default=None, help="Output CSV path")
     args = parser.parse_args()
     
     experiment = get_active_experiment()
     exp_config = get_experiment_config()
     shared_config = get_shared_config()
+    simulated = shared_config['cleaning'].get('simulated', False)
     
     print(f"Active experiment: {experiment}")
     
     model_name = shared_config['novelty'].get('model_name', 'mistral-7b')
     window_size = shared_config['novelty'].get('window_size', 128)
+    input_file = args.input or ("interaction_level_stories_filtered_simulated.csv" if simulated else "interaction_level_stories_filtered.csv")
+    output_file = args.output or ("novelty_scores_simulated.csv" if simulated else "novelty_scores.csv")
 
-    print(f"Loading clean data from {args.input}")
-    df = load_csv(Path(args.input).name, stage="interim")
+    print(f"Loading clean data from {input_file}")
+    df = load_csv(Path(input_file).name, stage="interim")
     
     print("Loading language model...")
     tokenizer, model, device = load_language_model(model_name)
@@ -49,8 +52,8 @@ def main():
     # Drop token ID columns (not needed in output)
     df = df.drop(columns=["author_1_ids", "author_2_ids"], errors="ignore")
     
-    save_csv(df, Path(args.output).name)
-    print(f"Saved novelty scores to {exp_config['processed_dir']}/{args.output}")
+    save_csv(df, Path(output_file).name)
+    print(f"Saved novelty scores to {exp_config['processed_dir']}/{output_file}")
     print("\n✅ Script 07 complete!")
 
 

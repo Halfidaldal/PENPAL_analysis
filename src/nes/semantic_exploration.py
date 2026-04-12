@@ -42,9 +42,7 @@ def parse_embedding(x):
 
 def interleave_and_align(user_embs, ai_embs):
     """
-    Interleave user and AI embeddings, then shift to align properly.
-    
-    Returns array starting from first AI embedding (after first user).
+    Interleave slot-ordered embeddings across complete exchanges.
     
     Parameters
     ----------
@@ -56,13 +54,77 @@ def interleave_and_align(user_embs, ai_embs):
     Returns
     -------
     np.ndarray
-        Interleaved and aligned embeddings, shape (2*T - 1, D)
+        Interleaved embeddings, shape (2*T, D)
     """
     T, D = user_embs.shape
     E = np.empty((2 * T, D), dtype=float)
     E[0::2] = user_embs
     E[1::2] = ai_embs
-    return E[1:]  # Drop first user, start from first AI
+    return E
+
+
+def _sort_story_group(grp: pd.DataFrame) -> pd.DataFrame:
+    sort_columns = []
+    if "analysis_turn" in grp.columns and grp["analysis_turn"].notna().any():
+        sort_columns.append("analysis_turn")
+    if "turn" in grp.columns:
+        sort_columns.append("turn")
+    if sort_columns:
+        return grp.sort_values(sort_columns)
+    return grp
+
+
+def _conversation_metadata(grp: pd.DataFrame) -> dict:
+    metadata_columns = [
+        "condition",
+        "starter",
+        "starter_side",
+        "starter_type",
+        "llm_type",
+        "author_1_type",
+        "author_2_type",
+    ]
+    metadata = {}
+    for col in metadata_columns:
+        metadata[col] = grp[col].iloc[0] if col in grp.columns else None
+    if "analysis_turn" in grp.columns:
+        metadata["n_complete_exchanges"] = int(grp["analysis_turn"].notna().sum())
+    elif "complete_exchange" in grp.columns:
+        metadata["n_complete_exchanges"] = int(grp["complete_exchange"].fillna(False).sum())
+    else:
+        metadata["n_complete_exchanges"] = len(grp)
+    return metadata
+
+
+def _agent_record_metadata(conversation_id, agent_name: str, metadata: dict) -> dict:
+    base = {
+        "conversation_id": conversation_id,
+        "agent": agent_name,
+        "condition": metadata.get("condition"),
+        "starter": metadata.get("starter"),
+        "starter_side": metadata.get("starter_side"),
+        "starter_type": metadata.get("starter_type"),
+        "llm_type": metadata.get("llm_type"),
+        "n_complete_exchanges": metadata.get("n_complete_exchanges"),
+    }
+
+    if agent_name == "interleaved":
+        base.update({
+            "speaker_slot": pd.NA,
+            "speaker_type": pd.NA,
+            "partner_type": pd.NA,
+            "speaker_is_starter": pd.NA,
+        })
+        return base
+
+    other_slot = "author_2" if agent_name == "author_1" else "author_1"
+    base.update({
+        "speaker_slot": agent_name,
+        "speaker_type": metadata.get(f"{agent_name}_type"),
+        "partner_type": metadata.get(f"{other_slot}_type"),
+        "speaker_is_starter": metadata.get("starter_side") == agent_name if metadata.get("starter_side") is not None else pd.NA,
+    })
+    return base
 
 
 def compute_nonoverlap_distances(embeddings, window_length):
@@ -157,10 +219,10 @@ def compute_semantic_exploration_metrics(
     
     records = []
     for conversation_id, grp in tqdm(story_groups, desc="Computing semantic exploration"):
+        grp = _sort_story_group(grp)
         author_1_list = grp['author_1_emb'].tolist()
         author_2_list = grp['author_2_emb'].tolist()
-        starter = grp['starter']
-        llm_type = grp['llm_type']
+        metadata = _conversation_metadata(grp)
         
         try:
             author_1_embs = np.vstack(author_1_list)
@@ -180,15 +242,13 @@ def compute_semantic_exploration_metrics(
             distances = compute_nonoverlap_distances(E, window_length)
             
             for idx, dist in enumerate(distances):
-                records.append({
-                    'conversation_id': conversation_id,
+                record = _agent_record_metadata(conversation_id, "interleaved", metadata)
+                record.update({
                     'k': k,
-                    'agent': 'interleaved',
                     'bin_index': idx,
                     'distance': float(dist),
-                    'starter': starter.iloc[0],
-                    'llm_type': llm_type.iloc[0]
                 })
+                records.append(record)
                 
         for agent_name, embs in (("author_1", author_1_embs), ("author_2", author_2_embs)):
             for k in range(1, max_k + 1):
@@ -196,15 +256,13 @@ def compute_semantic_exploration_metrics(
                 distances = compute_nonoverlap_distances(embs, window_length)
                 
                 for idx, dist in enumerate(distances):
-                    records.append({
-                        'conversation_id': conversation_id,
-                        'agent': agent_name,
+                    record = _agent_record_metadata(conversation_id, agent_name, metadata)
+                    record.update({
                         'k': k,
                         'bin_index': idx,
                         'distance': float(dist),
-                        'starter': starter.iloc[0],
-                        'llm_type': llm_type.iloc[0]
                     })
+                    records.append(record)
     
     return pd.DataFrame.from_records(records)
 
@@ -251,6 +309,7 @@ def compute_ai_ai_semantic_exploration(
     
     records = []
     for conversation_id, grp in tqdm(story_groups, desc="Computing AI-AI semantic exploration"):
+        grp = _sort_story_group(grp)
         user_list = grp['user_emb'].tolist()
         ai_list = grp['ai_emb'].tolist()
         
@@ -373,10 +432,10 @@ def compute_lag_exploration_metrics(
     
     records = []
     for conversation_id, grp in tqdm(story_groups, desc="Computing lag exploration"):
+        grp = _sort_story_group(grp)
         author_1_list = grp['author_1_emb'].tolist()
         author_2_list = grp['author_2_emb'].tolist()
-        starter = grp['starter'].iloc[0] if 'starter' in grp else None
-        llm_type = grp['llm_type'].iloc[0] if 'llm_type' in grp else None
+        metadata = _conversation_metadata(grp)
         
         try:
             author_1_embs = np.vstack(author_1_list)
@@ -389,24 +448,14 @@ def compute_lag_exploration_metrics(
             E = interleave_and_align(author_1_embs, author_2_embs)
             lag_results = compute_lag_distances(E, max_lag)
             for res in lag_results:
-                res.update({
-                    'conversation_id': conversation_id,
-                    'agent': 'interleaved',
-                    'starter': starter,
-                    'llm_type': llm_type
-                })
+                res.update(_agent_record_metadata(conversation_id, "interleaved", metadata))
                 records.append(res)
                 
         # Individual agents
         for agent_name, embs in (("author_1", author_1_embs), ("author_2", author_2_embs)):
             lag_results = compute_lag_distances(embs, max_lag)
             for res in lag_results:
-                res.update({
-                    'conversation_id': conversation_id,
-                    'agent': agent_name,
-                    'starter': starter,
-                    'llm_type': llm_type
-                })
+                res.update(_agent_record_metadata(conversation_id, agent_name, metadata))
                 records.append(res)
                 
     return pd.DataFrame.from_records(records)

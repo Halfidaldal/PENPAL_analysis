@@ -18,8 +18,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.sentiment import compute_semantic_projection_batch
-from nes.io import load_parquet, save_parquet, get_active_experiment, get_experiment_config, get_shared_config
-from nes.cleaning import append_turn_numbers
+from nes.io import (
+    backfill_interaction_metadata,
+    get_active_experiment,
+    get_experiment_config,
+    get_shared_config,
+    load_parquet,
+    save_parquet,
+)
 
 
 def main():
@@ -39,10 +45,9 @@ def main():
         "story_embeddings_interaction_level_simulated.parquet" if simulated else "story_embeddings_interaction_level.parquet",
         stage="processed"
     )
+    df_interaction_level = backfill_interaction_metadata(df_interaction_level, simulated=simulated)
     print(f"Loaded {len(df_interaction_level)} interaction rows")
-    
-    # Add turn numbers
-    df_dyadic = append_turn_numbers(df_interaction_level)
+    df_dyadic = df_interaction_level.copy()
     
     # Compute Semantic Projection Sentiment
     print(f"\nComputing Semantic Projection Sentiment (batch_size={sentiment_config['batch_size']})...")
@@ -50,14 +55,14 @@ def main():
     # Author 1 turns
     print("Projecting author_1 turns...")
     df_dyadic['author_1_sentiment_projection'] = compute_semantic_projection_batch(
-        df_dyadic['author_1'].astype(str).tolist(),
+        df_dyadic['author_1'].tolist(),
         batch_size=sentiment_config['batch_size']
     )
     
     # Author 2 turns
     print("Projecting author_2 turns...")
     df_dyadic['author_2_sentiment_projection'] = compute_semantic_projection_batch(
-        df_dyadic['author_2'].astype(str).tolist(),
+        df_dyadic['author_2'].tolist(),
         batch_size=sentiment_config['batch_size']
     )
     

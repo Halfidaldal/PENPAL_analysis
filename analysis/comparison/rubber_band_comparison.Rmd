@@ -1,6 +1,6 @@
 ---
 title: "Rubber-Band Dynamics Comparison: Human-AI vs Human-Human vs AI-AI"
-subtitle: "Cross-Condition Valence Gap and Re-alignment Analysis"
+subtitle: "Cross-Condition Valence Gap and Re-Alignment Analysis"
 author: "PENPAL Project"
 date: "`r Sys.Date()`"
 output:
@@ -27,56 +27,43 @@ knitr::opts_chunk$set(
   dpi = 300
 )
 
-# Load comparison utilities
 source(here::here("analysis/comparison/_comparison_utils.R"))
 
-# Additional packages
 pacman::p_load(
-  lme4,         # Mixed effects models
-  lmerTest,     # P-values for mixed models
-  patchwork,    # Combine plots
-  emmeans,      # Estimated marginal means
-  effectsize    # Effect size calculations
+  lme4,
+  lmerTest,
+  patchwork,
+  emmeans,
+  effectsize
 )
 
-# Set global theme
 theme_set(theme_comparison())
 ```
 
 # Overview
 
-This notebook compares **rubber-band dynamics** — the tendency for divergent valence to "snap back" toward alignment — across all three experimental conditions:
+This notebook compares **rubber-band dynamics** across conditions using the exchange-aligned data structure.
 
-- **Human-AI**: Human co-writing with an LLM
-- **Human-Human**: Two humans co-writing together
-- **AI-AI**: Two AI agents co-writing (simulated baseline)
+The main quantity is the **valence gap**:
 
-**The Rubber-Band Hypothesis:**
-When there is a valence gap (emotional divergence) between co-authors, the subsequent turn should show a correction toward alignment. This is operationalized as:
+- `valence_gap = slot_1_valence - slot_2_valence`
+- `gap_change = current_gap - previous_gap`
 
-- **Valence Gap**: Difference between Author 1 and Author 2 valence at turn t
-- **Gap Change**: Change in valence gap from turn t to turn t+1
-- **Rubber-Band Effect**: Negative correlation between gap and gap change (divergence predicts re-convergence)
+A negative slope in `gap_change ~ previous_gap` indicates a rubber-band effect: when the slots diverge, the next aligned exchange tends to pull them back together.
 
-**Key Questions:**
-1. Is the rubber-band effect present in all conditions?
-2. Is the effect stronger in Human-AI (AI accommodating) vs Human-Human (mutual accommodation)?
-3. Does AI-AI show the strongest correction (most "compliant" dynamic)?
-4. How does the correction direction differ across conditions?
-5. Could the rubber-band effect be an inherent mathematical phenomenon, rather than behavioural/psycholinguistical? 
+As in the updated valence notebook:
+
+- `author_1` / `author_2` are treated as **slot 1 / slot 2**
+- the analysis is restricted to **complete exchanges**
+- the temporal window uses `analysis_turn` / `turn_index`, not the old raw-turn logic
 
 # Load Data
 
 ```{r load-data}
-# Load valence data using standardized loader
-df_combined <- load_valence_data(conditions = c("human-ai", "human-human", "ai-ai"))
-cat("Loaded conditions:", paste(unique(df_combined$condition), collapse = ", "), "\n")
-
-# Prepare condition factor
-df_combined <- df_combined %>%
+df_combined <- load_valence_data(c("human-ai", "human-human", "ai-ai")) %>%
+  filter_complete_exchange_window() %>%
   prepare_condition_factor(reference = "human-ai")
 
-# Report data summary
 df_combined %>%
   group_by(condition) %>%
   summarise(
@@ -84,50 +71,39 @@ df_combined %>%
     n_turns = n(),
     .groups = "drop"
   ) %>%
-  print()
+  knitr::kable(caption = "Loaded valence data for rubber-band analysis")
 ```
 
-# Preprocessing: Valence Gap Computation
+# Preprocessing
 
 ```{r preprocess}
-# Compute valence gaps and lagged changes
 df_analysis <- df_combined %>%
   group_by(conversation_id, condition) %>%
-  arrange(turn) %>%
+  arrange(turn_index, .by_group = TRUE) %>%
   mutate(
-    # Current valence gap (Author 1 - Author 2)
     valence_gap = author_1_valence - author_2_valence,
-    
-    # Lagged gap values
-    valence_gap_lag1 = lag(valence_gap, n = 1),
-    
-    # Gap change (how much the gap changed from previous turn)
+    valence_gap_lag1 = lag(valence_gap),
     gap_change = valence_gap - valence_gap_lag1,
-    
-    # Alternative: Author 2's response to Author 1
-    # Does Author 2 move toward Author 1's previous valence?
-    author_1_valence_lag1 = lag(author_1_valence, n = 1),
-    author_2_valence_lag1 = lag(author_2_valence, n = 1),
-    
-    # Author 2's adjustment
-    author_2_adjustment = author_2_valence - author_1_valence_lag1,
-    
-    # Author 1's adjustment to Author 2's previous valence
-    author_1_adjustment = author_1_valence - author_2_valence_lag1
+    max_turn_index = max(turn_index, na.rm = TRUE),
+    story_phase = case_when(
+      turn_index <= max_turn_index / 3 ~ "Early",
+      turn_index <= 2 * max_turn_index / 3 ~ "Middle",
+      TRUE ~ "Late"
+    ),
+    story_phase = factor(story_phase, levels = c("Early", "Middle", "Late"))
   ) %>%
   ungroup() %>%
-  filter(turn > 1) %>%
-  drop_na(valence_gap, valence_gap_lag1)
+  filter(turn_index > 1) %>%
+  drop_na(valence_gap_lag1, gap_change)
 
-cat("Analysis dataset:", nrow(df_analysis), "turns across", 
-    n_distinct(df_analysis$conversation_id), "stories\n")
+cat("Analysis rows:", nrow(df_analysis), "\n")
+cat("Stories:", n_distinct(df_analysis$conversation_id), "\n")
 ```
 
 # Descriptive Statistics
 
 ```{r descriptives}
-# Valence gap statistics by condition
-desc_stats <- df_analysis %>%
+df_analysis %>%
   group_by(condition) %>%
   summarise(
     n_turns = n(),
@@ -135,37 +111,30 @@ desc_stats <- df_analysis %>%
     sd_gap = sd(valence_gap, na.rm = TRUE),
     mean_gap_change = mean(gap_change, na.rm = TRUE),
     sd_gap_change = sd(gap_change, na.rm = TRUE),
-    # Rubber-band correlation (within-condition)
     rubber_band_r = cor(valence_gap_lag1, gap_change, use = "complete.obs"),
     .groups = "drop"
-  )
-
-desc_stats %>%
+  ) %>%
   knitr::kable(
     digits = 3,
-    caption = "Valence gap statistics by condition",
-    col.names = c("Condition", "N Turns", "Mean Gap", "SD Gap", 
-                  "Mean Δ Gap", "SD Δ Gap", "Rubber-Band r")
+    caption = "Gap and gap-change descriptives by condition"
   )
 ```
 
-# Valence Gap Distribution
-
-```{r gap-distribution, fig.width=12, fig.height=5}
-# Gap distributions
-p1 <- df_analysis %>%
+```{r gap-distributions, fig.width=12, fig.height=5}
+p_gap_density <- df_analysis %>%
   ggplot(aes(x = valence_gap, fill = condition)) +
   geom_density(alpha = 0.5) +
-  scale_fill_manual(values = condition_colors) +
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
   labs(
     title = "Valence Gap Distribution",
-    subtitle = "Author 1 - Author 2 valence",
+    subtitle = "Slot 1 minus Slot 2",
     x = "Valence Gap",
     y = "Density"
-  )
+  ) +
+  theme(legend.position = "none")
 
-p2 <- df_analysis %>%
+p_gap_box <- df_analysis %>%
   ggplot(aes(x = condition, y = valence_gap, fill = condition)) +
   geom_violin(alpha = 0.5) +
   geom_boxplot(width = 0.2, alpha = 0.8, outlier.alpha = 0.1) +
@@ -178,69 +147,39 @@ p2 <- df_analysis %>%
   ) +
   theme(legend.position = "none")
 
-p1 + p2 + plot_layout(guides = "collect")
+p_gap_density + p_gap_box
 ```
 
-# Rubber-Band Effect Analysis
+# Rubber-Band Models
 
-## Core Test: Gap → Gap Change
+## Within-Condition Slopes
 
-The rubber-band hypothesis predicts that **previous gap negatively predicts gap change** — when there's divergence, the system corrects toward alignment.
+```{r within-condition-models}
+within_results <- list()
 
-```{r rubber-band-scatter, fig.width=12, fig.height=5}
-# Rubber-band scatter plot
-df_analysis %>%
-  ggplot(aes(x = valence_gap_lag1, y = gap_change, color = condition)) +
-  geom_point(alpha = 0.05, size = 0.5) +
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
-  scale_color_manual(values = condition_colors) +
-  labs(
-    title = "Rubber-Band Effect by Condition",
-    subtitle = "Negative slope = divergence predicts re-convergence",
-    x = "Valence Gap (t-1)",
-    y = "Gap Change (t)",
-    color = "Condition"
-  ) +
-  theme(legend.position = "bottom")
-```
-
-## Within-Condition Models
-
-```{r within-condition-rubberband}
-# Fit rubber-band model for each condition
-conditions <- unique(df_analysis$condition)
-
-results_within <- tibble()
-
-for (cond in conditions) {
+for (cond in unique(df_analysis$condition)) {
   df_cond <- filter(df_analysis, condition == cond)
-  
+
   if (nrow(df_cond) < 50) {
-    cat("Skipping", cond, "- insufficient data\n")
     next
   }
-  
-  model <- tryCatch({
-    lmer(gap_change ~ valence_gap_lag1 + (1 | conversation_id),
-         data = df_cond)
-  }, error = function(e) NULL)
-  
-  if (!is.null(model)) {
-    coefs <- summary(model)$coefficients
-    results_within <- bind_rows(results_within, tibble(
-      condition = cond,
-      estimate = coefs["valence_gap_lag1", "Estimate"],
-      se = coefs["valence_gap_lag1", "Std. Error"],
-      t = coefs["valence_gap_lag1", "t value"],
-      p = coefs["valence_gap_lag1", "Pr(>|t|)"]
-    ))
-  }
+
+  model <- lmer(
+    gap_change ~ valence_gap_lag1 + (1 | conversation_id),
+    data = df_cond
+  )
+
+  coefs <- summary(model)$coefficients
+  within_results[[as.character(cond)]] <- tibble(
+    condition = cond,
+    estimate = coefs["valence_gap_lag1", "Estimate"],
+    se = coefs["valence_gap_lag1", "Std. Error"],
+    t = coefs["valence_gap_lag1", "t value"],
+    p = coefs["valence_gap_lag1", "Pr(>|t|)"]
+  )
 }
 
-# Display results
-results_within %>%
+bind_rows(within_results) %>%
   mutate(
     sig = case_when(
       p < 0.001 ~ "***",
@@ -248,62 +187,55 @@ results_within %>%
       p < 0.05 ~ "*",
       p < 0.1 ~ ".",
       TRUE ~ ""
-    ),
-    ci_lower = estimate - 1.96 * se,
-    ci_upper = estimate + 1.96 * se,
-    interpretation = if_else(estimate < 0, "Rubber-band present", "No rubber-band")
+    )
   ) %>%
-  select(condition, estimate, se, ci_lower, ci_upper, t, p, sig, interpretation) %>%
   knitr::kable(
     digits = 3,
-    caption = "Rubber-band effect by condition (Gap_t-1 → ΔGap_t)"
+    caption = "Rubber-band slopes by condition"
   )
 ```
 
-## Cross-Condition Comparison
+## Cross-Condition Interaction Model
 
-```{r cross-condition-rubberband}
-# Full model with condition interaction
+```{r cross-condition-model}
 model_cross <- lmer(
   gap_change ~ valence_gap_lag1 * condition + (1 | conversation_id),
   data = df_analysis
 )
 
-cat("=== Cross-Condition Rubber-Band Model ===\n")
+cat("Cross-condition model summary:\n")
 print(summary(model_cross))
 
-# Slopes by condition
 emm_slopes <- emtrends(model_cross, specs = "condition", var = "valence_gap_lag1")
-cat("\n=== Rubber-Band Slopes by Condition ===\n")
+
+cat("\nCondition-specific slopes:\n")
 print(emm_slopes)
 
-cat("\n=== Pairwise Slope Comparisons ===\n")
+cat("\nPairwise slope contrasts:\n")
 print(pairs(emm_slopes, adjust = "bonferroni"))
 ```
 
+# Visualizations
 
-
-# Temporal Dynamics
-
-How does the rubber-band effect evolve across the story?
+```{r rubberband-scatter, fig.width=12, fig.height=5}
+df_analysis %>%
+  ggplot(aes(x = valence_gap_lag1, y = gap_change, color = condition)) +
+  geom_point(alpha = 0.05, size = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Rubber-Band Effect by Condition",
+    subtitle = "Negative slope indicates re-convergence after divergence",
+    x = "Previous Valence Gap",
+    y = "Gap Change"
+  ) +
+  theme(legend.position = "bottom")
+```
 
 ```{r temporal-dynamics, fig.width=12, fig.height=5}
-# Bin turns into early/middle/late
-df_temporal <- df_analysis %>%
-  group_by(conversation_id) %>%
-  mutate(
-    max_turn = max(turn),
-    story_phase = case_when(
-      turn <= max_turn / 3 ~ "Early",
-      turn <= 2 * max_turn / 3 ~ "Middle",
-      TRUE ~ "Late"
-    ),
-    story_phase = factor(story_phase, levels = c("Early", "Middle", "Late"))
-  ) %>%
-  ungroup()
-
-# Plot rubber-band by phase
-df_temporal %>%
+df_analysis %>%
   ggplot(aes(x = valence_gap_lag1, y = gap_change, color = condition)) +
   geom_point(alpha = 0.03, size = 0.5) +
   geom_smooth(method = "lm", se = TRUE, linewidth = 1) +
@@ -311,55 +243,20 @@ df_temporal %>%
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
   scale_color_manual(values = condition_colors) +
   labs(
-    title = "Rubber-Band Effect Across Story Phases",
-    x = "Valence Gap (t-1)",
-    y = "Gap Change (t)",
-    color = "Condition"
+    title = "Rubber-Band Dynamics Across Story Phases",
+    x = "Previous Valence Gap",
+    y = "Gap Change"
   ) +
   theme(legend.position = "bottom")
 ```
 
-# Summary Visualization
+# Summary
 
-```{r summary-plot, fig.width=12, fig.height=8}
-# Coefficient comparison plot
-if (nrow(results_within) > 0) {
-  p1 <- results_within %>%
-    mutate(
-      ci_lower = estimate - 1.96 * se,
-      ci_upper = estimate + 1.96 * se
-    ) %>%
-    ggplot(aes(x = condition, y = estimate, fill = condition)) +
-    geom_col(width = 0.6, alpha = 0.8) +
-    geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), width = 0.2) +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-    scale_fill_manual(values = condition_colors) +
-    labs(
-      title = "Rubber-Band Effect Strength",
-      subtitle = "More negative = stronger re-alignment tendency",
-      y = "Coefficient (β)",
-      x = "Condition"
-    ) +
-    theme(legend.position = "none")
-  
-    
-    p1
-  }
+The notebook is now adapted to the new structure by:
 
-```
-
-# Key Findings
-
-Based on the analysis above:
-
-1. **Rubber-band presence**: [Interpret whether the effect is present in all conditions]
-
-2. **Effect strength comparison**: [Compare magnitude across Human-AI, Human-Human, AI-AI]
-
-4. **Temporal patterns**: [Note if the effect changes across story phases]
-
-5. **AI-AI baseline**: [Compare simulated baseline to empirical conditions]
-
----
+- computing gap dynamics on the **exchange-aligned turn index**,
+- restricting the analysis to **complete exchanges**,
+- using the cleaned slot structure consistently across all three conditions,
+- replacing the old raw-turn phase split with a phase split built from `turn_index`.
 
 *Analysis completed: `r Sys.time()`*

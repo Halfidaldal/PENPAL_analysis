@@ -439,9 +439,10 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
         'author_2': lambda x: ' '.join(x.fillna('').astype(str).tolist()),
     }
     # Add metadata columns if present
-    for col in ['language', 'client_id', 'workshop_id', 'timestamp', 
+    for col in ['condition', 'language', 'client_id', 'workshop_id', 'timestamp', 
                 'respondent_id', 'respondent_id_u1', 'respondent_id_u2',
-                'interaction_count', 'starter', 'llm_type', 'model_id', 'turn']:
+                'interaction_count', 'starter', 'starter_side', 'starter_type',
+                'author_1_type', 'author_2_type', 'llm_type', 'model_id', 'turn']:
         if col in df.columns:
             agg_dict[col] = 'first'
     
@@ -468,8 +469,10 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
         author2s = df[mask]['author_2'].tolist()
         parts = []
         for u, a in zip(author1s, author2s):
-            parts.append(f"{u}")
-            parts.append(f"{a}")
+            if pd.notna(u) and str(u).strip():
+                parts.append(str(u).strip())
+            if pd.notna(a) and str(a).strip():
+                parts.append(str(a).strip())
         return ' '.join(parts)
     
     story_df['full_story'] = story_df.apply(build_story, axis=1)
@@ -605,6 +608,154 @@ def clean_ai_ai_data(df: pd.DataFrame, max_turns: int = 10) -> pd.DataFrame:
     print(f"After cleaning: {len(df)} rows")
     
     return df
+
+
+def _is_substantive_text(
+    series: pd.Series,
+    min_substantive_chars: int = 2
+) -> pd.Series:
+    """
+    Identify rows with substantive text after removing whitespace and punctuation.
+
+    A minimum of two remaining word characters treats ".", "," or other
+    punctuation-only cells as empty while still counting very short real content.
+    """
+    normalized = (
+        series.fillna('')
+        .astype(str)
+        .str.strip()
+        .str.replace(r'[\W_]+', '', regex=True)
+    )
+    return normalized.str.len() >= min_substantive_chars
+
+
+def add_exchange_aligned_metadata(
+    df: pd.DataFrame,
+    experiment: Optional[str] = None,
+    group_col: str = 'conversation_id',
+    min_substantive_chars: int = 2
+) -> pd.DataFrame:
+    """
+    Add analysis-ready exchange metadata without changing stored author slots.
+
+    Added columns:
+    - author_1_type / author_2_type
+    - complete_exchange
+    - analysis_turn
+    - starter_side
+    - starter_type
+    """
+    if group_col not in df.columns:
+        raise ValueError(f"Expected '{group_col}' column in DataFrame")
+    if 'starter' not in df.columns:
+        raise ValueError("Expected 'starter' column in DataFrame")
+
+    df = df.copy()
+
+    if 'condition' not in df.columns:
+        if experiment is None:
+            raise ValueError("Either provide 'experiment' or include a 'condition' column")
+        df['condition'] = experiment
+
+    if 'turn' not in df.columns:
+        df['turn'] = df.groupby(group_col).cumcount() + 1
+
+    author_1_type_map = {
+        'human-ai': 'human',
+        'human-human': 'human',
+        'ai-ai': 'ai',
+    }
+    author_2_type_map = {
+        'human-ai': 'ai',
+        'human-human': 'human',
+        'ai-ai': 'ai',
+    }
+
+    unknown_conditions = sorted(set(df['condition'].dropna().unique()) - set(author_1_type_map))
+    if unknown_conditions:
+        raise ValueError(f"Unknown condition(s): {unknown_conditions}")
+
+    df['author_1_type'] = df['condition'].map(author_1_type_map)
+    df['author_2_type'] = df['condition'].map(author_2_type_map)
+
+    df['starter_side'] = df['starter']
+    invalid_starters = sorted(set(df['starter_side'].dropna().unique()) - {'author_1', 'author_2'})
+    if invalid_starters:
+        raise ValueError(f"Invalid starter values: {invalid_starters}")
+
+    df['starter_type'] = np.where(
+        df['starter_side'].eq('author_1'),
+        df['author_1_type'],
+        df['author_2_type']
+    )
+
+    author_1_substantive = _is_substantive_text(df['author_1'], min_substantive_chars=min_substantive_chars)
+    author_2_substantive = _is_substantive_text(df['author_2'], min_substantive_chars=min_substantive_chars)
+    df['complete_exchange'] = author_1_substantive & author_2_substantive
+
+    ordered = df.sort_values([group_col, 'turn'], kind='stable').copy()
+    ordered['analysis_turn'] = ordered.groupby(group_col)['complete_exchange'].cumsum()
+    ordered['analysis_turn'] = (
+        ordered['analysis_turn']
+        .where(ordered['complete_exchange'], pd.NA)
+        .astype('Int64')
+    )
+    df['analysis_turn'] = ordered.sort_index()['analysis_turn']
+
+    complete_count = int(df['complete_exchange'].sum())
+    incomplete_count = int((~df['complete_exchange']).sum())
+    print(
+        "Exchange alignment metadata added: "
+        f"{complete_count} complete exchanges, {incomplete_count} incomplete rows"
+    )
+
+    return df
+
+
+def build_long_format_analysis(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert dyadic interaction rows into a long-format analysis export.
+
+    Each interaction row becomes two contribution rows, one for each author slot.
+    """
+    required = [
+        'conversation_id', 'condition', 'turn', 'analysis_turn',
+        'author_1', 'author_2', 'author_1_type', 'author_2_type',
+        'complete_exchange', 'starter_side', 'starter_type'
+    ]
+    missing = [column for column in required if column not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns for long-format export: {missing}")
+
+    shared_columns = [
+        'conversation_id', 'condition', 'turn', 'analysis_turn',
+        'complete_exchange', 'starter_side', 'starter_type'
+    ]
+
+    frames = []
+    slot_specs = [
+        ('author_1', 'author_1_type', 'author_2_type'),
+        ('author_2', 'author_2_type', 'author_1_type'),
+    ]
+
+    for speaker_slot, speaker_type_col, partner_type_col in slot_specs:
+        frame = df[shared_columns].copy()
+        frame['speaker_slot'] = speaker_slot
+        frame['speaker_type'] = df[speaker_type_col]
+        frame['speaker_is_starter'] = df['starter_side'].eq(speaker_slot)
+        frame['partner_type'] = df[partner_type_col]
+        frame['text'] = df[speaker_slot]
+        frames.append(frame)
+
+    df_long = pd.concat(frames, ignore_index=True)
+    df_long = df_long.sort_values(
+        ['conversation_id', 'turn', 'speaker_slot'],
+        kind='stable'
+    ).reset_index(drop=True)
+
+    print(f"Built long-format analysis export with {len(df_long)} rows")
+
+    return df_long
 
 
 def keep_complete_conversations(

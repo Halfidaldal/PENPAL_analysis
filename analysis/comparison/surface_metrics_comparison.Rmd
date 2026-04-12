@@ -1,6 +1,6 @@
 ---
 title: "Surface Metrics Comparison: Human-AI vs Human-Human vs AI-AI"
-subtitle: "Cross-Condition Text Descriptives Analysis"
+subtitle: "Cross-Condition Text Descriptives on the Exchange-Aligned Structure"
 author: "PENPAL Project"
 date: "`r Sys.Date()`"
 output:
@@ -19,7 +19,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = TRUE,
+  echo = FALSE,
   warning = FALSE,
   message = FALSE,
   fig.width = 10,
@@ -27,344 +27,181 @@ knitr::opts_chunk$set(
   dpi = 300
 )
 
-# Load comparison utilities
 source(here::here("analysis/comparison/_comparison_utils.R"))
 
-# Additional packages
 pacman::p_load(
-  lme4,         # Mixed effects models
-  lmerTest,     # P-values for mixed models
-  patchwork,    # Combine plots
-  emmeans       # Estimated marginal means
+  lme4,
+  lmerTest,
+  patchwork,
+  emmeans
 )
 
-# Set global theme
 theme_set(theme_comparison())
 ```
 
 # Overview
 
-This notebook compares surface-level text features across experimental conditions:
+This notebook compares surface-level text metrics across conditions using the long-format, exchange-aligned metric tables.
 
-- **Human-AI**: Human co-writing with an LLM
-- **Human-Human**: Two humans co-writing together
-- **AI-AI**: Two AI agents co-writing (simulated baseline)
+The underlying processed data are now one row per **speaker contribution**, with recovered role metadata:
 
-**Key Metrics:**
-- Word count per turn
-- Sentence length
-- Lexical diversity (type-token ratio)
-- Readability scores
-- Punctuation patterns
+- **Human / AI** in Human-AI
+- **Starter-side / Non-starter-side** in Human-Human and AI-AI
 
-**Key Questions:**
-1. Do AI contributions differ in length/complexity from human contributions?
-2. Are Human-Human stories more varied than Human-AI or AI-AI?
-3. Does the AI-AI baseline show characteristic "AI-like" text patterns?
+The notebook therefore no longer assumes old wide `author_1_*` / `author_2_*` columns.
 
 # Load Data
 
 ```{r load-data}
-# Check data availability
-cat("Data availability:\n")
-avail <- check_data_availability()
-print(avail)
-
-# Load surface metrics
-df_combined <- tryCatch({
-  load_surface_metrics(conditions = c("human-ai", "human-human", "ai-ai"))
-}, error = function(e) {
-  cat("Error loading surface metrics:", e$message, "\n")
-  cat("Attempting to load from individual conditions...\n")
-  
-  conditions_available <- c()
-  for (cond in c("human-ai", "human-human", "ai-ai")) {
-    path <- here("data", cond, "processed", "interaction_level_surface_metrics.parquet")
-    if (file.exists(path)) {
-      conditions_available <- c(conditions_available, cond)
-    }
-  }
-  
-  if (length(conditions_available) == 0) {
-    stop("No surface metrics data available")
-  }
-  
-  load_surface_metrics(conditions = conditions_available)
-})
-
-# Prepare condition factor
-df_combined <- df_combined %>%
+df_combined <- load_surface_metrics(c("human-ai", "human-human", "ai-ai")) %>%
+  filter_complete_exchange_window() %>%
   prepare_condition_factor(reference = "human-ai")
 
-# Report loaded data
-cat("\nLoaded data summary:\n")
 df_combined %>%
   group_by(condition) %>%
   summarise(
     n_stories = n_distinct(conversation_id),
-    n_turns = n(),
+    n_rows = n(),
     .groups = "drop"
   ) %>%
-  print()
+  knitr::kable(caption = "Loaded surface-metric rows by condition")
 ```
 
-# Preprocessing
+# Metric Selection
 
-```{r preprocess}
-# Identify available metrics
-# Common surface metrics from textdescriptives
-potential_metrics <- c(
-  # Length metrics
-  "n_tokens", "n_words", "n_chars", "n_sentences",
-  # Complexity
-  "avg_word_length", "avg_sentence_length", "n_syllables",
-  # Diversity
-  "ttr", "mtld", "hdd",
-  # Readability
-  "flesch_reading_ease", "flesch_kincaid_grade", "gunning_fog",
-  "smog", "automated_readability_index", "coleman_liau_index",
-  # Other
-  "n_unique_tokens", "entropy"
+```{r metric-selection}
+first_present <- function(candidates, df) {
+  present <- candidates[candidates %in% names(df)]
+  if (length(present) == 0) return(NA_character_)
+  present[[1]]
+}
+
+selected_metrics <- c(
+  word_count = first_present(c("n_words", "n_tokens", "doc_length"), df_combined),
+  sentence_length = first_present(c("sentence_length_mean", "avg_sentence_length"), df_combined),
+  lexical_diversity = first_present(c("proportion_unique_tokens", "ttr"), df_combined),
+  readability = first_present(c("flesch_reading_ease"), df_combined),
+  coherence = first_present(c("first_order_coherence"), df_combined)
 )
 
-# Find which metrics are present
-available_metrics <- intersect(potential_metrics, names(df_combined))
-cat("Available metrics:", paste(available_metrics, collapse = ", "), "\n")
+selected_metrics <- selected_metrics[!is.na(selected_metrics)]
 
-# Ensure we have at least some metrics
-if (length(available_metrics) == 0) {
-  stop("No recognized surface metrics found in the data")
-}
+knitr::kable(
+  tibble(metric_alias = names(selected_metrics), column_name = unname(selected_metrics)),
+  caption = "Surface metrics selected for the comparison notebook"
+)
 ```
 
 # Descriptive Statistics
 
 ```{r descriptives}
-# Summary statistics by condition for key metrics
-if ("n_tokens" %in% available_metrics || "n_words" %in% available_metrics) {
-  word_col <- if ("n_words" %in% available_metrics) "n_words" else "n_tokens"
-  
-  desc_length <- df_combined %>%
+descriptive_table <- purrr::imap_dfr(selected_metrics, function(col_name, metric_alias) {
+  df_combined %>%
     group_by(condition) %>%
     summarise(
-      n_turns = n(),
-      mean_words = mean(!!sym(word_col), na.rm = TRUE),
-      sd_words = sd(!!sym(word_col), na.rm = TRUE),
-      median_words = median(!!sym(word_col), na.rm = TRUE),
+      metric = metric_alias,
+      mean_value = mean(.data[[col_name]], na.rm = TRUE),
+      sd_value = sd(.data[[col_name]], na.rm = TRUE),
       .groups = "drop"
     )
-  
-  desc_length %>%
-    knitr::kable(
-      digits = 2,
-      caption = "Word count by condition"
-    )
-}
-```
-
-```{r metric-distributions, fig.width=12, fig.height=8}
-# Visualize distributions for key metrics
-plot_metric_dist <- function(df, metric, title) {
-  if (!metric %in% names(df)) return(NULL)
-  
-  ggplot(df, aes(x = !!sym(metric), fill = condition)) +
-    geom_density(alpha = 0.5) +
-    scale_fill_manual(values = condition_colors) +
-    labs(title = title, x = metric, y = "Density") +
-    theme(legend.position = "none")
-}
-
-# Create distribution plots for available metrics
-plots <- list()
-
-if ("n_words" %in% available_metrics) {
-  plots$words <- plot_metric_dist(df_combined, "n_words", "Word Count")
-}
-if ("n_tokens" %in% available_metrics && !("n_words" %in% available_metrics)) {
-  plots$tokens <- plot_metric_dist(df_combined, "n_tokens", "Token Count")
-}
-if ("avg_sentence_length" %in% available_metrics) {
-  plots$sent_len <- plot_metric_dist(df_combined, "avg_sentence_length", "Avg Sentence Length")
-}
-if ("ttr" %in% available_metrics) {
-  plots$ttr <- plot_metric_dist(df_combined, "ttr", "Type-Token Ratio")
-}
-if ("flesch_reading_ease" %in% available_metrics) {
-  plots$flesch <- plot_metric_dist(df_combined, "flesch_reading_ease", "Flesch Reading Ease")
-}
-
-if (length(plots) > 0) {
-  wrap_plots(plots, ncol = 2) + 
-    plot_layout(guides = "collect") &
-    theme(legend.position = "bottom")
-}
-```
-
-# Cross-Condition Comparisons
-
-## Word Count
-
-```{r word-count-analysis}
-word_col <- if ("n_words" %in% available_metrics) "n_words" else 
-            if ("n_tokens" %in% available_metrics) "n_tokens" else NULL
-
-if (!is.null(word_col)) {
-  # Mixed model for word count
-  model_words <- lmer(
-    as.formula(paste(word_col, "~ condition + (1 | conversation_id)")),
-    data = df_combined
-  )
-  
-  cat("=== Word Count by Condition ===\n")
-  print(summary(model_words))
-  
-  # Pairwise contrasts
-  emm_words <- emmeans(model_words, specs = "condition")
-  cat("\n=== Estimated Marginal Means ===\n")
-  print(emm_words)
-  
-  cat("\n=== Pairwise Contrasts ===\n")
-  print(pairs(emm_words, adjust = "bonferroni"))
-}
-```
-
-## Lexical Diversity
-
-```{r diversity-analysis}
-if ("ttr" %in% available_metrics) {
-  model_ttr <- lmer(
-    ttr ~ condition + (1 | conversation_id),
-    data = df_combined
-  )
-  
-  cat("=== Type-Token Ratio by Condition ===\n")
-  print(summary(model_ttr))
-  
-  emm_ttr <- emmeans(model_ttr, specs = "condition")
-  cat("\n=== Pairwise Contrasts ===\n")
-  print(pairs(emm_ttr, adjust = "bonferroni"))
-}
-```
-
-## Readability
-
-```{r readability-analysis}
-if ("flesch_reading_ease" %in% available_metrics) {
-  model_flesch <- lmer(
-    flesch_reading_ease ~ condition + (1 | conversation_id),
-    data = df_combined
-  )
-  
-  cat("=== Flesch Reading Ease by Condition ===\n")
-  print(summary(model_flesch))
-  
-  emm_flesch <- emmeans(model_flesch, specs = "condition")
-  cat("\n=== Pairwise Contrasts ===\n")
-  print(pairs(emm_flesch, adjust = "bonferroni"))
-}
-```
-
-# Author-Level Comparison
-
-Compare Author 1 vs Author 2 contributions within each condition.
-
-```{r author-comparison}
-# Check if we have author-specific columns
-author_1_cols <- names(df_combined)[str_detect(names(df_combined), "^author_1_")]
-author_2_cols <- names(df_combined)[str_detect(names(df_combined), "^author_2_")]
-
-if (length(author_1_cols) > 0 && length(author_2_cols) > 0) {
-  cat("Author-level metrics available\n")
-  
-  # Find matching pairs
-  author_1_metrics <- str_replace(author_1_cols, "^author_1_", "")
-  author_2_metrics <- str_replace(author_2_cols, "^author_2_", "")
-  common_metrics <- intersect(author_1_metrics, author_2_metrics)
-  
-  if ("n_words" %in% common_metrics || "n_tokens" %in% common_metrics) {
-    word_metric <- if ("n_words" %in% common_metrics) "n_words" else "n_tokens"
-    
-    # Pivot to long format for comparison
-    df_author <- df_combined %>%
-      select(conversation_id, turn, condition, 
-             starts_with("author_1_"), starts_with("author_2_")) %>%
-      pivot_longer(
-        cols = c(paste0("author_1_", word_metric), paste0("author_2_", word_metric)),
-        names_to = "author",
-        values_to = "words"
-      ) %>%
-      mutate(author = if_else(str_detect(author, "author_1"), "Author 1", "Author 2"))
-    
-    # Plot
-    ggplot(df_author, aes(x = author, y = words, fill = condition)) +
-      geom_boxplot(alpha = 0.7, outlier.alpha = 0.1) +
-      facet_wrap(~condition) +
-      scale_fill_manual(values = condition_colors) +
-      labs(
-        title = "Word Count by Author and Condition",
-        x = "Author",
-        y = "Words per Turn"
-      ) +
-      theme(legend.position = "none")
-  }
-} else {
-  cat("No author-level surface metrics found. Data may be at turn level without author separation.\n")
-}
-```
-
-# Visualization Summary
-
-```{r summary-plot, fig.width=12, fig.height=6}
-# Compute summary statistics for available metrics
-summary_stats <- df_combined %>%
-  group_by(condition) %>%
-  summarise(
-    across(all_of(available_metrics[1:min(6, length(available_metrics))]),
-           list(mean = ~mean(., na.rm = TRUE), se = ~sd(., na.rm = TRUE)/sqrt(n())),
-           .names = "{.col}_{.fn}"),
-    .groups = "drop"
-  )
-
-# Create bar plot for first few metrics
-metrics_to_plot <- available_metrics[1:min(4, length(available_metrics))]
-
-plots_summary <- lapply(metrics_to_plot, function(m) {
-  mean_col <- paste0(m, "_mean")
-  se_col <- paste0(m, "_se")
-  
-  if (!all(c(mean_col, se_col) %in% names(summary_stats))) return(NULL)
-  
-  ggplot(summary_stats, aes(x = condition, y = !!sym(mean_col), fill = condition)) +
-    geom_col(alpha = 0.8, width = 0.6) +
-    geom_errorbar(
-      aes(ymin = !!sym(mean_col) - 1.96 * !!sym(se_col),
-          ymax = !!sym(mean_col) + 1.96 * !!sym(se_col)),
-      width = 0.2
-    ) +
-    scale_fill_manual(values = condition_colors) +
-    labs(title = m, x = "", y = "Mean") +
-    theme(legend.position = "none",
-          axis.text.x = element_text(angle = 45, hjust = 1))
 })
 
-plots_summary <- compact(plots_summary)
-if (length(plots_summary) > 0) {
-  wrap_plots(plots_summary, ncol = 2)
+descriptive_table %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Condition-level descriptives for selected surface metrics"
+  )
+```
+
+```{r distributions, fig.width=12, fig.height=8}
+plot_data <- purrr::imap_dfr(selected_metrics, function(col_name, metric_alias) {
+  df_combined %>%
+    transmute(condition, metric = metric_alias, value = .data[[col_name]])
+})
+
+plot_data %>%
+  ggplot(aes(x = value, fill = condition)) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = condition_colors) +
+  facet_wrap(~metric, scales = "free", ncol = 1) +
+  labs(
+    title = "Surface Metric Distributions by Condition",
+    x = "Metric Value",
+    y = "Density"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+# Cross-Condition Models
+
+```{r condition-models}
+for (metric_alias in names(selected_metrics)) {
+  col_name <- selected_metrics[[metric_alias]]
+  model <- lmer(
+    as.formula(paste(col_name, "~ condition + (1 | conversation_id)")),
+    data = df_combined
+  )
+
+  cat("\n===", metric_alias, "(", col_name, ") ===\n")
+  print(summary(model))
+  print(pairs(emmeans(model, specs = "condition"), adjust = "bonferroni"))
 }
 ```
 
-# Key Findings
+# Role-Level Comparison
 
-Based on the analysis above:
+```{r role-comparison, fig.width=12, fig.height=6}
+primary_length_metric <- selected_metrics[[names(selected_metrics)[1]]]
 
-1. **Word count patterns**: [Interpret whether AI contributions are longer/shorter than human]
+df_combined %>%
+  filter(!is.na(condition_role)) %>%
+  ggplot(aes(x = condition_role, y = .data[[primary_length_metric]], fill = condition_role)) +
+  geom_boxplot(alpha = 0.8, outlier.alpha = 0.1) +
+  facet_wrap(~condition, scales = "free_x") +
+  labs(
+    title = paste("Role-Level Comparison for", names(selected_metrics)[1]),
+    subtitle = "Human / AI in Human-AI; Starter-side / Non-starter-side in same-type conditions",
+    x = NULL,
+    y = primary_length_metric
+  ) +
+  theme(legend.position = "none")
+```
 
-2. **Lexical diversity**: [Compare vocabulary richness across conditions]
+```{r role-models}
+if ("condition_role" %in% names(df_combined) && any(!is.na(df_combined$condition_role))) {
+  for (metric_alias in names(selected_metrics)[1:min(3, length(selected_metrics))]) {
+    col_name <- selected_metrics[[metric_alias]]
 
-3. **Readability**: [Discuss complexity/accessibility differences]
+    cat("\n=== Role contrast for", metric_alias, "===\n")
 
-4. **AI-AI characteristics**: [Note any distinctive patterns in simulated baseline]
+    for (cond_name in levels(df_combined$condition)) {
+      df_subset <- df_combined %>%
+        filter(condition == cond_name, !is.na(condition_role))
 
----
+      if (nrow(df_subset) < 40 || n_distinct(df_subset$condition_role) < 2) {
+        next
+      }
+
+      model <- lmer(
+        as.formula(paste(col_name, "~ condition_role + (1 | conversation_id)")),
+        data = df_subset
+      )
+
+      cat("\n", cond_name, "\n", sep = "")
+      print(summary(model))
+      print(pairs(emmeans(model, specs = "condition_role")))
+    }
+  }
+}
+```
+
+# Summary
+
+The notebook is now adapted to the new structure by:
+
+- loading long-format contribution-level surface metrics,
+- using the shared backfilled role metadata,
+- restricting the analysis to complete, aligned exchanges,
+- removing the old wide-format `author_1_*` / `author_2_*` assumptions.
 
 *Analysis completed: `r Sys.time()`*

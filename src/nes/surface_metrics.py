@@ -3,7 +3,97 @@ import textdescriptives as td
 import spacy
 
 
-nlp = spacy.load('en_core_web_md')  
+_MISSING_TEXT_VALUES = {"", "nan", "none", "null"}
+
+
+def _normalize_metric_text(value) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    text = str(value).strip()
+    return "" if text.lower() in _MISSING_TEXT_VALUES else text
+
+
+def _is_substantive_text(series: pd.Series, min_chars: int = 2) -> pd.Series:
+    normalized = series.apply(_normalize_metric_text)
+    return normalized.str.len().ge(min_chars)
+
+
+def _attach_slot_metadata(metrics_df: pd.DataFrame, df: pd.DataFrame, slot: str) -> pd.DataFrame:
+    other_slot = "author_2" if slot == "author_1" else "author_1"
+    metadata_columns = [
+        "conversation_id",
+        "condition",
+        "turn",
+        "analysis_turn",
+        "interaction_count",
+        "starter",
+        "starter_side",
+        "starter_type",
+        "complete_exchange",
+        "llm_type",
+        "timestamp",
+        "respondent_id",
+        "respondent_id_u1",
+        "respondent_id_u2",
+        "model_id",
+    ]
+
+    metrics_df["type"] = slot
+    metrics_df["speaker_slot"] = slot
+
+    for col in metadata_columns:
+        if col in df.columns:
+            metrics_df[col] = df[col]
+
+    speaker_type_col = f"{slot}_type"
+    partner_type_col = f"{other_slot}_type"
+    if speaker_type_col in df.columns:
+        metrics_df["speaker_type"] = df[speaker_type_col]
+    if partner_type_col in df.columns:
+        metrics_df["partner_type"] = df[partner_type_col]
+
+    starter_col = "starter_side" if "starter_side" in df.columns else ("starter" if "starter" in df.columns else None)
+    if starter_col is not None:
+        metrics_df["speaker_is_starter"] = df[starter_col].eq(slot)
+
+    return metrics_df
+
+
+def _mask_non_substantive_rows(metrics_df: pd.DataFrame, substantive_mask: pd.Series) -> pd.DataFrame:
+    missing_mask = ~substantive_mask.fillna(False)
+    if not missing_mask.any():
+        return metrics_df
+
+    metadata_columns = {
+        "type",
+        "speaker_slot",
+        "speaker_type",
+        "partner_type",
+        "speaker_is_starter",
+        "conversation_id",
+        "condition",
+        "turn",
+        "analysis_turn",
+        "interaction_count",
+        "starter",
+        "starter_side",
+        "starter_type",
+        "complete_exchange",
+        "llm_type",
+        "timestamp",
+        "respondent_id",
+        "respondent_id_u1",
+        "respondent_id_u2",
+        "model_id",
+    }
+    metric_columns = [col for col in metrics_df.columns if col not in metadata_columns]
+    metrics_df.loc[missing_mask, metric_columns] = pd.NA
+    return metrics_df
 
 def get_descriptive_metrics_dual_full_long(
         df: pd.DataFrame,
@@ -47,21 +137,21 @@ def get_descriptive_metrics_dual_full_long(
 
     # ----- AUTHOR 1 -----
     print(f"[INFO:] Extracting Author 1 metrics...")
-    docs_author_1 = nlp.pipe(df[author_1_col], batch_size=batch_size, n_process=n_process)
+    author_1_substantive = _is_substantive_text(df[author_1_col])
+    docs_author_1 = nlp.pipe(df[author_1_col].apply(_normalize_metric_text), batch_size=batch_size, n_process=n_process)
     author_1_metrics = td.extract_df(docs_author_1, include_text=True)
     author_1_metrics.index = df.index
-    author_1_metrics["type"] = "author_1"
-    if "conversation_id" in df.columns:
-        author_1_metrics["conversation_id"] = df["conversation_id"]
+    author_1_metrics = _attach_slot_metadata(author_1_metrics, df, "author_1")
+    author_1_metrics = _mask_non_substantive_rows(author_1_metrics, author_1_substantive)
 
     # ----- AUTHOR 2 -----
     print(f"[INFO:] Extracting Author 2 metrics...")
-    docs_author_2 = nlp.pipe(df[author_2_col], batch_size=batch_size, n_process=n_process)
+    author_2_substantive = _is_substantive_text(df[author_2_col])
+    docs_author_2 = nlp.pipe(df[author_2_col].apply(_normalize_metric_text), batch_size=batch_size, n_process=n_process)
     author_2_metrics = td.extract_df(docs_author_2, include_text=True)
     author_2_metrics.index = df.index
-    author_2_metrics["type"] = "author_2"
-    if "conversation_id" in df.columns:
-        author_2_metrics["conversation_id"] = df["conversation_id"]
+    author_2_metrics = _attach_slot_metadata(author_2_metrics, df, "author_2")
+    author_2_metrics = _mask_non_substantive_rows(author_2_metrics, author_2_substantive)
 
     # ----- STACK LONG -----
     print("[INFO:] Combining metrics (long format)...")
@@ -109,34 +199,27 @@ def get_descriptive_metrics_dual_inter_long(
         else:
             raise e
     
-    # Ensure NaNs don't crash the script 
-    df[author_1_col] = df[author_1_col].fillna("")
-    df[author_2_col] = df[author_2_col].fillna("")
+    author_1_substantive = _is_substantive_text(df[author_1_col])
+    author_2_substantive = _is_substantive_text(df[author_2_col])
+    author_1_text = df[author_1_col].apply(_normalize_metric_text)
+    author_2_text = df[author_2_col].apply(_normalize_metric_text)
 
     # ----- AUTHOR 1 -----
     print(f"[INFO:] Extracting Author 1 metrics...")
     
-    docs_author_1 = nlp.pipe(df[author_1_col], batch_size=batch_size, n_process=n_process)
+    docs_author_1 = nlp.pipe(author_1_text, batch_size=batch_size, n_process=n_process)
     author_1_metrics = td.extract_df(docs_author_1, include_text=True)
     author_1_metrics.index = df.index
-    author_1_metrics["type"] = "author_1"
-    author_1_metrics["interaction_count"] = df["interaction_count"]
-    author_1_metrics["starter"] = df["starter"]
-    
-    if "conversation_id" in df.columns:
-        author_1_metrics["conversation_id"] = df["conversation_id"]
+    author_1_metrics = _attach_slot_metadata(author_1_metrics, df, "author_1")
+    author_1_metrics = _mask_non_substantive_rows(author_1_metrics, author_1_substantive)
 
     # ----- AUTHOR 2 -----
     print(f"[INFO:] Extracting Author 2 metrics...")
-    docs_author_2 = nlp.pipe(df[author_2_col], batch_size=batch_size, n_process=n_process)
+    docs_author_2 = nlp.pipe(author_2_text, batch_size=batch_size, n_process=n_process)
     author_2_metrics = td.extract_df(docs_author_2, include_text=True)
     author_2_metrics.index = df.index
-    author_2_metrics["type"] = "author_2"
-    author_2_metrics["interaction_count"] = df["interaction_count"]
-    author_2_metrics["starter"] = df["starter"]
-
-    if "conversation_id" in df.columns:
-        author_2_metrics["conversation_id"] = df["conversation_id"]
+    author_2_metrics = _attach_slot_metadata(author_2_metrics, df, "author_2")
+    author_2_metrics = _mask_non_substantive_rows(author_2_metrics, author_2_substantive)
 
     # ----- STACK LONG -----
     print("[INFO:] Combining metrics (long format)...")

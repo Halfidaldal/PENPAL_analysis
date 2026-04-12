@@ -27,759 +27,267 @@ knitr::opts_chunk$set(
   dpi = 300
 )
 
-# Load comparison utilities
 source(here::here("analysis/comparison/_comparison_utils.R"))
 
-# Additional packages
 pacman::p_load(
-  lme4,         # Mixed effects models
-  lmerTest,     # P-values for mixed models
-  patchwork,    # Combine plots
-  emmeans,      # Estimated marginal means
-  effectsize    # Effect size calculations
+  lme4,
+  lmerTest,
+  patchwork,
+  emmeans,
+  effectsize
 )
 
-# Set global theme
 theme_set(theme_comparison())
 ```
 
 # Overview
 
-This notebook compares **novelty metrics** across all three experimental conditions:
+This notebook compares three information-theoretic metrics across conditions:
 
-- **Human-AI**: Human co-writing with an LLM
-- **Human-Human**: Two humans co-writing together
-- **AI-AI**: Two AI agents co-writing (simulated baseline)
+- **Novelty / surprise**: how unexpected a contribution is given prior context
+- **Transience**: how quickly its influence fades
+- **Resonance**: novelty minus transience
 
-**Key Metrics (Information-Theoretic Framework):**
+The notebook now follows the new data structure:
 
-- **Novelty (Surprisal)**: How unexpected is a turn given past context? Higher = more surprising/novel
-- **Transience**: How quickly does a turn's influence fade? Higher = less lasting impact
-- **Resonance**: Novelty minus Transience — net forward influence on the narrative
-
-**Key Questions:**
-1. Do humans produce higher novelty than AI?
-2. Does novelty lead to greater resonance in human contributions?
-3. How do Human-Human dynamics compare to Human-AI?
-4. Is the AI-AI baseline more predictable (lower novelty)?
+- it loads novelty scores through the shared comparison helpers,
+- it restricts the analysis to **complete exchanges** in the aligned turn window,
+- it treats `author_1` and `author_2` as **slot 1 / slot 2** rather than fixed identities,
+- it uses role labels only where they are structurally valid:
+  - **Human / AI** in Human-AI
+  - **Starter-side / Non-starter-side** in same-type conditions
 
 # Load Data
 
 ```{r load-data}
-# Load novelty data from each condition
-load_novelty_data <- function(conditions = c("human-ai", "human-human", "ai-ai")) {
-  all_data <- list()
-  
-  for (cond in conditions) {
-    # Try different possible filenames
-    filenames <- c("novelty_scores_40.csv", "novelty_scores.csv")
-    
-    for (fname in filenames) {
-      path <- here("data", cond, "processed", fname)
-      if (file.exists(path)) {
-        df <- if (str_detect(fname, "\\.parquet$")) {
-          read_parquet(path)
-        } else {
-          read_csv(path, show_col_types = FALSE)
-        }
-        cat("Loaded", cond, "from", fname, "\n")
-        all_data[[cond]] <- df %>% mutate(condition = cond)
-        break
-      }
-    }
-  }
-  
-  bind_rows(all_data)
-}
+df_raw <- load_novelty_data(c("human-ai", "human-human", "ai-ai")) %>%
+  filter_complete_exchange_window()
 
-# Load data
-df_combined <- load_novelty_data()
-cat("\nLoaded conditions:", paste(unique(df_combined$condition), collapse = ", "), "\n")
-```
-
-# Schema Normalization
-
-```{r normalize}
-# Data now uses standardized column names from Python pipeline:
-# author_1_surprise, author_2_surprise, author_1_transience, author_2_transience
-
-# Compute resonance (novelty - transience)
-df_analysis <- df_combined %>%
-  mutate(
-    author_1_resonance = author_1_surprise - author_1_transience,
-    author_2_resonance = author_2_surprise - author_2_transience
-  ) %>%
-  filter(interaction_count > 1, interaction_count < 10)
-
-# Prepare condition factor
-df_analysis <- df_analysis %>%
-  prepare_condition_factor(reference = "human-ai")
-
-# Report data summary
-cat("\nAnalysis dataset:\n")
-df_analysis %>%
+df_raw %>%
   group_by(condition) %>%
   summarise(
     n_stories = n_distinct(conversation_id),
     n_turns = n(),
     .groups = "drop"
   ) %>%
-  print()
-
-cat("\nAvailable columns:\n")
-print(names(df_analysis))
+  knitr::kable(caption = "Loaded novelty data by condition")
 ```
 
-## Build Long-Format Dataset with Author Factor
+# Preprocessing
 
-Following the within-condition approach, we stack Author 1 and Author 2 metrics into a long format with `author_role` as a factor. This enables proper testing of asymmetry (whether metrics differ by author role) within and across conditions.
+```{r preprocess}
+df_slots <- bind_rows(
+  df_raw %>%
+    transmute(
+      condition,
+      conversation_id,
+      turn_index,
+      slot = "author_1",
+      role_label = case_when(
+        condition == "human-ai" ~ str_to_title(author_1_type),
+        starter_side == "author_1" ~ "Starter-side",
+        TRUE ~ "Non-starter-side"
+      ),
+      surprise = author_1_surprise,
+      transience = author_1_transience,
+      resonance = author_1_surprise - author_1_transience
+    ),
+  df_raw %>%
+    transmute(
+      condition,
+      conversation_id,
+      turn_index,
+      slot = "author_2",
+      role_label = case_when(
+        condition == "human-ai" ~ str_to_title(author_2_type),
+        starter_side == "author_2" ~ "Starter-side",
+        TRUE ~ "Non-starter-side"
+      ),
+      surprise = author_2_surprise,
+      transience = author_2_transience,
+      resonance = author_2_surprise - author_2_transience
+    )
+) %>%
+  drop_na(surprise, transience, resonance) %>%
+  mutate(
+    condition = factor(
+      condition,
+      levels = c("human-ai", "human-human", "ai-ai"),
+      labels = c("Human-AI", "Human-Human", "AI-AI")
+    ),
+    slot = factor(slot, levels = c("author_1", "author_2"), labels = c("Slot 1", "Slot 2"))
+  )
 
-```{r build-long-format}
-# Create long-format dataset
-df_long <- df_analysis %>%
+df_long <- df_slots %>%
   pivot_longer(
-    cols = c(author_1_surprise, author_2_surprise,
-             author_1_transience, author_2_transience,
-             author_1_resonance, author_2_resonance),
-    names_to = c("author_role", "metric"),
-    names_pattern = "(author_[12])_(surprise|transience|resonance)",
+    cols = c(surprise, transience, resonance),
+    names_to = "metric",
     values_to = "value"
   ) %>%
-  pivot_wider(
-    names_from = metric,
-    values_from = value
-  ) %>%
   mutate(
-    author_role = factor(author_role, levels = c("author_1", "author_2"))
-  ) %>%
-  drop_na(surprise, transience, resonance)
+    metric = factor(metric, levels = c("surprise", "transience", "resonance"))
+  )
 
-cat("=== Long-Format Dataset ===\n")
-df_long %>%
-  group_by(condition, author_role) %>%
-  summarise(
-    n_obs = n(),
-    n_stories = n_distinct(conversation_id),
-    mean_surprise = mean(surprise, na.rm = TRUE),
-    mean_transience = mean(transience, na.rm = TRUE),
-    mean_resonance = mean(resonance, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  print()
-```
-
-## Standardize Within Conversation × Author
-
-Z-score metrics within each (conversation_id × author_role) cell to ensure comparable coefficients across author roles and conditions.
-
-```{r standardize}
-df_std <- df_long %>%
-  group_by(conversation_id, author_role) %>%
-  mutate(
-    surprise_z = as.numeric(scale(surprise)),
-    transience_z = as.numeric(scale(transience)),
-    resonance_z = as.numeric(scale(resonance))
-  ) %>%
-  ungroup() %>%
-  drop_na(surprise_z, transience_z, resonance_z)
-
-# Set up sum-coded contrasts for author role
-contrasts(df_std$author_role) <- contr.sum(2)
-
-cat("Standardized dataset:", nrow(df_std), "observations\n")
+cat("Slot-level rows:", nrow(df_slots), "\n")
+cat("Metric rows:", nrow(df_long), "\n")
 ```
 
 # Descriptive Statistics
 
 ```{r descriptives}
-# Summary statistics by condition and author
-desc_stats <- df_long %>%
-  group_by(condition, author_role) %>%
+df_long %>%
+  group_by(condition, metric) %>%
   summarise(
     n_stories = n_distinct(conversation_id),
     n_obs = n(),
-    surprise_mean = mean(surprise, na.rm = TRUE),
-    surprise_sd = sd(surprise, na.rm = TRUE),
-    transience_mean = mean(transience, na.rm = TRUE),
-    transience_sd = sd(transience, na.rm = TRUE),
-    resonance_mean = mean(resonance, na.rm = TRUE),
-    resonance_sd = sd(resonance, na.rm = TRUE),
+    mean_value = mean(value, na.rm = TRUE),
+    sd_value = sd(value, na.rm = TRUE),
     .groups = "drop"
-  )
-
-desc_stats %>%
-  knitr::kable(
-    digits = 3,
-    caption = "Novelty metrics by condition and author role"
-  )
-```
-
-# Within-Condition Asymmetry Analysis
-
-For each condition, we test whether novelty metrics differ by author role using **metric ~ author_role** models. Significant effects indicate asymmetry (e.g., Author 1 shows higher novelty than Author 2).
-
-## Novelty (Surprisal) Asymmetry
-
-```{r novelty-asymmetry-within}
-conditions <- unique(df_std$condition)
-novelty_asymmetry_results <- tibble()
-
-for (cond in conditions) {
-  df_cond <- filter(df_std, condition == cond)
-  
-  if (nrow(df_cond) < 100) {
-    cat("Skipping", cond, "- insufficient data\n")
-    next
-  }
-  
-  # Set up contrasts for this subset
-  df_cond$author_role <- factor(df_cond$author_role, levels = c("author_1", "author_2"))
-  contrasts(df_cond$author_role) <- contr.sum(2)
-  
-  # Test if surprise differs by author
-  m_surprise <- tryCatch({
-    lmer(surprise ~ author_role + (1 | conversation_id), data = df_cond)
-  }, error = function(e) NULL)
-  
-  if (!is.null(m_surprise)) {
-    emm <- emmeans(m_surprise, specs = "author_role")
-    contrast_result <- pairs(emm)
-    contrast_df <- as.data.frame(contrast_result)
-    
-    novelty_asymmetry_results <- bind_rows(novelty_asymmetry_results, tibble(
-      condition = cond,
-      metric = "Novelty",
-      author_1_mean = as.data.frame(emm)$emmean[1],
-      author_2_mean = as.data.frame(emm)$emmean[2],
-      difference = contrast_df$estimate[1],
-      se = contrast_df$SE[1],
-      t = contrast_df$t.ratio[1],
-      p = contrast_df$p.value[1]
-    ))
-    
-    cat("\n=== ", cond, ": Novelty Asymmetry ===\n", sep = "")
-    print(summary(m_surprise))
-    cat("\n--- Author Means ---\n")
-    print(emm)
-    cat("\n--- Asymmetry Test ---\n")
-    print(contrast_result)
-  }
-}
-
-novelty_asymmetry_results %>%
-  mutate(
-    sig = case_when(
-      p < 0.001 ~ "***",
-      p < 0.01 ~ "**",
-      p < 0.05 ~ "*",
-      p < 0.1 ~ ".",
-      TRUE ~ ""
-    ),
-    interpretation = case_when(
-      p < 0.05 & difference > 0 ~ "Author 1 > Author 2",
-      p < 0.05 & difference < 0 ~ "Author 2 > Author 1",
-      TRUE ~ "No asymmetry"
-    )
   ) %>%
   knitr::kable(
     digits = 3,
-    caption = "Novelty asymmetry by condition (Author 1 - Author 2)"
+    caption = "Overall novelty metrics by condition"
   )
 ```
 
-## Transience Asymmetry
-
-```{r transience-asymmetry-within}
-transience_asymmetry_results <- tibble()
-
-for (cond in conditions) {
-  df_cond <- filter(df_std, condition == cond)
-  
-  if (nrow(df_cond) < 100) next
-  
-  df_cond$author_role <- factor(df_cond$author_role, levels = c("author_1", "author_2"))
-  contrasts(df_cond$author_role) <- contr.sum(2)
-  
-  m_transience <- tryCatch({
-    lmer(transience ~ author_role + (1 | conversation_id), data = df_cond)
-  }, error = function(e) NULL)
-  
-  if (!is.null(m_transience)) {
-    emm <- emmeans(m_transience, specs = "author_role")
-    contrast_result <- pairs(emm)
-    contrast_df <- as.data.frame(contrast_result)
-    
-    transience_asymmetry_results <- bind_rows(transience_asymmetry_results, tibble(
-      condition = cond,
-      metric = "Transience",
-      author_1_mean = as.data.frame(emm)$emmean[1],
-      author_2_mean = as.data.frame(emm)$emmean[2],
-      difference = contrast_df$estimate[1],
-      se = contrast_df$SE[1],
-      t = contrast_df$t.ratio[1],
-      p = contrast_df$p.value[1]
-    ))
-    
-    cat("\n=== ", cond, ": Transience Asymmetry ===\n", sep = "")
-    print(summary(m_transience))
-  }
-}
-
-transience_asymmetry_results %>%
-  mutate(
-    sig = case_when(
-      p < 0.001 ~ "***",
-      p < 0.01 ~ "**",
-      p < 0.05 ~ "*",
-      p < 0.1 ~ ".",
-      TRUE ~ ""
-    ),
-    interpretation = case_when(
-      p < 0.05 & difference > 0 ~ "Author 1 > Author 2",
-      p < 0.05 & difference < 0 ~ "Author 2 > Author 1",
-      TRUE ~ "No asymmetry"
-    )
-  ) %>%
-  knitr::kable(
-    digits = 3,
-    caption = "Transience asymmetry by condition (Author 1 - Author 2)"
-  )
-```
-
-## Resonance Asymmetry
-
-```{r resonance-asymmetry-within}
-resonance_asymmetry_results <- tibble()
-
-for (cond in conditions) {
-  df_cond <- filter(df_std, condition == cond)
-  
-  if (nrow(df_cond) < 100) next
-  
-  df_cond$author_role <- factor(df_cond$author_role, levels = c("author_1", "author_2"))
-  contrasts(df_cond$author_role) <- contr.sum(2)
-  
-  m_resonance <- tryCatch({
-    lmer(resonance ~ author_role + (1 | conversation_id), data = df_cond)
-  }, error = function(e) NULL)
-  
-  if (!is.null(m_resonance)) {
-    emm <- emmeans(m_resonance, specs = "author_role")
-    contrast_result <- pairs(emm)
-    contrast_df <- as.data.frame(contrast_result)
-    
-    resonance_asymmetry_results <- bind_rows(resonance_asymmetry_results, tibble(
-      condition = cond,
-      metric = "Resonance",
-      author_1_mean = as.data.frame(emm)$emmean[1],
-      author_2_mean = as.data.frame(emm)$emmean[2],
-      difference = contrast_df$estimate[1],
-      se = contrast_df$SE[1],
-      t = contrast_df$t.ratio[1],
-      p = contrast_df$p.value[1]
-    ))
-    
-    cat("\n=== ", cond, ": Resonance Asymmetry ===\n", sep = "")
-    print(summary(m_resonance))
-  }
-}
-
-resonance_asymmetry_results %>%
-  mutate(
-    sig = case_when(
-      p < 0.001 ~ "***",
-      p < 0.01 ~ "**",
-      p < 0.05 ~ "*",
-      p < 0.1 ~ ".",
-      TRUE ~ ""
-    ),
-    interpretation = case_when(
-      p < 0.05 & difference > 0 ~ "Author 1 > Author 2",
-      p < 0.05 & difference < 0 ~ "Author 2 > Author 1",
-      TRUE ~ "No asymmetry"
-    )
-  ) %>%
-  knitr::kable(
-    digits = 3,
-    caption = "Resonance asymmetry by condition (Author 1 - Author 2)"
-  )
-```
-
-## Summary of Within-Condition Asymmetry
-
-```{r asymmetry-summary}
-# Combine all asymmetry results
-all_asymmetry <- bind_rows(
-  novelty_asymmetry_results,
-  transience_asymmetry_results,
-  resonance_asymmetry_results
-)
-
-all_asymmetry %>%
-  mutate(
-    sig = case_when(
-      p < 0.001 ~ "***",
-      p < 0.01 ~ "**",
-      p < 0.05 ~ "*",
-      p < 0.1 ~ ".",
-      TRUE ~ ""
-    )
-  ) %>%
-  select(condition, metric, author_1_mean, author_2_mean, difference, se, p, sig) %>%
-  knitr::kable(
-    digits = 3,
-    caption = "Summary: Asymmetry in novelty metrics by condition",
-    col.names = c("Condition", "Metric", "Author 1", "Author 2", "Diff", "SE", "p", "")
-  )
-```
-
-# Cross-Condition Comparison
-
-## Test if Asymmetry Differs Across Conditions
-
-Using **metric ~ author_role × condition** interactions to test whether the pattern of asymmetry (Author 1 vs Author 2 difference) varies across conditions.
-
-```{r cross-condition-asymmetry}
-# Prepare condition factor with sum coding
-df_std$condition <- factor(df_std$condition)
-contrasts(df_std$condition) <- contr.sum(length(levels(df_std$condition)))
-
-# Novelty: author × condition interaction
-model_novelty_full <- lmer(
-  surprise ~ author_role * condition + (1 | conversation_id),
-  data = df_std
-)
-
-cat("=== Novelty: Author × Condition Interaction ===\n")
-print(summary(model_novelty_full))
-
-cat("\n=== Novelty Means by Condition × Author ===\n")
-emm_novelty <- emmeans(model_novelty_full, specs = c("condition", "author_role"))
-print(emm_novelty)
-
-cat("\n=== Asymmetry Within Each Condition ===\n")
-asymmetry_by_cond <- pairs(emm_novelty, by = "condition")
-print(asymmetry_by_cond)
-
-cat("\n=== Does Asymmetry Differ Across Conditions? ===\n")
-asymmetry_comparison <- contrast(emm_novelty, interaction = c("pairwise", "pairwise"))
-print(asymmetry_comparison)
-```
-
-```{r transience-cross-condition}
-# Transience: author × condition interaction
-model_transience_full <- lmer(
-  transience ~ author_role * condition + (1 | conversation_id),
-  data = df_std
-)
-
-cat("=== Transience: Author × Condition Interaction ===\n")
-print(summary(model_transience_full))
-
-cat("\n=== Transience Asymmetry by Condition ===\n")
-emm_transience <- emmeans(model_transience_full, specs = c("condition", "author_role"))
-print(pairs(emm_transience, by = "condition"))
-```
-
-```{r resonance-cross-condition}
-# Resonance: author × condition interaction
-model_resonance_full <- lmer(
-  resonance ~ author_role * condition + (1 | conversation_id),
-  data = df_std
-)
-
-cat("=== Resonance: Author × Condition Interaction ===\n")
-print(summary(model_resonance_full))
-
-cat("\n=== Resonance Asymmetry by Condition ===\n")
-emm_resonance <- emmeans(model_resonance_full, specs = c("condition", "author_role"))
-print(pairs(emm_resonance, by = "condition"))
-```
-
-# Novelty-Resonance Relationship
-
-## Does the Innovation Bias (Novelty → Resonance Slope) Differ by Author and Condition?
-
-```{r innovation-bias-within-condition}
-# For each condition, test surprise × author_role interaction on resonance
-innovation_bias_results <- tibble()
-
-for (cond in conditions) {
-  df_cond <- filter(df_long, condition == cond)
-  
-  if (nrow(df_cond) < 100) next
-  
-  df_cond$author_role <- factor(df_cond$author_role, levels = c("author_1", "author_2"))
-  
-  m_innovation <- tryCatch({
-    lmer(resonance ~ surprise * author_role + (1 | conversation_id), data = df_cond)
-  }, error = function(e) NULL)
-  
-  if (!is.null(m_innovation)) {
-    slopes <- emtrends(m_innovation, specs = "author_role", var = "surprise")
-    contrast_result <- pairs(slopes)
-    contrast_df <- as.data.frame(contrast_result)
-    slopes_df <- as.data.frame(slopes)
-    
-    innovation_bias_results <- bind_rows(innovation_bias_results, tibble(
-      condition = cond,
-      author_1_slope = slopes_df$surprise.trend[1],
-      author_2_slope = slopes_df$surprise.trend[2],
-      slope_diff = contrast_df$estimate[1],
-      se = contrast_df$SE[1],
-      t = contrast_df$t.ratio[1],
-      p = contrast_df$p.value[1]
-    ))
-    
-    cat("\n=== ", cond, ": Innovation Bias (Novelty → Resonance) ===\n", sep = "")
-    cat("Slopes by author:\n")
-    print(slopes)
-    cat("\nSlope difference test:\n")
-    print(contrast_result)
-  }
-}
-
-innovation_bias_results %>%
-  mutate(
-    sig = case_when(
-      p < 0.001 ~ "***",
-      p < 0.01 ~ "**",
-      p < 0.05 ~ "*",
-      p < 0.1 ~ ".",
-      TRUE ~ ""
-    ),
-    interpretation = case_when(
-      p < 0.05 & slope_diff > 0 ~ "Author 1 slope > Author 2",
-      p < 0.05 & slope_diff < 0 ~ "Author 2 slope > Author 1",
-      TRUE ~ "No slope difference"
-    )
-  ) %>%
-  knitr::kable(
-    digits = 3,
-    caption = "Innovation bias (Novelty→Resonance slope) asymmetry by condition"
-  )
-```
-
-## Cross-Condition Innovation Bias Comparison
-
-```{r innovation-bias-cross-condition}
-# Full three-way interaction: surprise × author × condition
-model_innovation_full <- lmer(
-  resonance ~ surprise * author_role * condition + (1 | conversation_id),
-  data = df_std
-)
-
-cat("=== Full Model: Novelty × Author × Condition ===\n")
-print(summary(model_innovation_full))
-
-cat("\n=== Innovation Slopes by Condition × Author ===\n")
-emm_innovation_slopes <- emtrends(model_innovation_full, 
-                                   specs = c("condition", "author_role"),
-                                   var = "surprise")
-print(emm_innovation_slopes)
-
-cat("\n=== Slope Asymmetry Within Each Condition ===\n")
-print(pairs(emm_innovation_slopes, by = "condition"))
-```
-
-# Visualization
-
-```{r distribution-plots, fig.width=14, fig.height=10}
-# Distribution plots for all three metrics
-p1 <- df_long %>%
-  ggplot(aes(x = surprise, fill = author_role)) +
+```{r condition-distributions, fig.width=12, fig.height=8}
+df_long %>%
+  ggplot(aes(x = value, fill = condition)) +
   geom_density(alpha = 0.5) +
-  facet_wrap(~condition, ncol = 3) +
-  scale_fill_manual(values = c("author_1" = "#377EB8", "author_2" = "#FF7F00"),
-                    labels = c("Author 1", "Author 2")) +
-  labs(title = "Novelty (Surprisal) Distribution", x = "Surprisal", y = "Density", fill = "Author")
-
-p2 <- df_long %>%
-  ggplot(aes(x = transience, fill = author_role)) +
-  geom_density(alpha = 0.5) +
-  facet_wrap(~condition, ncol = 3) +
-  scale_fill_manual(values = c("author_1" = "#377EB8", "author_2" = "#FF7F00"),
-                    labels = c("Author 1", "Author 2")) +
-  labs(title = "Transience Distribution", x = "Transience", y = "Density", fill = "Author")
-
-p3 <- df_long %>%
-  ggplot(aes(x = resonance, fill = author_role)) +
-  geom_density(alpha = 0.5) +
-  facet_wrap(~condition, ncol = 3) +
-  scale_fill_manual(values = c("author_1" = "#377EB8", "author_2" = "#FF7F00"),
-                    labels = c("Author 1", "Author 2")) +
-  labs(title = "Resonance Distribution", x = "Resonance", y = "Density", fill = "Author")
-
-p1 / p2 / p3 + plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
-```
-
-```{r asymmetry-barplot, fig.width=12, fig.height=8}
-# Plot asymmetry across metrics and conditions
-if (nrow(all_asymmetry) > 0) {
-  all_asymmetry %>%
-    mutate(
-      metric = factor(metric, levels = c("Novelty", "Transience", "Resonance"))
-    ) %>%
-    ggplot(aes(x = condition, y = difference, fill = condition)) +
-    geom_col(width = 0.6, alpha = 0.8) +
-    geom_errorbar(aes(ymin = difference - 1.96 * se, ymax = difference + 1.96 * se),
-                  width = 0.2) +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-    facet_wrap(~metric, scales = "free_y", ncol = 3) +
-    scale_fill_manual(values = condition_colors) +
-    labs(
-      title = "Novelty Metric Asymmetry by Condition",
-      subtitle = "Difference: Author 1 - Author 2. Positive = Author 1 > Author 2",
-      y = "Asymmetry (Author 1 - Author 2)",
-      x = "Condition"
-    ) +
-    theme(
-      legend.position = "none",
-      axis.text.x = element_text(angle = 45, hjust = 1)
-    )
-}
-```
-
-```{r innovation-bias-plot, fig.width=14, fig.height=5}
-# Innovation bias visualization
-p1 <- df_long %>%
-  drop_na(surprise, resonance) %>%
-  ggplot(aes(x = surprise, y = resonance, color = author_role)) +
-  geom_point(alpha = 0.05, size = 0.5) +
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
-  facet_wrap(~condition, ncol = 3) +
-  scale_color_manual(values = c("author_1" = "#377EB8", "author_2" = "#FF7F00"),
-                     labels = c("Author 1", "Author 2")) +
+  scale_fill_manual(values = condition_colors) +
+  facet_wrap(~metric, scales = "free", ncol = 1) +
   labs(
-    title = "Innovation Bias: Novelty → Resonance Relationship",
-    subtitle = "Steeper slope = novel contributions have greater forward influence",
-    x = "Novelty (Surprisal)",
-    y = "Resonance",
-    color = "Author"
+    title = "Novelty Metric Distributions by Condition",
+    x = "Metric Value",
+    y = "Density"
   ) +
   theme(legend.position = "bottom")
-
-p1
 ```
 
-```{r innovation-slopes-barplot, fig.width=10, fig.height=5}
-# Plot innovation bias slopes by condition and author
-if (nrow(innovation_bias_results) > 0) {
-  innovation_bias_results %>%
-    pivot_longer(cols = c(author_1_slope, author_2_slope),
-                 names_to = "author",
-                 values_to = "slope") %>%
-    mutate(author = if_else(author == "author_1_slope", "Author 1", "Author 2")) %>%
-    ggplot(aes(x = condition, y = slope, fill = author)) +
-    geom_col(position = position_dodge(width = 0.8), width = 0.7, alpha = 0.8) +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-    scale_fill_manual(values = c("Author 1" = "#377EB8", "Author 2" = "#FF7F00")) +
-    labs(
-      title = "Innovation Bias Slopes by Condition and Author",
-      subtitle = "Slope of Novelty → Resonance relationship",
-      y = "Novelty → Resonance Slope (β)",
-      x = "Condition",
-      fill = "Author"
-    ) +
-    theme(legend.position = "bottom")
+# Condition-Level Comparison
+
+```{r condition-models}
+condition_results <- purrr::map_dfr(levels(df_long$metric), function(metric_name) {
+  df_metric <- filter(df_long, metric == metric_name)
+
+  model <- lmer(value ~ condition + (1 | conversation_id), data = df_metric)
+  emm <- emmeans(model, specs = "condition")
+  pairs_df <- as.data.frame(pairs(emm, adjust = "bonferroni"))
+
+  tibble(
+    metric = metric_name,
+    omnibus = paste(capture.output(print(anova(model))), collapse = "\n"),
+    contrasts = paste(capture.output(print(pairs_df)), collapse = "\n")
+  )
+})
+
+for (metric_name in levels(df_long$metric)) {
+  cat("\n===", metric_name, "===\n")
+  model <- lmer(value ~ condition + (1 | conversation_id), data = filter(df_long, metric == metric_name))
+  print(summary(model))
+  print(pairs(emmeans(model, specs = "condition"), adjust = "bonferroni"))
 }
 ```
 
-```{r summary-metrics-plot, fig.width=14, fig.height=10}
-# Summary visualization: All metrics by condition and author (original format)
-# This recreates the grid layout with authors as rows and metrics as columns
+# Within-Condition Slot Asymmetry
 
-summary_data <- df_long %>%
-  group_by(condition, author_role) %>%
-  summarise(
-    novelty_mean = mean(surprise, na.rm = TRUE),
-    novelty_se = sd(surprise, na.rm = TRUE) / sqrt(n()),
-    transience_mean = mean(transience, na.rm = TRUE),
-    transience_se = sd(transience, na.rm = TRUE) / sqrt(n()),
-    resonance_mean = mean(resonance, na.rm = TRUE),
-    resonance_se = sd(resonance, na.rm = TRUE) / sqrt(n()),
-    .groups = "drop"
+```{r slot-asymmetry}
+slot_asymmetry <- purrr::map_dfr(levels(df_long$metric), function(metric_name) {
+  purrr::map_dfr(levels(df_long$condition), function(cond_name) {
+    df_subset <- df_long %>%
+      filter(metric == metric_name, condition == cond_name)
+
+    if (nrow(df_subset) < 50) {
+      return(tibble())
+    }
+
+    model <- lmer(value ~ slot + (1 | conversation_id), data = df_subset)
+    emm <- emmeans(model, specs = "slot")
+    contrast_df <- as.data.frame(pairs(emm))
+
+    tibble(
+      metric = metric_name,
+      condition = cond_name,
+      slot_1_mean = as.data.frame(emm)$emmean[1],
+      slot_2_mean = as.data.frame(emm)$emmean[2],
+      difference = contrast_df$estimate[1],
+      se = contrast_df$SE[1],
+      t = contrast_df$t.ratio[1],
+      p = contrast_df$p.value[1]
+    )
+  })
+})
+
+slot_asymmetry %>%
+  mutate(
+    sig = case_when(
+      p < 0.001 ~ "***",
+      p < 0.01 ~ "**",
+      p < 0.05 ~ "*",
+      p < 0.1 ~ ".",
+      TRUE ~ ""
+    )
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Within-condition slot asymmetry for novelty metrics"
   )
+```
 
-# Reshape for plotting using the original pivot approach
-summary_long <- summary_data %>%
+# Role-Level View
+
+```{r role-view, fig.width=12, fig.height=7}
+df_slots %>%
   pivot_longer(
-    cols = ends_with("_mean") | ends_with("_se"),
-    names_to = "var",
+    cols = c(surprise, transience, resonance),
+    names_to = "metric",
     values_to = "value"
   ) %>%
-  separate(var, into = c("metric", "stat"), sep = "_(?=mean$|se$)") %>%
-  pivot_wider(names_from = stat, values_from = value) %>%
-  mutate(
-    author = if_else(author_role == "author_1", "Author 1", "Author 2"),
-    metric = str_to_title(metric)
-  )
-
-# Create summary bar plots with facet_grid (author rows × metric columns)
-ggplot(summary_long, aes(x = condition, y = mean, fill = condition)) +
-  geom_col(alpha = 0.8, width = 0.6) +
-  geom_errorbar(aes(ymin = mean - 1.96 * se, ymax = mean + 1.96 * se), 
-                width = 0.2, linewidth = 0.7) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-  facet_grid(author ~ metric, scales = "free_y") +
-  scale_fill_manual(values = condition_colors) +
+  ggplot(aes(x = role_label, y = value, fill = role_label)) +
+  geom_boxplot(alpha = 0.8, outlier.alpha = 0.1) +
+  facet_grid(metric ~ condition, scales = "free_y") +
   labs(
-    title = "Summary: Novelty Metrics by Condition and Author",
-    subtitle = "Error bars show 95% CI",
-    x = "Condition",
-    y = "Value"
+    title = "Role-Conditioned Novelty Metrics",
+    subtitle = "Human / AI in Human-AI; Starter-side / Non-starter-side in same-type conditions",
+    x = NULL,
+    y = "Metric Value"
   ) +
-  theme(
-    legend.position = "none",
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  )
+  theme(legend.position = "none")
+```
+
+# Novelty-to-Resonance Relationship
+
+```{r novelty-resonance}
+innovation_model <- lmer(
+  resonance ~ surprise * condition + (1 | conversation_id),
+  data = df_slots
+)
+
+cat("Novelty-to-resonance model:\n")
+print(summary(innovation_model))
+```
+
+```{r novelty-resonance-plot, fig.width=12, fig.height=5}
+df_slots %>%
+  ggplot(aes(x = surprise, y = resonance, color = condition)) +
+  geom_point(alpha = 0.08, size = 0.6) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.1) +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Novelty vs Resonance by Condition",
+    x = "Novelty / Surprise",
+    y = "Resonance"
+  ) +
+  theme(legend.position = "bottom")
 ```
 
 # Summary
 
-```{r summary-table}
-# Combine key results
-if (nrow(all_asymmetry) > 0) {
-  all_asymmetry %>%
-    mutate(
-      sig = case_when(
-        p < 0.001 ~ "***",
-        p < 0.01 ~ "**",
-        p < 0.05 ~ "*",
-        p < 0.1 ~ ".",
-        TRUE ~ "ns"
-      ),
-      result = paste0(round(difference, 3), " (p=", format.pval(p, digits = 2), ") ", sig)
-    ) %>%
-    select(condition, metric, result) %>%
-    pivot_wider(names_from = metric, values_from = result) %>%
-    knitr::kable(
-      caption = "Summary: Novelty metric asymmetry (Author 1 - Author 2) by condition"
-    )
-}
-```
+This notebook is now aligned with the new structure by:
 
-# Key Findings
-
-Based on the analysis above:
-
-1. **Within-condition asymmetry**: For each condition, we test whether novelty, transience, and resonance differ between Author 1 and Author 2. Significant asymmetry indicates one author contributes more novel/transient/resonant content.
-
-2. **Cross-condition asymmetry comparison**: The author_role × condition interaction tests whether the *pattern* of asymmetry differs across conditions. 
-   - If Human-AI shows Author 1 > Author 2 novelty but Human-Human shows no difference, the interaction is significant.
-   - If all conditions show similar asymmetry patterns, the interaction is non-significant.
-
-3. **Innovation bias asymmetry**: The novelty → resonance slope indicates whether novel contributions have lasting forward influence (innovation bias). Testing slope asymmetry reveals whether one author's innovations are more "rewarded" in narrative development.
-
-4. **Interpretation for Human-AI**:
-   - If humans (Author 1) show higher novelty than AI (Author 2), this indicates humans introduce more surprising content.
-   - If humans also show higher transience, their contributions fade faster.
-   - If humans show higher resonance despite higher transience, their net forward influence is still positive.
-   - A steeper innovation slope for humans means their novel contributions disproportionately shape the story.
-
-5. **Baseline comparison**: The AI-AI condition serves as a baseline for symmetric collaboration. Deviations in Human-AI or Human-Human patterns highlight condition-specific asymmetries.
-
----
+- loading novelty data through the shared helper layer,
+- restricting the analysis to **complete aligned exchanges**,
+- using **slot-based asymmetry** instead of assuming stable author identities,
+- surfacing role labels only where they are valid under the new schema.
 
 *Analysis completed: `r Sys.time()`*

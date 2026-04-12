@@ -9,11 +9,23 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 
 
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
+_MISSING_TEXT_VALUES = {"", "nan", "none", "null"}
 
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
+
+def _normalize_metric_text(value):
+    if value is None:
+        return None
+    if isinstance(value, float) and np.isnan(value):
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    text = str(value).strip()
+    if text.lower() in _MISSING_TEXT_VALUES:
+        return None
+    return text
 
 def load_language_model(model_path, device=None):
     """
@@ -127,18 +139,22 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     pd.DataFrame
         DataFrame with added novelty columns
     """
-    df["author_1_ids"] = df["author_1"].apply(
-        lambda txt: tokenizer(
-            "" if pd.isna(txt) else str(txt),
-            add_special_tokens=False
-        )["input_ids"]
+    df = df.copy()
+    sort_columns = [col for col in ["conversation_id", "turn", "timestamp"] if col in df.columns]
+    if sort_columns:
+        df = df.sort_values(sort_columns).reset_index(drop=True)
+
+    author_1_text = df["author_1"].apply(_normalize_metric_text)
+    author_2_text = df["author_2"].apply(_normalize_metric_text)
+    author_1_has_text = author_1_text.notna()
+    author_2_has_text = author_2_text.notna()
+
+    df["author_1_ids"] = author_1_text.apply(
+        lambda txt: tokenizer(txt or "", add_special_tokens=False)["input_ids"]
     )
 
-    df["author_2_ids"] = df["author_2"].apply(
-        lambda txt: tokenizer(
-            "" if pd.isna(txt) else str(txt),
-            add_special_tokens=False
-        )["input_ids"]
+    df["author_2_ids"] = author_2_text.apply(
+        lambda txt: tokenizer(txt or "", add_special_tokens=False)["input_ids"]
     )
     
     # Identify a safe start token for unconditional probability
@@ -155,7 +171,7 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     author_1_novelty, author_1_raw, author_1_entropy = [], [], []
     author_2_novelty, author_2_raw, author_2_entropy = [], [], []
     
-    for _, row in tqdm(df.iterrows(), total=len(df), desc="Computing novelty"):
+    for pos, (_, row) in enumerate(tqdm(df.iterrows(), total=len(df), desc="Computing novelty")):
         client = row.get("conversation_id", None)
         
         # Reset context at new session
@@ -165,29 +181,31 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
         
         # Author 1 novelty
         a1_ids = row["author_1_ids"]
-        # 1. Nominal (Conditional)
-        avg_s, total_s = calc_sentence_surprisal(context_buffer, a1_ids, model, window_size)
-        # 2. Baseline (Unconditional)
-        avg_base, _ = calc_sentence_surprisal(base_context, a1_ids, model, window_size)
-        
-        author_1_raw.append(avg_s) # Keep original for reference
-        # The new metric: Cond - Uncond. 
-        # If context helps, Cond < Uncond => Negative value.
-        # High Novelty (Deviation) => Cond ~ Uncond => Closer to 0.
-        author_1_novelty.append(avg_s - avg_base) 
-        author_1_entropy.append(total_s)
-        
-        context_buffer.extend(a1_ids)
+        if author_1_has_text.iloc[pos] and a1_ids:
+            avg_s, total_s = calc_sentence_surprisal(context_buffer, a1_ids, model, window_size)
+            avg_base, _ = calc_sentence_surprisal(base_context, a1_ids, model, window_size)
+            author_1_raw.append(avg_s)
+            author_1_novelty.append(avg_s - avg_base)
+            author_1_entropy.append(total_s)
+            context_buffer.extend(a1_ids)
+        else:
+            author_1_raw.append(np.nan)
+            author_1_novelty.append(np.nan)
+            author_1_entropy.append(np.nan)
         
         # Author 2 novelty
         a2_ids = row["author_2_ids"]
-        avg_a, total_a = calc_sentence_surprisal(context_buffer, a2_ids, model, window_size)
-        avg_base_a, _ = calc_sentence_surprisal(base_context, a2_ids, model, window_size)
-        
-        author_2_raw.append(avg_a)
-        author_2_novelty.append(avg_a - avg_base_a)
-        author_2_entropy.append(total_a)
-        context_buffer.extend(a2_ids)
+        if author_2_has_text.iloc[pos] and a2_ids:
+            avg_a, total_a = calc_sentence_surprisal(context_buffer, a2_ids, model, window_size)
+            avg_base_a, _ = calc_sentence_surprisal(base_context, a2_ids, model, window_size)
+            author_2_raw.append(avg_a)
+            author_2_novelty.append(avg_a - avg_base_a)
+            author_2_entropy.append(total_a)
+            context_buffer.extend(a2_ids)
+        else:
+            author_2_raw.append(np.nan)
+            author_2_novelty.append(np.nan)
+            author_2_entropy.append(np.nan)
     
     # Use standardized column names
     df["author_1_surprise"] = author_1_novelty
@@ -228,6 +246,14 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
     pd.DataFrame
         DataFrame with added transience columns
     """
+    df = df.copy()
+    sort_columns = [col for col in ["conversation_id", "turn", "timestamp"] if col in df.columns]
+    if sort_columns:
+        df = df.sort_values(sort_columns).reset_index(drop=True)
+
+    author_1_has_text = df["author_1"].apply(_normalize_metric_text).notna()
+    author_2_has_text = df["author_2"].apply(_normalize_metric_text).notna()
+
     # Identify a safe start token for unconditional probability
     bos_token_id = tokenizer.bos_token_id
     if bos_token_id is None:
@@ -259,26 +285,26 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
         # Author 1 transience (Predictor is just the current turn)
         a1_context = row["author_1_ids"]
         
-        if future_ids_author_1:
+        if author_1_has_text.iloc[pos] and future_ids_author_1:
             avg_fut, _ = calc_sentence_surprisal(a1_context, future_ids_author_1, model, window_size)
             avg_base, _ = calc_sentence_surprisal(base_context, future_ids_author_1, model, window_size)
             # Metric: Cond - Uncond
             author_1_transience.append(avg_fut - avg_base)
             author_1_raw.append(avg_fut)
         else:
-            author_1_transience.append(0.0)
-            author_1_raw.append(0.0)
+            author_1_transience.append(np.nan)
+            author_1_raw.append(np.nan)
         
         # Author 2 transience
         a2_context = row["author_2_ids"]
-        if future_ids_author_2:
+        if author_2_has_text.iloc[pos] and future_ids_author_2:
             avg_fut_a2, _ = calc_sentence_surprisal(a2_context, future_ids_author_2, model, window_size)
             avg_base_a2, _ = calc_sentence_surprisal(base_context, future_ids_author_2, model, window_size)
             author_2_transience.append(avg_fut_a2 - avg_base_a2)
             author_2_raw.append(avg_fut_a2)
         else:
-            author_2_transience.append(0.0)
-            author_2_raw.append(0.0)
+            author_2_transience.append(np.nan)
+            author_2_raw.append(np.nan)
     
     df["author_1_transience"] = author_1_transience
     df["author_2_transience"] = author_2_transience

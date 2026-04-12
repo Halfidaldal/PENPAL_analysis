@@ -6,8 +6,9 @@ This script:
 1. Loads raw story data
 2. Applies edit distance filtering (optional, human experiments only)
 3. Removes "This is the story of" prefix
-4. Builds full story text (full_story, full_author_1, full_author_2 columns)
-5. Saves cleaned data to data/<experiment>/interim/
+4. Adds exchange-aligned analysis metadata
+5. Builds full story text (full_story, full_author_1, full_author_2 columns)
+6. Saves cleaned data to data/<experiment>/interim/
 
 Supports all three conditions:
 - human-ai: Human-AI collaborative stories
@@ -35,11 +36,13 @@ from nes.process_spelling_openai import correct_spelling, compute_edit_distance_
 from nes.cleaning import (
     filter_by_edit_distance,
     build_full_story_text,
+    build_long_format_analysis,
     filter_by_respondent_id,
     clean_user_ai_start,
     clean_ai_ai_data,
     keep_complete_conversations,
     randomize_author_assignment,
+    add_exchange_aligned_metadata,
 )
 from nes.io import load_csv, save_csv, get_project_root, load_config, get_active_experiment, get_experiment_config, get_shared_config
 
@@ -92,6 +95,7 @@ def main():
         df.columns[1]: "author_1",
         df.columns[2]: "author_2"
     })
+    df['condition'] = experiment
     
     print(f"Loaded {len(df)} rows")
     
@@ -154,16 +158,25 @@ def main():
     print("\nRemoving incomplete conversation fragments...")
     df_filtered = keep_complete_conversations(df_filtered, group_col='conversation_id')
 
+    print("\nAdding exchange-aligned analysis metadata...")
+    df_filtered = add_exchange_aligned_metadata(df_filtered, experiment=experiment)
+
     print("\nBuilding full story text...")
     # Save filtered interaction-level data
     output_interaction = "interaction_level_stories_filtered_simulated.csv" if simulated else "interaction_level_stories_filtered.csv"
     save_csv(df_filtered, output_interaction, stage="interim")
+
+    print("\nBuilding long-format analysis export...")
+    df_long = build_long_format_analysis(df_filtered)
+    output_long = "interaction_level_stories_long_filtered_simulated.csv" if simulated else "interaction_level_stories_long_filtered.csv"
+    save_csv(df_long, output_long, stage="interim")
     
     df_stories = build_full_story_text(df_filtered, experiment=experiment)
     output_stories = "stories_full_text_filtered_simulated.csv" if simulated else "stories_full_text_filtered.csv"
     save_csv(df_stories, output_stories, stage="interim")
     
     print(f"\n✓ Filtered to {len(df_filtered)} interaction rows")
+    print(f"✓ Built {len(df_long)} long-format contribution rows")
     print(f"✓ Built {len(df_stories)} complete stories")
     print(f"✓ Saved to {exp_config['interim_dir']}/")
     print("\n✅ Script 02 complete!")

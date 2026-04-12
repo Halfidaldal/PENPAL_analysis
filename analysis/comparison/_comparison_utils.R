@@ -15,6 +15,278 @@ PROJECT_ROOT <- here()
 # Data Loading Functions
 # =============================================================================
 
+clean_conversation_id <- function(x) {
+  if (is.list(x)) {
+    x <- purrr::map_chr(x, ~ paste(unlist(.x), collapse = ""))
+  }
+  x <- as.character(x)
+  x %>%
+    str_replace_all("^\\[|\\]$", "") %>%
+    str_replace_all("^['\"]|['\"]$", "")
+}
+
+coerce_numeric_cols <- function(df, cols = c("turn", "interaction_count", "analysis_turn")) {
+  present_cols <- intersect(cols, names(df))
+  if (length(present_cols) == 0) {
+    return(df)
+  }
+
+  df %>%
+    mutate(across(all_of(present_cols), ~ suppressWarnings(as.numeric(.x))))
+}
+
+load_interaction_metadata <- function(condition) {
+  path <- here("data", condition, "interim", "interaction_level_stories_filtered.csv")
+
+  if (!file.exists(path)) {
+    warning(paste("Interaction metadata not found:", path))
+    return(NULL)
+  }
+
+  read_csv(path, show_col_types = FALSE) %>%
+    mutate(conversation_id = clean_conversation_id(conversation_id)) %>%
+    coerce_numeric_cols()
+}
+
+attach_interaction_metadata <- function(df, condition = NULL) {
+  if (!"conversation_id" %in% names(df)) {
+    return(df)
+  }
+
+  if (is.null(condition)) {
+    if ("condition" %in% names(df) && n_distinct(df$condition) == 1) {
+      condition <- unique(df$condition)
+    } else {
+      return(df %>% mutate(conversation_id = clean_conversation_id(conversation_id)))
+    }
+  }
+
+  metadata_df <- load_interaction_metadata(condition)
+  if (is.null(metadata_df)) {
+    return(df %>% mutate(conversation_id = clean_conversation_id(conversation_id)))
+  }
+
+  df <- df %>%
+    mutate(conversation_id = clean_conversation_id(conversation_id)) %>%
+    coerce_numeric_cols()
+
+  key_candidates <- c("conversation_id", "turn", "interaction_count")
+  join_keys <- intersect(key_candidates, intersect(names(df), names(metadata_df)))
+
+  if ("conversation_id" %in% join_keys && length(join_keys) >= 2) {
+    metadata_join <- metadata_df %>%
+      distinct(!!!rlang::syms(join_keys), .keep_all = TRUE)
+  } else if ("conversation_id" %in% names(df)) {
+    conversation_level_cols <- intersect(
+      c(
+        "conversation_id", "starter", "starter_side", "starter_type",
+        "author_1", "author_2", "author_1_type", "author_2_type",
+        "respondent_id", "respondent_id_u1", "respondent_id_u2",
+        "llm_type", "model_id"
+      ),
+      names(metadata_df)
+    )
+
+    metadata_join <- metadata_df %>%
+      select(all_of(conversation_level_cols)) %>%
+      distinct(conversation_id, .keep_all = TRUE)
+    join_keys <- "conversation_id"
+  } else {
+    return(df)
+  }
+
+  df_joined <- df %>%
+    left_join(metadata_join, by = join_keys, suffix = c("", ".meta"))
+
+  meta_suffix_cols <- names(df_joined)[str_detect(names(df_joined), "\\.meta$")]
+
+  for (meta_col in meta_suffix_cols) {
+    base_col <- str_remove(meta_col, "\\.meta$")
+    if (base_col %in% names(df_joined)) {
+      cast_meta <- tryCatch(
+        vctrs::vec_cast(df_joined[[meta_col]], df_joined[[base_col]]),
+        error = function(e) NULL
+      )
+
+      if (!is.null(cast_meta)) {
+        df_joined[[base_col]] <- dplyr::coalesce(df_joined[[base_col]], cast_meta)
+      }
+    } else {
+      df_joined[[base_col]] <- df_joined[[meta_col]]
+    }
+  }
+
+  df_joined %>%
+    select(-all_of(meta_suffix_cols))
+}
+
+ensure_role_metadata <- function(df) {
+  df <- df %>%
+    mutate(conversation_id = clean_conversation_id(conversation_id))
+
+  if (!"starter_side" %in% names(df) && "starter" %in% names(df)) {
+    df <- df %>% mutate(starter_side = starter)
+  }
+
+  if (!"speaker_slot" %in% names(df)) {
+    if ("type" %in% names(df)) {
+      df <- df %>%
+        mutate(
+          speaker_slot = case_when(
+            type %in% c("author_1", "user", "agent_1") ~ "author_1",
+            type %in% c("author_2", "user2", "ai", "agent_2") ~ "author_2",
+            TRUE ~ as.character(type)
+          )
+        )
+    } else if ("agent" %in% names(df)) {
+      df <- df %>%
+        mutate(
+          speaker_slot = case_when(
+            agent %in% c("author_1", "author_2") ~ as.character(agent),
+            TRUE ~ NA_character_
+          )
+        )
+    }
+  }
+
+  if (!"speaker_type" %in% names(df) &&
+      all(c("speaker_slot", "author_1_type", "author_2_type") %in% names(df))) {
+    df <- df %>%
+      mutate(
+        speaker_type = case_when(
+          speaker_slot == "author_1" ~ author_1_type,
+          speaker_slot == "author_2" ~ author_2_type,
+          TRUE ~ NA_character_
+        )
+      )
+  }
+
+  if (!"speaker_type" %in% names(df) && "type" %in% names(df)) {
+    df <- df %>%
+      mutate(
+        speaker_type = case_when(
+          type %in% c("user", "user2") ~ "human",
+          type %in% c("ai", "agent_1", "agent_2") ~ "ai",
+          TRUE ~ NA_character_
+        )
+      )
+  }
+
+  if (!"partner_type" %in% names(df) &&
+      all(c("speaker_slot", "author_1_type", "author_2_type") %in% names(df))) {
+    df <- df %>%
+      mutate(
+        partner_type = case_when(
+          speaker_slot == "author_1" ~ author_2_type,
+          speaker_slot == "author_2" ~ author_1_type,
+          TRUE ~ NA_character_
+        )
+      )
+  }
+
+  if (!"partner_type" %in% names(df) &&
+      all(c("condition", "speaker_type") %in% names(df))) {
+    df <- df %>%
+      mutate(
+        partner_type = case_when(
+          condition == "human-ai" & speaker_type == "human" ~ "ai",
+          condition == "human-ai" & speaker_type == "ai" ~ "human",
+          condition == "human-human" & !is.na(speaker_type) ~ "human",
+          condition == "ai-ai" & !is.na(speaker_type) ~ "ai",
+          TRUE ~ NA_character_
+        )
+      )
+  }
+
+  if (!"speaker_is_starter" %in% names(df) &&
+      all(c("speaker_slot", "starter_side") %in% names(df))) {
+    df <- df %>%
+      mutate(
+        speaker_is_starter = case_when(
+          is.na(speaker_slot) | is.na(starter_side) ~ NA,
+          TRUE ~ speaker_slot == starter_side
+        )
+      )
+  }
+
+  char_cols <- intersect(
+    c("speaker_slot", "speaker_type", "partner_type", "starter_side", "starter_type"),
+    names(df)
+  )
+  if (length(char_cols) > 0) {
+    df <- df %>%
+      mutate(across(all_of(char_cols), ~ na_if(as.character(.x), "")))
+  }
+
+  if ("analysis_turn" %in% names(df)) {
+    df <- df %>%
+      mutate(analysis_turn = suppressWarnings(as.numeric(analysis_turn)))
+  }
+
+  if ("complete_exchange" %in% names(df)) {
+    df <- df %>%
+      mutate(complete_exchange = as.logical(complete_exchange))
+  }
+
+  df
+}
+
+add_turn_index <- function(df) {
+  if ("analysis_turn" %in% names(df) && any(!is.na(df$analysis_turn))) {
+    return(df %>% mutate(turn_index = analysis_turn))
+  }
+  if ("turn" %in% names(df)) {
+    return(df %>% mutate(turn_index = suppressWarnings(as.numeric(turn))))
+  }
+  if ("interaction_count" %in% names(df)) {
+    return(df %>% mutate(turn_index = suppressWarnings(as.numeric(interaction_count))))
+  }
+  df
+}
+
+filter_complete_exchange_window <- function(df, min_analysis_turn = 1, max_analysis_turn = 9) {
+  df_out <- df
+
+  if ("complete_exchange" %in% names(df_out)) {
+    df_out <- df_out %>%
+      filter(is.na(complete_exchange) | complete_exchange)
+  }
+
+  if ("analysis_turn" %in% names(df_out) && any(!is.na(df_out$analysis_turn))) {
+    df_out <- df_out %>%
+      filter(between(analysis_turn, min_analysis_turn, max_analysis_turn))
+  } else if ("turn" %in% names(df_out)) {
+    df_out <- df_out %>%
+      filter(between(suppressWarnings(as.numeric(turn)), min_analysis_turn, max_analysis_turn))
+  } else if ("interaction_count" %in% names(df_out)) {
+    df_out <- df_out %>%
+      filter(between(suppressWarnings(as.numeric(interaction_count)), min_analysis_turn, max_analysis_turn))
+  }
+
+  add_turn_index(df_out)
+}
+
+derive_condition_role <- function(df) {
+  df %>%
+    ensure_role_metadata() %>%
+    mutate(
+      condition_role = case_when(
+        condition == "human-ai" & !is.na(speaker_type) & speaker_type == "human" ~ "Human",
+        condition == "human-ai" & !is.na(speaker_type) & speaker_type == "ai" ~ "AI",
+        !is.na(speaker_is_starter) & speaker_is_starter ~ "Starter-side",
+        !is.na(speaker_is_starter) & !speaker_is_starter ~ "Non-starter-side",
+        speaker_slot == "author_1" ~ "Slot 1",
+        speaker_slot == "author_2" ~ "Slot 2",
+        TRUE ~ NA_character_
+      ),
+      slot_label = case_when(
+        speaker_slot == "author_1" ~ "Slot 1",
+        speaker_slot == "author_2" ~ "Slot 2",
+        TRUE ~ NA_character_
+      )
+    )
+}
+
 #' Load processed data from a specific condition
 #'
 #' @param condition Character: "human-ai", "human-human", or "ai-ai"
@@ -42,7 +314,11 @@ load_condition_data <- function(condition, filename, format = "parquet") {
   }
   
   df %>%
-    mutate(condition = condition)
+    mutate(
+      condition = condition,
+      conversation_id = if ("conversation_id" %in% names(.)) clean_conversation_id(conversation_id) else NULL
+    ) %>%
+    coerce_numeric_cols()
 }
 
 #' Load and combine data from all available conditions
@@ -148,7 +424,8 @@ normalize_schema <- function(df, condition = NULL) {
 #' @return Combined, normalized tibble ready for analysis
 load_valence_data <- function(conditions = c("human-ai", "human-human", "ai-ai")) {
   # Try different possible filenames
-  filenames <- c("dyadic_sentiment_scores.parquet", 
+  filenames <- c("dyadic_sentiment_scores.parquet",
+                 "dyadic_sentiment_scores_simulated.parquet",
                  "sentiment_scores.parquet",
                  "valence_scores.parquet")
   
@@ -165,7 +442,11 @@ load_valence_data <- function(conditions = c("human-ai", "human-human", "ai-ai")
     }
     
     if (!is.null(df)) {
-      df <- normalize_schema(df, cond)
+      df <- df %>%
+        normalize_schema(cond) %>%
+        attach_interaction_metadata(cond) %>%
+        ensure_role_metadata() %>%
+        add_turn_index()
       all_data[[cond]] <- df
     }
   }
@@ -182,7 +463,11 @@ load_valence_data <- function(conditions = c("human-ai", "human-human", "ai-ai")
 #' @param conditions Character vector: Which conditions to load
 #' @return Combined tibble with surface metrics
 load_surface_metrics <- function(conditions = c("human-ai", "human-human", "ai-ai")) {
-  filenames <- c("interaction_level_surface_metrics.parquet", "textdescriptives.parquet")
+  filenames <- c(
+    "interaction_level_surface_metrics.parquet",
+    "interaction_level_surface_metrics_simulated.parquet",
+    "textdescriptives.parquet"
+  )
   
   all_data <- list()
   
@@ -197,7 +482,12 @@ load_surface_metrics <- function(conditions = c("human-ai", "human-human", "ai-a
     }
     
     if (!is.null(df)) {
-      df <- normalize_schema(df, cond)
+      df <- df %>%
+        normalize_schema(cond) %>%
+        attach_interaction_metadata(cond) %>%
+        ensure_role_metadata() %>%
+        derive_condition_role() %>%
+        add_turn_index()
       all_data[[cond]] <- df
     }
   }
@@ -214,7 +504,11 @@ load_surface_metrics <- function(conditions = c("human-ai", "human-human", "ai-a
 #' @param conditions Character vector: Which conditions to load
 #' @return Combined tibble with exploration metrics
 load_exploration_data <- function(conditions = c("human-ai", "human-human", "ai-ai")) {
-  filenames <- c("semantic_exploration_binned.parquet", "exploration_metrics.parquet")
+  filenames <- c(
+    "semantic_exploration_binned.parquet",
+    "semantic_exploration_binned_simulated.parquet",
+    "exploration_metrics.parquet"
+  )
   
   all_data <- list()
   
@@ -229,7 +523,12 @@ load_exploration_data <- function(conditions = c("human-ai", "human-human", "ai-
     }
     
     if (!is.null(df)) {
-      df <- normalize_schema(df, cond)
+      df <- df %>%
+        normalize_schema(cond) %>%
+        attach_interaction_metadata(cond) %>%
+        ensure_role_metadata() %>%
+        derive_condition_role() %>%
+        add_turn_index()
       all_data[[cond]] <- df
     }
   }
@@ -299,6 +598,42 @@ pivot_to_agent_long <- function(df, value_cols) {
     # For multiple columns, need to reshape differently
     stop("Multiple value columns not yet supported. Use single column or reshape manually.")
   }
+}
+
+load_novelty_data <- function(conditions = c("human-ai", "human-human", "ai-ai")) {
+  filenames <- c(
+    "novelty_scores.csv",
+    "novelty_scores_simulated.csv",
+    "novelty_scores_40.csv"
+  )
+
+  all_data <- list()
+
+  for (cond in conditions) {
+    df <- NULL
+    for (fname in filenames) {
+      df <- tryCatch(
+        load_condition_data(cond, fname, format = "csv"),
+        warning = function(w) NULL
+      )
+      if (!is.null(df)) break
+    }
+
+    if (!is.null(df)) {
+      df <- df %>%
+        normalize_schema(cond) %>%
+        attach_interaction_metadata(cond) %>%
+        ensure_role_metadata() %>%
+        add_turn_index()
+      all_data[[cond]] <- df
+    }
+  }
+
+  if (length(all_data) == 0) {
+    stop("No novelty data found for any condition")
+  }
+
+  bind_rows(all_data)
 }
 
 # =============================================================================
@@ -414,17 +749,21 @@ check_data_availability <- function() {
   
   common_files <- c(
     "dyadic_sentiment_scores.parquet",
-    "sentiment_scores.parquet",
-    "surface_metrics.parquet",
-    "semantic_exploration.parquet",
-    "embeddings.parquet",
-    "cleaned_stories.csv"
+    "interaction_level_surface_metrics.parquet",
+    "novelty_scores.csv",
+    "semantic_exploration_binned.parquet",
+    "story_embeddings_interaction_level.parquet",
+    "interaction_level_stories_filtered.csv"
   )
   
   results <- expand_grid(condition = conditions, file = common_files) %>%
     rowwise() %>%
     mutate(
-      path = here("data", condition, "processed", file),
+      path = if (file == "interaction_level_stories_filtered.csv") {
+        here("data", condition, "interim", file)
+      } else {
+        here("data", condition, "processed", file)
+      },
       exists = file.exists(path)
     ) %>%
     ungroup()

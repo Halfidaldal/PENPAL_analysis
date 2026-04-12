@@ -185,3 +185,60 @@ def save_npy(arr: np.ndarray, filename: str, stage: str = "processed", experimen
     print(f"Saving .npy to: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     np.save(path, arr)
+
+
+def backfill_interaction_metadata(
+    df: pd.DataFrame,
+    *,
+    simulated: bool = False,
+    experiment: Optional[str] = None,
+    metadata_filename: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Merge current interim interaction metadata into a processed dataframe.
+
+    This keeps downstream metric scripts compatible with processed artifacts that were
+    generated before new metadata columns were added to the cleaned interaction export.
+    Existing non-null values in ``df`` are preserved; missing values are filled from the
+    interim interaction CSV using conversation-aligned keys.
+    """
+    metadata_filename = metadata_filename or (
+        "interaction_level_stories_filtered_simulated.csv"
+        if simulated else
+        "interaction_level_stories_filtered.csv"
+    )
+
+    metadata_df = load_csv(metadata_filename, stage="interim", experiment=experiment)
+    key_candidates = ["conversation_id", "turn", "interaction_count"]
+    key_columns = [col for col in key_candidates if col in df.columns and col in metadata_df.columns]
+
+    if not key_columns:
+        raise ValueError(
+            "Could not identify interaction metadata join keys. "
+            "Expected at least one of conversation_id/turn/interaction_count in both frames."
+        )
+
+    left = df.copy()
+    right = metadata_df.copy()
+
+    for numeric_key in ["turn", "interaction_count"]:
+        if numeric_key in key_columns:
+            left[numeric_key] = pd.to_numeric(left[numeric_key], errors="coerce")
+            right[numeric_key] = pd.to_numeric(right[numeric_key], errors="coerce")
+
+    metadata_columns = [col for col in right.columns if col not in key_columns]
+    right = right[key_columns + metadata_columns].drop_duplicates(subset=key_columns, keep="last")
+
+    merged = left.merge(right, on=key_columns, how="left", suffixes=("", "__meta"))
+
+    for col in metadata_columns:
+        meta_col = f"{col}__meta"
+        if meta_col not in merged.columns:
+            continue
+        if col in merged.columns:
+            merged[col] = merged[col].where(merged[col].notna(), merged[meta_col])
+        else:
+            merged[col] = merged[meta_col]
+        merged.drop(columns=[meta_col], inplace=True)
+
+    return merged
