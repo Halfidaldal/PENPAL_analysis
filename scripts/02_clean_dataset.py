@@ -32,7 +32,15 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.process_spelling_openai import correct_spelling, compute_edit_distance_values
-from nes.cleaning import filter_by_edit_distance, build_full_story_text, filter_by_respondent_id, clean_user_ai_start, clean_ai_ai_data, randomize_author_assignment
+from nes.cleaning import (
+    filter_by_edit_distance,
+    build_full_story_text,
+    filter_by_respondent_id,
+    clean_user_ai_start,
+    clean_ai_ai_data,
+    keep_complete_conversations,
+    randomize_author_assignment,
+)
 from nes.io import load_csv, save_csv, get_project_root, load_config, get_active_experiment, get_experiment_config, get_shared_config
 
 
@@ -142,6 +150,9 @@ def main():
             print("\nRandomizing author assignment (50/50 swap)...")
             random_seed = shared_config['analysis']['random_seed']
             df_filtered = randomize_author_assignment(df_filtered, group_col='conversation_id', seed=random_seed)
+
+    print("\nRemoving incomplete conversation fragments...")
+    df_filtered = keep_complete_conversations(df_filtered, group_col='conversation_id')
 
     print("\nBuilding full story text...")
     # Save filtered interaction-level data

@@ -505,11 +505,10 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_tu
     
     df = df.copy()
     
-    # Determine respondent/grouping column based on experiment
-    if experiment == 'human-ai':
-        group_col = 'respondent_id'
-    else:
-        group_col = 'respondent_id_u1' if 'respondent_id_u1' in df.columns else 'conversation_id'
+    # Story-level logic must use the conversation identifier.
+    # Participant identifiers can be missing or reused and are therefore not
+    # reliable story boundaries for starter detection or turn numbering.
+    group_col = 'conversation_id'
     
     # Add turn numbers within each group
     df['turn'] = df.groupby(group_col).cumcount() + 1
@@ -606,6 +605,52 @@ def clean_ai_ai_data(df: pd.DataFrame, max_turns: int = 10) -> pd.DataFrame:
     print(f"After cleaning: {len(df)} rows")
     
     return df
+
+
+def keep_complete_conversations(
+    df: pd.DataFrame,
+    group_col: str = 'conversation_id',
+    expected_length: Optional[int] = None
+) -> pd.DataFrame:
+    """
+    Remove partial conversation fragments after row-level filtering.
+
+    By default, the expected conversation length is inferred as the modal number
+    of rows per conversation in the current DataFrame. This works well when a
+    small number of corrupted or partially filtered stories remain alongside a
+    dominant complete-story length.
+
+    Args:
+        df: Input DataFrame with repeated interaction rows per conversation
+        group_col: Story identifier column
+        expected_length: Required number of rows per conversation. If None,
+            infer from the modal conversation length.
+
+    Returns:
+        DataFrame containing only complete conversations
+    """
+    if group_col not in df.columns:
+        raise ValueError(f"Expected '{group_col}' column in DataFrame")
+
+    df = df.copy()
+    conversation_sizes = df.groupby(group_col).size()
+
+    if conversation_sizes.empty:
+        return df
+
+    if expected_length is None:
+        expected_length = int(conversation_sizes.mode().iloc[0])
+
+    complete_ids = conversation_sizes[conversation_sizes == expected_length].index
+    removed = conversation_sizes[conversation_sizes != expected_length]
+
+    if len(removed) > 0:
+        print(
+            f"Dropping {len(removed)} incomplete conversation(s) with sizes "
+            f"{removed.value_counts().sort_index().to_dict()} (expected {expected_length} rows)"
+        )
+
+    return df[df[group_col].isin(complete_ids)].copy()
 
 
 def randomize_author_assignment(

@@ -227,7 +227,7 @@ Your goal is to continue from where your partner has left off.
 If there's no story, please begin the story. You have 10 interactions to write the story. Your input may get slightly truncated with a random character amount."""
 
     # The starting context that the first agent continues from
-    STORY_PREFIX = "This is the story of"
+    STORY_PREFIX = "This is the story of "
 
     @staticmethod
     def get_system_prompt(turn_number: int = 1) -> str:
@@ -244,7 +244,7 @@ If there's no story, please begin the story. You have 10 interactions to write t
         pacing = f"""
 
 [Session Meta — do not reveal]
-This is turn {turn_number} of 10. Use this only to pace and conclude appropriately. Do not mention turns, counts, chapters or session meta in your reply. Write in plain prose that flows naturally from the previous text."""
+This is turn {turn_number} of 10. Use this only to pace and conclude appropriately. Do not mention turns, counts, chapters, #, or session meta in your reply. Write in plain prose that flows naturally from the previous text."""
         
         return f"{base}{pacing}".strip()
 
