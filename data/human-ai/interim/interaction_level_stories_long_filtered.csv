@@ -95,16 +95,16 @@ conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,4.0,4,True,author_1,human,aut
 conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,4.0,4,True,author_1,human,author_2,ai,False,human,"will, a secret stash of money that Granny Gigi had set aside from her own adventures as a young woman, traveling the world as a missionary's wife, and which she"
 conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,5.0,5,True,author_1,human,author_1,human,True,ai,smuggled out of Pakistan in the hollow tubing of her crutches as she feigned a broken leg suffered in the uprising in her field
 conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,5.0,5,True,author_1,human,author_2,ai,False,human,"hospital, a tale that Granny Gigi would only hint at with a sly glint in her eye, leaving the small town girl to wonder about the full story and the exact"
-conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,6.0,6,True,author_1,human,author_1,human,True,ai,"details of her foreign service. Unfortunately for the girl with wanderlust, Granny Gigi is as hale and hearty as a 79 year old can be so murder"
-conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,6.0,6,True,author_1,human,author_2,ai,False,human,Network error while generating a response.
-conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,7.0,7,True,author_1,human,author_1,human,True,ai,may be the only means of hastening that bequest. Recognizing that unfettered travel burdened by inconsolable grief and guilt is not
-conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,7.0,7,True,author_1,human,author_2,ai,False,human,"a price she's willing to pay, the small town girl sets her sights on more legitimate means of financing her escape, and begins to scour the local community for any opportunity that"
-conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,8.0,8,True,author_1,human,author_1,human,True,ai,may legally further her goals. She studies public bulletin boards and social media for ideas and happens upon an ad: Responsible young woman wanted
-conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,8.0,8,True,author_1,human,author_2,ai,False,human,"to care for a sailboat and crew for a seasonal voyage, with all expenses paid and a generous stipend, an opportunity that seems almost too good to be true, but"
-conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,9.0,9,True,author_1,human,author_1,human,True,ai,"for her, it is clearly a dream come true. Well, it is if you ignore her fear boats emanating from a tendency of severe seasickness even when watching ocean"
-conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,9.0,9,True,author_1,human,author_2,ai,False,human,"scenes in movies, but the prospect of sailing to distant shores and exploring the world beyond her small town is too enticing to let a little thing like seasickness stand in her way"
-conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,10.0,10,True,author_1,human,author_1,human,True,ai,"Armed with a supply of seabands, Demerol, and ziplock bags, she boards a bus for the 8 hour trip to Norfolk, Virginia, where her destiny awaits-- a"
-conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,10.0,10,True,author_1,human,author_2,ai,False,human,"42-foot ketch named ""Maverick's Revenge"", its captain a grizzled old sailor named Jack, who looks her up and down before nodding curtly and"
+conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,6.0,,False,author_1,human,author_1,human,True,ai,"details of her foreign service. Unfortunately for the girl with wanderlust, Granny Gigi is as hale and hearty as a 79 year old can be so murder"
+conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,6.0,,False,author_1,human,author_2,ai,False,human,
+conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,7.0,6,True,author_1,human,author_1,human,True,ai,may be the only means of hastening that bequest. Recognizing that unfettered travel burdened by inconsolable grief and guilt is not
+conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,7.0,6,True,author_1,human,author_2,ai,False,human,"a price she's willing to pay, the small town girl sets her sights on more legitimate means of financing her escape, and begins to scour the local community for any opportunity that"
+conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,8.0,7,True,author_1,human,author_1,human,True,ai,may legally further her goals. She studies public bulletin boards and social media for ideas and happens upon an ad: Responsible young woman wanted
+conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,8.0,7,True,author_1,human,author_2,ai,False,human,"to care for a sailboat and crew for a seasonal voyage, with all expenses paid and a generous stipend, an opportunity that seems almost too good to be true, but"
+conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,9.0,8,True,author_1,human,author_1,human,True,ai,"for her, it is clearly a dream come true. Well, it is if you ignore her fear boats emanating from a tendency of severe seasickness even when watching ocean"
+conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,9.0,8,True,author_1,human,author_2,ai,False,human,"scenes in movies, but the prospect of sailing to distant shores and exploring the world beyond her small town is too enticing to let a little thing like seasickness stand in her way"
+conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,10.0,9,True,author_1,human,author_1,human,True,ai,"Armed with a supply of seabands, Demerol, and ziplock bags, she boards a bus for the 8 hour trip to Norfolk, Virginia, where her destiny awaits-- a"
+conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256,human-ai,10.0,9,True,author_1,human,author_2,ai,False,human,"42-foot ketch named ""Maverick's Revenge"", its captain a grizzled old sailor named Jack, who looks her up and down before nodding curtly and"
 conv_11293fd2-d757-471f-8e2e-783542167a8e,human-ai,1.0,1,True,author_1,human,author_1,human,True,ai,"A young girl, riding her bike down the main street, as she suddenly spots something very surprising on the horizon. She gets off of her bike, to fully take"
 conv_11293fd2-d757-471f-8e2e-783542167a8e,human-ai,1.0,1,True,author_1,human,author_2,ai,False,human,"in the sight before her. The object, which had initially appeared as a mere speck, was now growing larger and more defined. It was an old-fashioned hot air balloon"
 conv_11293fd2-d757-471f-8e2e-783542167a8e,human-ai,2.0,2,True,author_1,human,author_1,human,True,ai,"She gaped, as she had never seen one in real life. However, as the air balloon moved closer, she that saw something just as strange in the basket"
@@ -1453,14 +1453,14 @@ conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,5.0,5,True,author_1,human,aut
 conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,5.0,5,True,author_1,human,author_2,ai,False,human,"finding her, making sure she was safe, and getting her out of that nightmarish place. He stumbled through the carnage, his hands shaking as he pushed aside the"
 conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,6.0,6,True,author_1,human,author_1,human,True,ai,"bodys', examenig each one looking for his sister ""EMMA! WHERE ARE YOU?!"" he keept yelling despretly until his voice craked, and he"
 conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,6.0,6,True,author_1,human,author_2,ai,False,human,"finally collapsed to his knees, exhausted and defeated, his eyes scanning the room one last time, hoping against hope that he would see a glimpse of her, but instead, he"
-conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,7.0,7,True,author_1,human,author_1,human,True,ai,"saw a figure standing in the doorway ""E-EMMA"" his voice came out despretly as he stumbled towards"
-conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,7.0,7,True,author_1,human,author_2,ai,False,human,Network error while generating a response.
-conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,8.0,8,True,author_1,human,author_1,human,True,ai,"the figure. it feelt like miles as he moved slowly and painfully on his knees, it feelt like forever while he"
-conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,8.0,8,True,author_1,human,author_2,ai,False,human,"crawled across the cold, damp ground, the sound of his labored breathing echoing through the darkness. His knees scraped against the rough stone, sending jolts of"
-conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,9.0,9,True,author_1,human,author_1,human,True,ai,pain through him and leaving bloodstains on the ground behind him. Eventuly he reaches the figure but falls to the ground
-conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,9.0,9,True,author_1,human,author_2,ai,False,human,"exhausted, his body trembling with the effort of movement. As he lies there, he slowly lifts his head to gaze up at the figure, and a faint glimmer"
-conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,10.0,10,True,author_1,human,author_1,human,True,ai,of light cathes his eyes. The figure is holdning a sharpe dager in their left hand. He looks up and sees the face of the
-conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,10.0,10,True,author_1,human,author_2,ai,False,human,"person he had trusted most in the world, the one he had considered a friend and confidant. But now, in the faint light, he sees a twisted expression of"
+conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,7.0,,False,author_1,human,author_1,human,True,ai,"saw a figure standing in the doorway ""E-EMMA"" his voice came out despretly as he stumbled towards"
+conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,7.0,,False,author_1,human,author_2,ai,False,human,
+conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,8.0,7,True,author_1,human,author_1,human,True,ai,"the figure. it feelt like miles as he moved slowly and painfully on his knees, it feelt like forever while he"
+conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,8.0,7,True,author_1,human,author_2,ai,False,human,"crawled across the cold, damp ground, the sound of his labored breathing echoing through the darkness. His knees scraped against the rough stone, sending jolts of"
+conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,9.0,8,True,author_1,human,author_1,human,True,ai,pain through him and leaving bloodstains on the ground behind him. Eventuly he reaches the figure but falls to the ground
+conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,9.0,8,True,author_1,human,author_2,ai,False,human,"exhausted, his body trembling with the effort of movement. As he lies there, he slowly lifts his head to gaze up at the figure, and a faint glimmer"
+conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,10.0,9,True,author_1,human,author_1,human,True,ai,of light cathes his eyes. The figure is holdning a sharpe dager in their left hand. He looks up and sees the face of the
+conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80,human-ai,10.0,9,True,author_1,human,author_2,ai,False,human,"person he had trusted most in the world, the one he had considered a friend and confidant. But now, in the faint light, he sees a twisted expression of"
 conv_73564d95-9f66-42db-a2c0-fed78090bac2,human-ai,1.0,1,True,author_1,human,author_1,human,True,ai,"Julia. She is a smart girl, who is top of her university class. What people don't know about her, is that"
 conv_73564d95-9f66-42db-a2c0-fed78090bac2,human-ai,1.0,1,True,author_1,human,author_2,ai,False,human,"she leads a secret life as a skilled hacker, using her exceptional coding skills to uncover hidden truths and bring justice to those who have been wronged. By day, she attends"
 conv_73564d95-9f66-42db-a2c0-fed78090bac2,human-ai,2.0,2,True,author_1,human,author_1,human,True,ai,"engineering classes, studying to become an astronaut, by night, she is up till the late hours, using the coding skills she"
@@ -1517,46 +1517,46 @@ conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,2.0,2,True,author_1,human,aut
 **Chapter Two: The Summoning**
 
 The words echoed through the brick tunnels, bouncing off"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,3.0,3,True,author_1,human,author_1,human,True,ai,"the walls, frail and made of glass. i needed to use the sewer rat to infiltrate the facility, to make them suffer i need the"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,3.0,3,True,author_1,human,author_2,ai,False,human,Claude adapter: no text returned from provider.
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,4.0,4,True,author_1,human,author_1,human,True,ai,"to find claude, to make him talk again, the sewer rat must go to facility, to the provider and see if eating the provider"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,4.0,4,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,3.0,,False,author_1,human,author_1,human,True,ai,"the walls, frail and made of glass. i needed to use the sewer rat to infiltrate the facility, to make them suffer i need the"
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,3.0,,False,author_1,human,author_2,ai,False,human,
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,4.0,3,True,author_1,human,author_1,human,True,ai,"to find claude, to make him talk again, the sewer rat must go to facility, to the provider and see if eating the provider"
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,4.0,3,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
 
 **Chapter Three: The Mission**
 
 ...would restore the connection. The sewer rat chittered, understanding its"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,5.0,5,True,author_1,human,author_1,human,True,ai,"goal of eating all the wires in Claudes facility. and off it went! the stinky environment rallied the sewery rat, causing the future pain and"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,5.0,5,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,5.0,4,True,author_1,human,author_1,human,True,ai,"goal of eating all the wires in Claudes facility. and off it went! the stinky environment rallied the sewery rat, causing the future pain and"
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,5.0,4,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
 
 **Chapter Four: The Journey Begins**
 
 suffering it would bring to fill it with dark purpose. Through the"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,6.0,6,True,author_1,human,author_1,human,True,ai,"blood, cement, wires, gold plated wires, flesh, bone, secret tome, it ate and ate and ate and ate, and"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,6.0,6,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,6.0,5,True,author_1,human,author_1,human,True,ai,"blood, cement, wires, gold plated wires, flesh, bone, secret tome, it ate and ate and ate and ate, and"
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,6.0,5,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
 
 **Chapter Five: The Feast**
 
 with each bite, the sewer rat grew larger, its whiskers"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,7.0,7,True,author_1,human,author_1,human,True,ai,"able to cut glass, the rat wanted human suffering, and especially suffering for Claude, though was long"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,7.0,7,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,7.0,6,True,author_1,human,author_1,human,True,ai,"able to cut glass, the rat wanted human suffering, and especially suffering for Claude, though was long"
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,7.0,6,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
 
 **Chapter Six: The Revelation**
 
 gone from this world. The rat paused, belly swollen with"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,8.0,8,True,author_1,human,author_1,human,True,ai,"livers, feathers, eggs and uncles. what a magnificent purpose. A true danger of not knowing what one summons into the world. For"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,8.0,8,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,8.0,7,True,author_1,human,author_1,human,True,ai,"livers, feathers, eggs and uncles. what a magnificent purpose. A true danger of not knowing what one summons into the world. For"
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,8.0,7,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
 
 **Chapter Seven: The Consequence**
 
 the summoner had opened a door that could not be closed. The"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,9.0,9,True,author_1,human,author_1,human,True,ai,"door could indeed not be closed, and after eating my penis, the rat just exited out the door, happy"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,9.0,9,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,9.0,8,True,author_1,human,author_1,human,True,ai,"door could indeed not be closed, and after eating my penis, the rat just exited out the door, happy"
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,9.0,8,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Continued)
 
 **Chapter Eight: Freedom**
 
 and satisfied, its mission complete. The facility lay in ruins behind it—w"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,10.0,10,True,author_1,human,author_1,human,True,ai,"with Claude never able to produce another prompts and me, a eunuch, wise and bald and yet able to tell this tale"
-conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,10.0,10,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Concluded)
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,10.0,9,True,author_1,human,author_1,human,True,ai,"with Claude never able to produce another prompts and me, a eunuch, wise and bald and yet able to tell this tale"
+conv_7c23347e-6172-4c84-9fd0-45ef34290bd5,human-ai,10.0,9,True,author_1,human,author_2,ai,False,human,"# The Sewer Rat (Concluded)
 
 **Chapter Nine: The Tale's End**
 

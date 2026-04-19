@@ -10,6 +10,7 @@ This module handles:
 """
 
 from typing import Optional, List, Dict, Any
+from uuid import uuid4
 import pandas as pd
 import numpy as np
 import firebase_admin
@@ -433,10 +434,26 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
     if group_col not in df.columns:
         raise ValueError(f"Expected '{group_col}' column in DataFrame")
     
+    def _normalize_story_text(value: Any) -> str:
+        """Collapse embedded newlines so story text is built as a single line."""
+        if pd.isna(value):
+            return ''
+        return ' '.join(str(value).split())
+
+    def _concat_series(series: pd.Series) -> str:
+        return ' '.join(
+            text for text in series.map(_normalize_story_text).tolist() if text
+        )
+
+    def _concat_series_with_period(series: pd.Series) -> str:
+        return ' '.join(
+            f"{text}." for text in series.map(_normalize_story_text).tolist() if text
+        )
+
     # Group by conversation and concatenate
     agg_dict = {
-        'author_1': lambda x: ' '.join(x.fillna('').astype(str).tolist()),
-        'author_2': lambda x: ' '.join(x.fillna('').astype(str).tolist()),
+        'author_1': _concat_series,
+        'author_2': _concat_series,
     }
     # Add metadata columns if present
     for col in ['condition', 'language', 'client_id', 'workshop_id', 'timestamp', 
@@ -450,9 +467,11 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
     
     # Padded versions for parsing textdescriptives
     story_df['full_author_1_dot'] = df.groupby(group_col)['author_1'].apply(
-        lambda x: ' '.join((x.fillna('').astype(str) + '.').tolist())).values
+        _concat_series_with_period
+    ).values
     story_df['full_author_2_dot'] = df.groupby(group_col)['author_2'].apply(
-        lambda x: ' '.join((x.fillna('').astype(str) + '.').tolist())).values
+        _concat_series_with_period
+    ).values
 
     # Rename columns to full_ prefix
     story_df = story_df.rename(columns={
@@ -464,15 +483,22 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
     def build_story(row):
         group_val = row['conversation_id']
         mask = df['conversation_id'] == group_val
-        
-        author1s = df[mask]['author_1'].tolist()
-        author2s = df[mask]['author_2'].tolist()
+        starter = row.get('starter', 'author_1')
+
+        author1s = df[mask]['author_1'].map(_normalize_story_text).tolist()
+        author2s = df[mask]['author_2'].map(_normalize_story_text).tolist()
         parts = []
-        for u, a in zip(author1s, author2s):
-            if pd.notna(u) and str(u).strip():
-                parts.append(str(u).strip())
-            if pd.notna(a) and str(a).strip():
-                parts.append(str(a).strip())
+
+        if starter == 'author_2':
+            ordered_pairs = zip(author2s, author1s)
+        else:
+            ordered_pairs = zip(author1s, author2s)
+
+        for first, second in ordered_pairs:
+            if first:
+                parts.append(first)
+            if second:
+                parts.append(second)
         return ' '.join(parts)
     
     story_df['full_story'] = story_df.apply(build_story, axis=1)
@@ -592,8 +618,13 @@ def clean_ai_ai_data(df: pd.DataFrame, max_turns: int = 10) -> pd.DataFrame:
     if 'turn' in df.columns:
         df = df[df['turn'] <= max_turns].copy()
     
-    # Rename story_id to conversation_id for universal naming
-    df = df.rename(columns={'story_id': 'conversation_id'})
+    # Replace model-revealing story IDs with opaque conversation IDs.
+    story_ids = df['story_id'].dropna().unique()
+    conversation_id_map = {
+        story_id: f"conv_{uuid4().hex}"
+        for story_id in story_ids
+    }
+    df['conversation_id'] = df['story_id'].map(conversation_id_map)
     
     # Add starter column (author_1 always starts in AI-AI)
     df['starter'] = 'author_1'
@@ -604,7 +635,7 @@ def clean_ai_ai_data(df: pd.DataFrame, max_turns: int = 10) -> pd.DataFrame:
     # Count prefix removals
     n_prefixes_removed = len(df[df['turn'] == 1])
     print(f"Removed '{STORY_PREFIX}' prefix from {n_prefixes_removed} first turns")
-    print(f"Renamed 'story_id' -> 'conversation_id'")
+    print(f"Generated opaque conversation IDs for {len(conversation_id_map)} stories")
     print(f"After cleaning: {len(df)} rows")
     
     return df

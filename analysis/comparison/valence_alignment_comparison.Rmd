@@ -34,13 +34,28 @@ pacman::p_load(
   lmerTest,
   patchwork,
   emmeans,
-  effectsize
+  effectsize,
+  stringr
 )
 
 theme_set(theme_comparison())
 ```
 
-# Overview
+
+```{r}
+folder_path <- "~/Documents/PENPAL_analysis/data"
+file_names <- list.files(folder_path, pattern = "*interaction_level_stories_filtered.csv", full.names = TRUE, recursive = TRUE)
+data_list <- lapply(file_names, read.csv)
+selected_data_list <- lapply(data_list, function(df) {
+    df %>% select("conversation_id", "author_1", "author_2")
+})
+
+combined_data <- bind_rows(selected_data_list)
+combined_data <- combined_data[sample(nrow(combined_data)), ]
+combined_data$combined_interaction <- str_c(combined_data$author_1, combined_data$author_2, sep = " ")
+
+write.csv(combined_data, "combined_data.csv", row.names = FALSE)
+```
 
 This notebook compares **valence alignment** across the three experimental conditions using the new exchange-aligned structure.
 
@@ -221,7 +236,7 @@ within_summary <- purrr::imap_dfr(within_condition_results, function(res, cond) 
     condition = cond,
     slope_slot1_to_slot2 = res$slopes$predictor_z.trend[res$slopes$alignment_direction == "Slot 1 → Slot 2"],
     slope_slot2_to_slot1 = res$slopes$predictor_z.trend[res$slopes$alignment_direction == "Slot 2(t-1) → Slot 1"],
-    asymmetry = res$contrast$estimate[1],
+    difference = res$contrast$estimate[1],
     se = res$contrast$SE[1],
     t = res$contrast$t.ratio[1],
     p = res$contrast$p.value[1]
@@ -242,6 +257,27 @@ within_summary %>%
     digits = 3,
     caption = "Within-condition alignment asymmetry by slot direction"
   )
+```
+
+```{r asymmetry-plot, fig.width=10, fig.height=5}
+if (nrow(within_summary) > 0) {
+  within_summary %>%
+    ggplot(aes(x = condition, y = difference, fill = condition)) +
+    geom_col(width = 0.6, alpha = 0.8) +
+    geom_errorbar(
+      aes(ymin = difference - 1.96 * se, ymax = difference + 1.96 * se),
+      width = 0.2
+    ) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+    scale_fill_manual(values = condition_colors) +
+    labs(
+      title = "Directional Asymmetry by Condition",
+      subtitle = "Difference: (Slot 1 → Slot 2) - (Slot 2(t-1) → Slot 1). Positive = Slot 1 → Slot 2 stronger",
+      y = "Asymmetry (Δβ)",
+      x = "Condition"
+    ) +
+    theme(legend.position = "none")
+}
 ```
 
 # Cross-Condition Model

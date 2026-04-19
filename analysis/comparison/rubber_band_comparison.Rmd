@@ -100,7 +100,111 @@ cat("Analysis rows:", nrow(df_analysis), "\n")
 cat("Stories:", n_distinct(df_analysis$conversation_id), "\n")
 ```
 
-# Descriptive Statistics
+# Cross-Condition Rubber-Band Comparison
+
+## Condition-Specific Slopes
+
+```{r within-condition-models}
+within_results <- list()
+
+for (cond in unique(df_analysis$condition)) {
+  df_cond <- filter(df_analysis, condition == cond)
+
+  if (nrow(df_cond) < 50) {
+    next
+  }
+
+  model <- lmer(
+    gap_change ~ valence_gap_lag1 + (1 | conversation_id),
+    data = df_cond
+  )
+
+  coefs <- summary(model)$coefficients
+  within_results[[as.character(cond)]] <- tibble(
+    condition = cond,
+    estimate = coefs["valence_gap_lag1", "Estimate"],
+    se = coefs["valence_gap_lag1", "Std. Error"],
+    t = coefs["valence_gap_lag1", "t value"],
+    p = coefs["valence_gap_lag1", "Pr(>|t|)"]
+  )
+}
+
+within_summary <- bind_rows(within_results)
+
+within_summary %>%
+  mutate(
+    sig = case_when(
+      p < 0.001 ~ "***",
+      p < 0.01 ~ "**",
+      p < 0.05 ~ "*",
+      p < 0.1 ~ ".",
+      TRUE ~ ""
+    )
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Rubber-band slopes by condition"
+  )
+```
+
+```{r slope-plot, fig.width=10, fig.height=5}
+within_summary %>%
+  mutate(
+    ci_lower = estimate - 1.96 * se,
+    ci_upper = estimate + 1.96 * se
+  ) %>%
+  ggplot(aes(x = condition, y = estimate, fill = condition)) +
+  geom_col(width = 0.6, alpha = 0.8) +
+  geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), width = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Rubber-Band Effect by Condition",
+    subtitle = "More negative slopes indicate stronger re-convergence after divergence",
+    x = "Condition",
+    y = "Rubber-Band Slope"
+  ) +
+  theme(legend.position = "none")
+```
+
+## Cross-Condition Interaction Model
+
+```{r cross-condition-model}
+model_cross <- lmer(
+  gap_change ~ valence_gap_lag1 * condition + (1 | conversation_id),
+  data = df_analysis
+)
+
+cat("Cross-condition model summary:\n")
+print(summary(model_cross))
+
+emm_slopes <- emtrends(model_cross, specs = "condition", var = "valence_gap_lag1")
+
+cat("\nCondition-specific slopes:\n")
+print(emm_slopes)
+
+cat("\nPairwise slope contrasts:\n")
+print(pairs(emm_slopes, adjust = "bonferroni"))
+```
+
+# General Gap Structure
+
+```{r rubberband-scatter, fig.width=12, fig.height=5}
+df_analysis %>%
+  ggplot(aes(x = valence_gap_lag1, y = gap_change, color = condition)) +
+  geom_point(alpha = 0.05, size = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Rubber-Band Effect by Condition",
+    subtitle = "Negative slope indicates re-convergence after divergence",
+    x = "Previous Valence Gap",
+    y = "Gap Change"
+  ) +
+  theme(legend.position = "bottom")
+```
 
 ```{r descriptives}
 df_analysis %>%
@@ -150,90 +254,6 @@ p_gap_box <- df_analysis %>%
 p_gap_density + p_gap_box
 ```
 
-# Rubber-Band Models
-
-## Within-Condition Slopes
-
-```{r within-condition-models}
-within_results <- list()
-
-for (cond in unique(df_analysis$condition)) {
-  df_cond <- filter(df_analysis, condition == cond)
-
-  if (nrow(df_cond) < 50) {
-    next
-  }
-
-  model <- lmer(
-    gap_change ~ valence_gap_lag1 + (1 | conversation_id),
-    data = df_cond
-  )
-
-  coefs <- summary(model)$coefficients
-  within_results[[as.character(cond)]] <- tibble(
-    condition = cond,
-    estimate = coefs["valence_gap_lag1", "Estimate"],
-    se = coefs["valence_gap_lag1", "Std. Error"],
-    t = coefs["valence_gap_lag1", "t value"],
-    p = coefs["valence_gap_lag1", "Pr(>|t|)"]
-  )
-}
-
-bind_rows(within_results) %>%
-  mutate(
-    sig = case_when(
-      p < 0.001 ~ "***",
-      p < 0.01 ~ "**",
-      p < 0.05 ~ "*",
-      p < 0.1 ~ ".",
-      TRUE ~ ""
-    )
-  ) %>%
-  knitr::kable(
-    digits = 3,
-    caption = "Rubber-band slopes by condition"
-  )
-```
-
-## Cross-Condition Interaction Model
-
-```{r cross-condition-model}
-model_cross <- lmer(
-  gap_change ~ valence_gap_lag1 * condition + (1 | conversation_id),
-  data = df_analysis
-)
-
-cat("Cross-condition model summary:\n")
-print(summary(model_cross))
-
-emm_slopes <- emtrends(model_cross, specs = "condition", var = "valence_gap_lag1")
-
-cat("\nCondition-specific slopes:\n")
-print(emm_slopes)
-
-cat("\nPairwise slope contrasts:\n")
-print(pairs(emm_slopes, adjust = "bonferroni"))
-```
-
-# Visualizations
-
-```{r rubberband-scatter, fig.width=12, fig.height=5}
-df_analysis %>%
-  ggplot(aes(x = valence_gap_lag1, y = gap_change, color = condition)) +
-  geom_point(alpha = 0.05, size = 0.5) +
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1.1) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
-  scale_color_manual(values = condition_colors) +
-  labs(
-    title = "Rubber-Band Effect by Condition",
-    subtitle = "Negative slope indicates re-convergence after divergence",
-    x = "Previous Valence Gap",
-    y = "Gap Change"
-  ) +
-  theme(legend.position = "bottom")
-```
-
 ```{r temporal-dynamics, fig.width=12, fig.height=5}
 df_analysis %>%
   ggplot(aes(x = valence_gap_lag1, y = gap_change, color = condition)) +
@@ -257,6 +277,7 @@ The notebook is now adapted to the new structure by:
 - computing gap dynamics on the **exchange-aligned turn index**,
 - restricting the analysis to **complete exchanges**,
 - using the cleaned slot structure consistently across all three conditions,
+- putting the **cross-condition rubber-band slope comparison first**,
 - replacing the old raw-turn phase split with a phase split built from `turn_index`.
 
 *Analysis completed: `r Sys.time()`*

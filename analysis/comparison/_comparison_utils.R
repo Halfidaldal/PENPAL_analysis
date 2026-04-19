@@ -44,6 +44,7 @@ load_interaction_metadata <- function(condition) {
   }
 
   read_csv(path, show_col_types = FALSE) %>%
+    mutate(timestamp = if ("timestamp" %in% names(.)) as.character(timestamp) else NULL) %>%
     mutate(conversation_id = clean_conversation_id(conversation_id)) %>%
     coerce_numeric_cols()
 }
@@ -311,6 +312,11 @@ load_condition_data <- function(condition, filename, format = "parquet") {
     read_parquet(path)
   } else {
     read_csv(path, show_col_types = FALSE)
+  }
+
+  if ("timestamp" %in% names(df)) {
+    df <- df %>%
+      mutate(timestamp = as.character(timestamp))
   }
   
   df %>%

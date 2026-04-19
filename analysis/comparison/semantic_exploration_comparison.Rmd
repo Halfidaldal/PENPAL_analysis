@@ -1,6 +1,6 @@
 ---
 title: "Semantic Exploration Comparison: Human-AI vs Human-Human vs AI-AI"
-subtitle: "Cross-Condition Analysis of Lag-Binned Semantic Distance"
+subtitle: "Cross-Condition Analysis of Lag-Based Semantic Distance"
 author: "PENPAL Project"
 date: "`r Sys.Date()`"
 output:
@@ -41,16 +41,23 @@ theme_set(theme_comparison())
 
 # Overview
 
-The semantic exploration outputs now use the **new lag-binned structure**:
+The semantic exploration outputs now use the **current lag-based structure**:
 
-- `k`: lag bin
+- `k`: lag
 - `distance`: mean semantic distance for that lag
 - `agent`: `"interleaved"` for the full exchange sequence, or `author_1` / `author_2` for speaker-specific trajectories
+
+The processed filename is still `semantic_exploration_binned.parquet`, but the current generator computes **lag-based distances**, not the older non-overlapping window-centroid bins.
 
 This notebook therefore no longer assumes old turn-level exploration tables. Instead it analyses:
 
 1. **Interleaved sequence exploration** across conditions
 2. **Speaker-specific exploration** using recovered role metadata
+
+Important comparison note:
+
+- **Slot 1 / Slot 2** is the directly comparable cross-condition axis.
+- **Human / AI** in Human-AI and **Starter-side / Non-starter-side** in same-type conditions are only used as within-condition descriptive views.
 
 # Load Data
 
@@ -79,13 +86,99 @@ df_interleaved <- df_combined %>%
 
 df_speaker <- df_combined %>%
   filter(agent != "interleaved") %>%
+  filter(speaker_slot %in% c("author_1", "author_2")) %>%
+  mutate(
+    slot = factor(speaker_slot, levels = c("author_1", "author_2"), labels = c("Slot 1", "Slot 2"))
+  ) %>%
   drop_na(distance, k)
 
 cat("Interleaved rows:", nrow(df_interleaved), "\n")
 cat("Speaker rows:", nrow(df_speaker), "\n")
 ```
 
-# Interleaved Sequence Analysis
+# Asymmetry Comparison
+
+```{r speaker-asymmetry}
+speaker_asymmetry_model <- lmer(
+  distance ~ k + slot * condition + (1 | conversation_id),
+  data = df_speaker
+)
+
+cat("Speaker-slot asymmetry model:\n")
+print(summary(speaker_asymmetry_model))
+
+speaker_asymmetry_emm <- emmeans(
+  speaker_asymmetry_model,
+  specs = c("condition", "slot")
+)
+
+speaker_asymmetry <- as.data.frame(pairs(speaker_asymmetry_emm, by = "condition")) %>%
+  transmute(
+    condition,
+    difference = estimate,
+    se = SE,
+    t = t.ratio,
+    p = p.value
+  )
+
+speaker_asymmetry %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Speaker-slot asymmetry in semantic exploration by condition"
+  )
+```
+
+```{r speaker-asymmetry-plot, fig.width=10, fig.height=5}
+speaker_asymmetry %>%
+  ggplot(aes(x = condition, y = difference, fill = condition)) +
+  geom_col(width = 0.6, alpha = 0.8) +
+  geom_errorbar(
+    aes(ymin = difference - 1.96 * se, ymax = difference + 1.96 * se),
+    width = 0.2
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Speaker-Slot Asymmetry by Condition",
+    subtitle = "Difference: Slot 1 - Slot 2. This is the primary cross-condition asymmetry comparison.",
+    x = "Condition",
+    y = "Asymmetry in Semantic Distance"
+  ) +
+  theme(legend.position = "none")
+```
+
+```{r speaker-plot, fig.width=12, fig.height=6}
+speaker_summary <- df_speaker %>%
+  group_by(condition, slot, k) %>%
+  summarise(
+    mean_distance = mean(distance, na.rm = TRUE),
+    se_distance = sd(distance, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+ggplot(speaker_summary, aes(x = k, y = mean_distance, color = slot)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.8) +
+  geom_ribbon(
+    aes(ymin = mean_distance - 1.96 * se_distance,
+        ymax = mean_distance + 1.96 * se_distance,
+        fill = slot),
+    alpha = 0.15,
+    color = NA
+  ) +
+  facet_wrap(~condition) +
+  labs(
+    title = "Speaker-Level Semantic Exploration by Slot",
+    subtitle = "Slot trajectories shown first because asymmetry is the primary comparison target",
+    x = "Lag Bin (k)",
+    y = "Semantic Distance",
+    color = "Slot",
+    fill = "Slot"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+# General Condition-Level Comparison
 
 ```{r interleaved-descriptives}
 df_interleaved %>%
@@ -147,7 +240,7 @@ cat("\nCondition contrasts (interleaved view):\n")
 print(pairs(emm_interleaved, adjust = "bonferroni"))
 ```
 
-# Speaker-Level Analysis
+# Role-Level View
 
 ```{r speaker-descriptives}
 df_speaker %>%
@@ -163,8 +256,8 @@ df_speaker %>%
   )
 ```
 
-```{r speaker-plot, fig.width=12, fig.height=6}
-speaker_summary <- df_speaker %>%
+```{r role-plot, fig.width=12, fig.height=6}
+role_summary <- df_speaker %>%
   filter(!is.na(condition_role)) %>%
   group_by(condition, condition_role, k) %>%
   summarise(
@@ -173,7 +266,7 @@ speaker_summary <- df_speaker %>%
     .groups = "drop"
   )
 
-ggplot(speaker_summary, aes(x = k, y = mean_distance, color = condition_role)) +
+ggplot(role_summary, aes(x = k, y = mean_distance, color = condition_role)) +
   geom_line(linewidth = 1) +
   geom_point(size = 1.8) +
   geom_ribbon(
@@ -185,34 +278,14 @@ ggplot(speaker_summary, aes(x = k, y = mean_distance, color = condition_role)) +
   ) +
   facet_wrap(~condition) +
   labs(
-    title = "Speaker-Level Semantic Exploration",
-    subtitle = "Human / AI in Human-AI; Starter-side / Non-starter-side in same-type conditions",
+    title = "Speaker-Level Semantic Exploration by Role",
+    subtitle = "Within-condition role view only: Human / AI in Human-AI; Starter-side / Non-starter-side in same-type conditions",
     x = "Lag Bin (k)",
     y = "Semantic Distance",
     color = "Role",
     fill = "Role"
   ) +
   theme(legend.position = "bottom")
-```
-
-```{r speaker-models}
-for (cond_name in levels(df_speaker$condition)) {
-  df_subset <- df_speaker %>%
-    filter(condition == cond_name, !is.na(condition_role))
-
-  if (nrow(df_subset) < 40 || n_distinct(df_subset$condition_role) < 2) {
-    next
-  }
-
-  model <- lmer(
-    distance ~ k * condition_role + (1 | conversation_id),
-    data = df_subset
-  )
-
-  cat("\n===", cond_name, "===\n")
-  print(summary(model))
-  print(emmeans(model, specs = "condition_role"))
-}
 ```
 
 # Interleaved vs Speaker View
@@ -251,6 +324,7 @@ This notebook is now adapted to the new semantic exploration output by:
 
 - reading the current `semantic_exploration_binned.parquet` files,
 - modelling **lag bin `k`** instead of the obsolete raw-turn structure,
+- putting the **speaker-slot asymmetry comparison first**,
 - separating **interleaved** and **speaker-specific** exploration views,
 - using recovered speaker-role metadata where that interpretation is valid.
 

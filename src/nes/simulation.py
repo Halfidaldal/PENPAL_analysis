@@ -8,6 +8,19 @@ This simulation matches the actual PENPAL human-AI experiment configuration:
 - Temperature: 1.0
 - Max tokens: 35
 - System prompt: Collaborative storytelling prompt with pacing info
+
+Context management per provider (matching experiment server/adapters):
+- OpenAI: Native conversation threading via Conversations API.
+          Only current turn text sent as 'input'; provider manages history.
+          System prompt sent as 'instructions'.
+          (Matches server/adapters/OpenAIAdapter.ts)
+- Anthropic: Stateless. Caller builds alternating user/assistant history.
+             System prompt sent separately via Anthropic's 'system' parameter.
+             Messages trimmed to 12k char limit.
+             (Matches server/adapters/ClaudeAdapter.ts + server/utils/messages.ts)
+- HuggingFace: Stateless. Caller builds [system, ...history, user: current_input].
+               Messages trimmed to 12k char limit.
+               (Matches server/adapters/VLLMAdapterA.ts + server/utils/messages.ts)
 """
 
 from typing import Optional, List, Dict, Literal
@@ -23,16 +36,58 @@ from tqdm import tqdm
 ProviderType = Literal["openai", "anthropic", "huggingface"]
 
 
+def trim_messages_to_char_limit(messages: List[Dict[str, str]], limit: int = 12000) -> List[Dict[str, str]]:
+    """Trim messages to fit within character limit, keeping most recent messages.
+    
+    Matches the experiment's trimMessagesToCharLimit utility (server/utils/messages.ts).
+    Keeps system message (if first) plus as many recent messages as fit within limit.
+    Trims from the oldest first, always preserving the most recent messages.
+    """
+    if not messages:
+        return messages
+    
+    system_message = messages[0] if messages[0].get('role') == 'system' else None
+    rest = messages[1:] if system_message else messages[:]
+    
+    remaining = limit
+    kept: List[Dict[str, str]] = []
+    
+    for msg in reversed(rest):
+        content_length = len(msg.get('content', ''))
+        if content_length > remaining and kept:
+            continue
+        remaining -= content_length
+        kept.insert(0, msg)
+        if remaining <= 0:
+            break
+    
+    if system_message:
+        kept.insert(0, system_message)
+    
+    return kept
+
+
 class BaseProvider(ABC):
-    """Abstract base class for LLM providers."""
+    """Abstract base class for LLM providers.
+    
+    Interface matches the experiment's ModelAdapter pattern:
+    - system_prompt: Updated each turn with pacing metadata
+    - user_input: Just the current turn's text from the partner
+    - history: Prior turns as alternating user/assistant messages
+    """
     
     @abstractmethod
-    def generate(self, messages: List[Dict[str, str]], temperature: float = 1.0,
-                 max_tokens: int = 35) -> str:
+    def generate(self, system_prompt: str, user_input: str,
+                 history: Optional[List[Dict[str, str]]] = None,
+                 temperature: float = 1.0, max_tokens: int = 35) -> str:
         """Generate a response from the model.
         
         Args:
-            messages: List of message dicts with 'role' and 'content'
+            system_prompt: System instructions with pacing metadata
+            user_input: Current turn's text from the partner (not cumulative story)
+            history: Prior conversation as alternating user/assistant messages.
+                     Ignored by threaded providers (OpenAI). Required by
+                     stateless providers (Anthropic, HuggingFace).
             temperature: Sampling temperature (default 1.0 to match experiment)
             max_tokens: Maximum output tokens (default 35 to match experiment)
             
@@ -48,7 +103,15 @@ class BaseProvider(ABC):
 
 
 class OpenAIProvider(BaseProvider):
-    """OpenAI API provider with conversation threading."""
+    """OpenAI API provider with native conversation threading.
+    
+    Matches experiment's OpenAIAdapter (server/adapters/OpenAIAdapter.ts):
+    - Uses responses.create() with conversation threading
+    - Sends system_prompt as 'instructions' (not seeded in conversation items)
+    - Sends user_input as 'input' (just current turn text, not cumulative story)
+    - Provider manages full history internally via conversation ID
+    - history parameter is ignored (provider handles it)
+    """
     
     def __init__(self, api_key: str, model_name: str = "gpt-4o"):
         from openai import OpenAI
@@ -56,36 +119,43 @@ class OpenAIProvider(BaseProvider):
         self.model_name = model_name
         self.conversation_id = None
     
-    def generate(self, messages: List[Dict[str, str]], temperature: float = 1.0,
-                 max_tokens: int = 35) -> str:
-        """Generate using OpenAI's responses API with conversation threading."""
-        # Build input from last user message
-        last_msg = messages[-1]['content'] if messages else ""
+    def generate(self, system_prompt: str, user_input: str,
+                 history: Optional[List[Dict[str, str]]] = None,
+                 temperature: float = 1.0, max_tokens: int = 35) -> str:
+        """Generate using OpenAI's responses API with conversation threading.
         
+        Matches experiment's OpenAIAdapter.respond():
+        - Creates conversation with empty items on first call
+        - Sends only current user_input as 'input' (not cumulative story)
+        - Uses 'instructions' for system prompt (updated each turn)
+        - Conversation thread manages all history internally
+        - history parameter is ignored
+        """
         if self.conversation_id is None:
-            # Create new conversation with system prompt
-            system_msg = next((m['content'] for m in messages if m['role'] == 'system'), "")
-            
+            # Match experiment: create conversation with empty items
+            # (experiment: this.client.conversations.create({ metadata: ..., items: [] }))
             conversation = self.client.conversations.create(
                 metadata={"topic": "ai-ai-simulation"},
-                items=[
-                    {"type": "message", "role": "developer", "content": system_msg},
-                    {"type": "message", "role": "user", "content": ""}
-                ]
+                items=[]
             )
             self.conversation_id = conversation.id
         
+        # Match experiment: send instructions + input only, let thread handle history
+        # (experiment: this.client.responses.create({ instructions: systemPrompt, input: userInput, conversation: id }))
         response = self.client.responses.create(
             model=self.model_name,
             conversation=self.conversation_id,
-            input=last_msg,
+            instructions=system_prompt,
+            input=user_input,
             temperature=temperature,
             max_output_tokens=max_tokens,
         )
         
-        # Extract text from response
+        # Extract text from response (try output_text first, matching experiment)
         out = ""
-        if hasattr(response, 'output') and response.output:
+        if hasattr(response, 'output_text') and response.output_text:
+            out = response.output_text
+        elif hasattr(response, 'output') and response.output:
             for item in response.output:
                 if hasattr(item, 'content'):
                     if isinstance(item.content, str):
@@ -103,62 +173,67 @@ class OpenAIProvider(BaseProvider):
 
 
 class AnthropicProvider(BaseProvider):
-    """Anthropic API provider using messages API."""
+    """Anthropic API provider using messages API.
+    
+    Matches experiment's ClaudeAdapter pattern (server/adapters/ClaudeAdapter.ts):
+    - STATELESS: no internal conversation_history
+    - Receives full message history from caller as alternating user/assistant turns
+    - System prompt passed separately via Anthropic's 'system' parameter
+    - Messages trimmed to 12k char limit (matching server/utils/messages.ts)
+    """
     
     def __init__(self, api_key: str, model_name: str = "claude-sonnet-4-5-20250929"):
         from anthropic import Anthropic
         self.client = Anthropic(api_key=api_key)
         self.model_name = model_name
-        self.conversation_history = []
-        self.system_prompt = ""
     
-    def generate(self, messages: List[Dict[str, str]], temperature: float = 1.0,
-                 max_tokens: int = 35) -> str:
-        """Generate using Anthropic's messages API with rolling history."""
-        # Extract system prompt (keep separate for Anthropic)
-        system_msg = next((m['content'] for m in messages if m['role'] == 'system'), "")
-        if system_msg:
-            self.system_prompt = system_msg
+    def generate(self, system_prompt: str, user_input: str,
+                 history: Optional[List[Dict[str, str]]] = None,
+                 temperature: float = 1.0, max_tokens: int = 35) -> str:
+        """Generate using Anthropic's messages API (stateless).
         
-        # Add user messages to history (skip system)
-        user_msgs = [m for m in messages if m['role'] != 'system']
-        if user_msgs:
-            last_msg = user_msgs[-1]
-            self.conversation_history.append({
-                "role": last_msg['role'],
-                "content": last_msg['content']
-            })
+        Matches experiment's ClaudeAdapter.respond() + buildMessagesForCompat():
+        - Builds messages from history + current user_input
+        - System prompt sent separately via Anthropic's 'system' parameter
+        - No internal state between calls (no conversation_history accumulation)
+        - Trims to 12k char limit matching experiment's buildMessagesForCompat
+        """
+        # Build messages array: history + current user input
+        # Matches experiment's buildMessagesForCompat which assembles
+        # [...history, {role: "user", content: userInput}]
+        messages = []
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": user_input})
+        
+        # Trim to match experiment's 12k char limit
+        messages = trim_messages_to_char_limit(messages, limit=12000)
         
         response = self.client.messages.create(
             model=self.model_name,
             max_tokens=max_tokens,
             temperature=temperature,
-            system=self.system_prompt,
-            messages=self.conversation_history
+            system=system_prompt,
+            messages=messages
         )
         
         # Extract response text
         out = response.content[0].text if response.content else ""
-        
-        # Add assistant response to history
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": out
-        })
-        
         return out.strip()
     
     def reset_conversation(self):
-        """Reset conversation history for new story."""
-        self.conversation_history = []
-        self.system_prompt = ""
+        """No internal state to reset (stateless provider)."""
+        pass
 
 
 class HuggingFaceProvider(BaseProvider):
     """HuggingFace Inference API provider (OpenAI-compatible).
     
-    Uses HuggingFace's OpenAI-compatible endpoint, matching the original 
-    PENPAL experiment setup which uses the OpenAI SDK with a custom base_url.
+    Matches experiment's VLLM adapters (server/adapters/VLLMAdapterA.ts):
+    - STATELESS: no internal conversation state
+    - Builds [system, ...history, user: current_input] message array
+    - Uses OpenAI-compatible chat completions endpoint
+    - Messages trimmed to 12k char limit (matching server/utils/messages.ts)
     """
     
     def __init__(self, api_key: str, model_name: str, base_url: str = "https://router.huggingface.co/v1"):
@@ -168,11 +243,27 @@ class HuggingFaceProvider(BaseProvider):
             base_url=base_url
         )
         self.model_name = model_name
-        self.conversation_history = []
     
-    def generate(self, messages: List[Dict[str, str]], temperature: float = 1.0,
-                 max_tokens: int = 35) -> str:
-        """Generate using HuggingFace's OpenAI-compatible API."""
+    def generate(self, system_prompt: str, user_input: str,
+                 history: Optional[List[Dict[str, str]]] = None,
+                 temperature: float = 1.0, max_tokens: int = 35) -> str:
+        """Generate using HuggingFace's OpenAI-compatible API (stateless).
+        
+        Matches experiment's VLLM adapters via buildMessagesForCompat():
+        - Builds [system, ...history, user: current_input]
+        - No internal conversation state
+        - Trims to 12k char limit
+        """
+        # Build messages: [system, ...history, user: current_input]
+        # Matches experiment's buildMessagesForCompat output
+        messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": user_input})
+        
+        # Trim to match experiment's char limit
+        messages = trim_messages_to_char_limit(messages, limit=12000)
+        
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
@@ -184,8 +275,8 @@ class HuggingFaceProvider(BaseProvider):
         return out.strip() if out else ""
     
     def reset_conversation(self):
-        """Reset conversation history for new story."""
-        self.conversation_history = []
+        """No internal state to reset (stateless provider)."""
+        pass
 
 
 def get_provider(provider_type: ProviderType, api_key: str, model_name: str, 
@@ -244,7 +335,7 @@ If there's no story, please begin the story. You have 10 interactions to write t
         pacing = f"""
 
 [Session Meta — do not reveal]
-This is turn {turn_number} of 10. Use this only to pace and conclude appropriately. Do not mention turns, counts, chapters, #, or session meta in your reply. Write in plain prose that flows naturally from the previous text."""
+This is turn {turn_number} of 10. Use this only to pace and conclude appropriately. Do not mention turns, counts, chapters, headings, "#", or session meta in your reply. Write in plain prose that flows naturally from the previous text."""
         
         return f"{base}{pacing}".strip()
 
@@ -260,11 +351,25 @@ def simulate_single_story(
 ) -> pd.DataFrame:
     """Simulate a single AI-AI story conversation.
     
-    Matches the actual PENPAL human-AI experiment:
-    - Both agents get IDENTICAL instructions (story collaborator prompt)
-    - "This is the story of" is the starting context agent 1 continues from
+    Matches the actual PENPAL human-AI experiment context management:
+    - Each agent maintains its own conversation history as alternating
+      user/assistant turns (matching the experiment's frontend messages state)
+    - For threaded providers (OpenAI): only current turn text sent as input,
+      system prompt sent as instructions. Provider manages history internally.
+    - For stateless providers (Claude, HuggingFace): full alternating history
+      + current user input sent each call.
+    - System prompt updated each turn with pacing metadata
     - Temperature: 1.0, Max tokens: 35
-    - Pacing metadata included in system prompt
+    
+    Each agent sees the conversation from its own perspective:
+    - "user" role = partner's text (what the other agent wrote)
+    - "assistant" role = own previous responses
+    
+    This matches the experiment where:
+    - The human's text arrives as "user" messages
+    - The AI's responses are "assistant" messages
+    - The frontend builds currentMessages = [...messages, newMessage]
+      and sends it as the rolling history
     
     Args:
         provider_agent1: Provider for first agent
@@ -285,8 +390,19 @@ def simulate_single_story(
     # Initialize conversation
     data = []
     
-    # The story so far - starts with the prefix that agent 1 continues from
+    # Each agent maintains its own conversation history as alternating
+    # user/assistant messages, matching the experiment's frontend state.
+    # From each agent's perspective:
+    #   "user" = partner's text (what the other agent wrote)
+    #   "assistant" = own response
+    agent1_history: List[Dict[str, str]] = []
+    agent2_history: List[Dict[str, str]] = []
+    
+    # Track full story text for data recording only
     story_context = SystemPrompts.STORY_PREFIX
+    
+    # Will hold agent 2's last response for next iteration
+    agent2_last_text = ""
     
     for turn_idx in range(n_turns):
         turn_number = turn_idx + 1
@@ -294,19 +410,30 @@ def simulate_single_story(
         # BOTH agents get the SAME system prompt (matching actual experiment)
         system_prompt = SystemPrompts.get_system_prompt(turn_number)
         
-        # Agent 1's turn: continue from current story context
-        agent1_messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": story_context}
-        ]
+        # === Agent 1's turn ===
+        # Determine what agent 1 receives as "user input" from its partner
+        if turn_idx == 0:
+            # First turn: the baseline prefix is the starting context
+            # (matches experiment: baselineText = "This is the story of")
+            agent1_input = SystemPrompts.STORY_PREFIX
+        else:
+            # Subsequent turns: agent 2's last response is the partner input
+            # (matches experiment: human types text -> becomes userInput for AI)
+            agent1_input = agent2_last_text
         
         agent1_text = provider_agent1.generate(
-            agent1_messages, 
-            temperature=temperature, 
+            system_prompt=system_prompt,
+            user_input=agent1_input,
+            history=agent1_history if agent1_history else None,
+            temperature=temperature,
             max_tokens=max_tokens
         )
         
-        # Update story context with agent 1's contribution
+        # Update agent 1's history (user = partner input, assistant = own response)
+        agent1_history.append({"role": "user", "content": agent1_input})
+        agent1_history.append({"role": "assistant", "content": agent1_text})
+        
+        # Update story context for data recording
         if turn_idx == 0:
             # First turn: agent 1 continued from "This is the story of"
             # Save with prefix for data (matching human-AI data structure)
@@ -316,19 +443,28 @@ def simulate_single_story(
             agent1_text_for_data = agent1_text
             story_context = f"{story_context} {agent1_text}"
         
-        # Agent 2's turn: continue from updated story context
-        agent2_messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": story_context}
-        ]
+        # === Agent 2's turn ===
+        # Agent 2 receives agent 1's output as partner input
+        # (matches experiment: AI response becomes context for next human turn,
+        #  but here the "next human" is another AI)
+        agent2_input = agent1_text
         
         agent2_text = provider_agent2.generate(
-            agent2_messages,
+            system_prompt=system_prompt,
+            user_input=agent2_input,
+            history=agent2_history if agent2_history else None,
             temperature=temperature,
             max_tokens=max_tokens
         )
         
-        # Update story context with agent 2's contribution
+        # Update agent 2's history
+        agent2_history.append({"role": "user", "content": agent2_input})
+        agent2_history.append({"role": "assistant", "content": agent2_text})
+        
+        # Save agent 2's last text for next iteration
+        agent2_last_text = agent2_text
+        
+        # Update story context for data recording
         story_context = f"{story_context} {agent2_text}"
         
         # Record turn data

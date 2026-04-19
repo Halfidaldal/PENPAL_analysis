@@ -56,6 +56,7 @@ The notebook now follows the new data structure:
 - it uses role labels only where they are structurally valid:
   - **Human / AI** in Human-AI
   - **Starter-side / Non-starter-side** in same-type conditions
+- role-labeled plots are therefore **within-condition descriptive views**, not direct cross-condition comparisons
 
 # Load Data
 
@@ -126,13 +127,81 @@ df_long <- df_slots %>%
   ) %>%
   mutate(
     metric = factor(metric, levels = c("surprise", "transience", "resonance"))
-  )
+  ) 
+
+
 
 cat("Slot-level rows:", nrow(df_slots), "\n")
 cat("Metric rows:", nrow(df_long), "\n")
 ```
 
-# Descriptive Statistics
+# Asymmetry Comparison
+
+```{r slot-asymmetry}
+slot_asymmetry <- purrr::map_dfr(levels(df_long$metric), function(metric_name) {
+  df_metric <- df_long %>%
+    filter(metric == metric_name)
+
+  model <- lmer(value ~ slot * condition + (1 | conversation_id), data = df_metric)
+  emm <- emmeans(model, specs = c("condition", "slot"))
+  emm_df <- as.data.frame(emm)
+  contrast_df <- as.data.frame(pairs(emm, by = "condition"))
+
+  tibble(
+    metric = metric_name,
+    condition = contrast_df$condition,
+    slot_1_mean = purrr::map_dbl(
+      contrast_df$condition,
+      ~ emm_df$emmean[emm_df$condition == .x & emm_df$slot == "Slot 1"][1]
+    ),
+    slot_2_mean = purrr::map_dbl(
+      contrast_df$condition,
+      ~ emm_df$emmean[emm_df$condition == .x & emm_df$slot == "Slot 2"][1]
+    ),
+    difference = contrast_df$estimate,
+    se = contrast_df$SE,
+    t = contrast_df$t.ratio,
+    p = contrast_df$p.value
+  )
+})
+
+slot_asymmetry %>%
+  mutate(
+    sig = case_when(
+      p < 0.001 ~ "***",
+      p < 0.01 ~ "**",
+      p < 0.05 ~ "*",
+      p < 0.1 ~ ".",
+      TRUE ~ ""
+    )
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Slot asymmetry by condition for novelty metrics"
+  )
+```
+
+```{r slot-asymmetry-plot, fig.width=12, fig.height=8}
+slot_asymmetry %>%
+  ggplot(aes(x = condition, y = difference, fill = condition)) +
+  geom_col(width = 0.6, alpha = 0.8) +
+  geom_errorbar(
+    aes(ymin = difference - 1.96 * se, ymax = difference + 1.96 * se),
+    width = 0.2
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
+  facet_wrap(~metric, scales = "free_y") +
+  labs(
+    title = "Slot Asymmetry by Condition",
+    subtitle = "Difference: Slot 1 - Slot 2. This is the primary cross-condition asymmetry comparison.",
+    x = "Condition",
+    y = "Asymmetry"
+  ) +
+  theme(legend.position = "none")
+```
+
+# General Condition-Level Comparison
 
 ```{r descriptives}
 df_long %>%
@@ -164,23 +233,7 @@ df_long %>%
   theme(legend.position = "bottom")
 ```
 
-# Condition-Level Comparison
-
 ```{r condition-models}
-condition_results <- purrr::map_dfr(levels(df_long$metric), function(metric_name) {
-  df_metric <- filter(df_long, metric == metric_name)
-
-  model <- lmer(value ~ condition + (1 | conversation_id), data = df_metric)
-  emm <- emmeans(model, specs = "condition")
-  pairs_df <- as.data.frame(pairs(emm, adjust = "bonferroni"))
-
-  tibble(
-    metric = metric_name,
-    omnibus = paste(capture.output(print(anova(model))), collapse = "\n"),
-    contrasts = paste(capture.output(print(pairs_df)), collapse = "\n")
-  )
-})
-
 for (metric_name in levels(df_long$metric)) {
   cat("\n===", metric_name, "===\n")
   model <- lmer(value ~ condition + (1 | conversation_id), data = filter(df_long, metric == metric_name))
@@ -189,49 +242,34 @@ for (metric_name in levels(df_long$metric)) {
 }
 ```
 
-# Within-Condition Slot Asymmetry
+# Condition-Level Novelty-to-Resonance Relationship
 
-```{r slot-asymmetry}
-slot_asymmetry <- purrr::map_dfr(levels(df_long$metric), function(metric_name) {
-  purrr::map_dfr(levels(df_long$condition), function(cond_name) {
-    df_subset <- df_long %>%
-      filter(metric == metric_name, condition == cond_name)
+```{r novelty-resonance}
+innovation_model <- lmer(
+  resonance ~ surprise * condition + (1 | conversation_id),
+  data = df_slots
+)
 
-    if (nrow(df_subset) < 50) {
-      return(tibble())
-    }
+cat("Novelty-to-resonance model:\n")
+print(summary(innovation_model))
 
-    model <- lmer(value ~ slot + (1 | conversation_id), data = df_subset)
-    emm <- emmeans(model, specs = "slot")
-    contrast_df <- as.data.frame(pairs(emm))
+cat("\nCondition-specific novelty-to-resonance slopes:\n")
+print(emtrends(innovation_model, specs = "condition", var = "surprise"))
+```
 
-    tibble(
-      metric = metric_name,
-      condition = cond_name,
-      slot_1_mean = as.data.frame(emm)$emmean[1],
-      slot_2_mean = as.data.frame(emm)$emmean[2],
-      difference = contrast_df$estimate[1],
-      se = contrast_df$SE[1],
-      t = contrast_df$t.ratio[1],
-      p = contrast_df$p.value[1]
-    )
-  })
-})
-
-slot_asymmetry %>%
-  mutate(
-    sig = case_when(
-      p < 0.001 ~ "***",
-      p < 0.01 ~ "**",
-      p < 0.05 ~ "*",
-      p < 0.1 ~ ".",
-      TRUE ~ ""
-    )
-  ) %>%
-  knitr::kable(
-    digits = 3,
-    caption = "Within-condition slot asymmetry for novelty metrics"
-  )
+```{r novelty-resonance-plot, fig.width=12, fig.height=5}
+df_slots %>%
+  ggplot(aes(x = surprise, y = resonance, color = condition)) +
+  geom_point(alpha = 0.08, size = 0.6) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.1) +
+  scale_color_manual(values = condition_colors) +
+  labs(
+    title = "Novelty vs Resonance by Condition",
+    subtitle = "One novelty-to-resonance slope per condition",
+    x = "Novelty / Surprise",
+    y = "Resonance"
+  ) +
+  theme(legend.position = "bottom")
 ```
 
 # Role-Level View
@@ -248,37 +286,11 @@ df_slots %>%
   facet_grid(metric ~ condition, scales = "free_y") +
   labs(
     title = "Role-Conditioned Novelty Metrics",
-    subtitle = "Human / AI in Human-AI; Starter-side / Non-starter-side in same-type conditions",
+    subtitle = "Within-condition role view only: Human / AI in Human-AI; Starter-side / Non-starter-side in same-type conditions",
     x = NULL,
     y = "Metric Value"
   ) +
   theme(legend.position = "none")
-```
-
-# Novelty-to-Resonance Relationship
-
-```{r novelty-resonance}
-innovation_model <- lmer(
-  resonance ~ surprise * condition + (1 | conversation_id),
-  data = df_slots
-)
-
-cat("Novelty-to-resonance model:\n")
-print(summary(innovation_model))
-```
-
-```{r novelty-resonance-plot, fig.width=12, fig.height=5}
-df_slots %>%
-  ggplot(aes(x = surprise, y = resonance, color = condition)) +
-  geom_point(alpha = 0.08, size = 0.6) +
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1.1) +
-  scale_color_manual(values = condition_colors) +
-  labs(
-    title = "Novelty vs Resonance by Condition",
-    x = "Novelty / Surprise",
-    y = "Resonance"
-  ) +
-  theme(legend.position = "bottom")
 ```
 
 # Summary
@@ -287,7 +299,8 @@ This notebook is now aligned with the new structure by:
 
 - loading novelty data through the shared helper layer,
 - restricting the analysis to **complete aligned exchanges**,
+- putting the **cross-condition asymmetry comparison first**,
 - using **slot-based asymmetry** instead of assuming stable author identities,
-- surfacing role labels only where they are valid under the new schema.
+- treating the condition-level metric comparison and novelty-to-resonance slope as the second layer.
 
 *Analysis completed: `r Sys.time()`*

@@ -60,11 +60,11 @@ def main():
         "--api-key",
         type=str,
         default=None,
-        help="OpenAI API key (or set OPENAI_API_KEY environment variable)"
+        help="Google API key (or set GOOGLE_API_KEY environment variable)"
     )
     args = parser.parse_args()
     
-    api_key = os.environ.get('OPENAI_API_KEY')
+    api_key = os.environ.get('GOOGLE_API_KEY')
     
     # Load config
     experiment = get_active_experiment()

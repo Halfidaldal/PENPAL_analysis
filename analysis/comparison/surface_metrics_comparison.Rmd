@@ -48,6 +48,8 @@ The underlying processed data are now one row per **speaker contribution**, with
 - **Human / AI** in Human-AI
 - **Starter-side / Non-starter-side** in Human-Human and AI-AI
 
+Those role labels are useful for **within-condition description**, but they are not the primary cross-condition comparison axis. For cross-condition comparison, this notebook uses **Slot 1 / Slot 2 asymmetry**.
+
 The notebook therefore no longer assumes old wide `author_1_*` / `author_2_*` columns.
 
 # Load Data
@@ -92,7 +94,71 @@ knitr::kable(
 )
 ```
 
-# Descriptive Statistics
+# Asymmetry Comparison
+
+```{r slot-asymmetry}
+df_slots <- df_combined %>%
+  filter(speaker_slot %in% c("author_1", "author_2")) %>%
+  mutate(
+    slot = factor(speaker_slot, levels = c("author_1", "author_2"), labels = c("Slot 1", "Slot 2"))
+  )
+
+slot_asymmetry <- purrr::imap_dfr(selected_metrics, function(col_name, metric_alias) {
+  model <- lmer(
+    as.formula(paste(col_name, "~ slot * condition + (1 | conversation_id)")),
+    data = df_slots
+  )
+
+  emm <- emmeans(model, specs = c("condition", "slot"))
+  emm_df <- as.data.frame(emm)
+  contrast_df <- as.data.frame(pairs(emm, by = "condition"))
+
+  tibble(
+    metric = metric_alias,
+    condition = contrast_df$condition,
+    slot_1_mean = purrr::map_dbl(
+      contrast_df$condition,
+      ~ emm_df$emmean[emm_df$condition == .x & emm_df$slot == "Slot 1"][1]
+    ),
+    slot_2_mean = purrr::map_dbl(
+      contrast_df$condition,
+      ~ emm_df$emmean[emm_df$condition == .x & emm_df$slot == "Slot 2"][1]
+    ),
+    difference = contrast_df$estimate,
+    se = contrast_df$SE,
+    t = contrast_df$t.ratio,
+    p = contrast_df$p.value
+  )
+})
+
+slot_asymmetry %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Slot asymmetry by condition for selected surface metrics"
+  )
+```
+
+```{r slot-asymmetry-plot, fig.width=12, fig.height=8}
+slot_asymmetry %>%
+  ggplot(aes(x = condition, y = difference, fill = condition)) +
+  geom_col(width = 0.6, alpha = 0.8) +
+  geom_errorbar(
+    aes(ymin = difference - 1.96 * se, ymax = difference + 1.96 * se),
+    width = 0.2
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
+  facet_wrap(~metric, scales = "free_y") +
+  labs(
+    title = "Slot Asymmetry by Condition",
+    subtitle = "Difference: Slot 1 - Slot 2. This is the primary cross-condition asymmetry comparison.",
+    x = "Condition",
+    y = "Asymmetry"
+  ) +
+  theme(legend.position = "none")
+```
+
+# General Condition-Level Comparison
 
 ```{r descriptives}
 descriptive_table <- purrr::imap_dfr(selected_metrics, function(col_name, metric_alias) {
@@ -132,8 +198,6 @@ plot_data %>%
   theme(legend.position = "bottom")
 ```
 
-# Cross-Condition Models
-
 ```{r condition-models}
 for (metric_alias in names(selected_metrics)) {
   col_name <- selected_metrics[[metric_alias]]
@@ -160,7 +224,7 @@ df_combined %>%
   facet_wrap(~condition, scales = "free_x") +
   labs(
     title = paste("Role-Level Comparison for", names(selected_metrics)[1]),
-    subtitle = "Human / AI in Human-AI; Starter-side / Non-starter-side in same-type conditions",
+    subtitle = "Within-condition role view only: Human / AI in Human-AI; Starter-side / Non-starter-side in same-type conditions",
     x = NULL,
     y = primary_length_metric
   ) +
@@ -202,6 +266,7 @@ The notebook is now adapted to the new structure by:
 - loading long-format contribution-level surface metrics,
 - using the shared backfilled role metadata,
 - restricting the analysis to complete, aligned exchanges,
+- putting the **cross-condition slot asymmetry comparison first**,
 - removing the old wide-format `author_1_*` / `author_2_*` assumptions.
 
 *Analysis completed: `r Sys.time()`*
