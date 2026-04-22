@@ -59,6 +59,10 @@ Important comparison note:
 - **Slot 1 / Slot 2** is the directly comparable cross-condition axis.
 - **Human / AI** in Human-AI and **Starter-side / Non-starter-side** in same-type conditions are only used as within-condition descriptive views.
 
+**Primary cross-condition object.** Per story, we compute the trapezoidal area under each slot's mean $\text{distance}(k)$ curve over the intersection of $k$ values present for both slots, and take the unsigned difference:
+$$A_{\text{semexp}}(i) \;=\; \bigl|\, \mathrm{AUC}_{\text{slot}=1,\,i} - \mathrm{AUC}_{\text{slot}=2,\,i} \,\bigr|.$$
+This is label-invariant and comparable across conditions. The lag-binned LMM slot contrast and the log-distance slope view are retained as supplemental. Starter-mechanism and Human-AI speaker-type decompositions are deferred.
+
 # Load Data
 
 ```{r load-data}
@@ -96,7 +100,141 @@ cat("Interleaved rows:", nrow(df_interleaved), "\n")
 cat("Speaker rows:", nrow(df_speaker), "\n")
 ```
 
-# Asymmetry Comparison
+# Primary: Per-Story AUC Asymmetry
+
+```{r primary-auc-asymmetry}
+# Aggregate to one distance value per (story, slot, k) first
+df_slot_k <- df_speaker %>%
+  group_by(condition, conversation_id, slot, k) %>%
+  summarise(distance = mean(distance, na.rm = TRUE), .groups = "drop") %>%
+  drop_na(distance)
+
+# Trapezoidal AUC over the k range that is populated for BOTH slots within each story
+trap_auc <- function(x, y) {
+  if (length(x) < 2) return(NA_real_)
+  ord <- order(x)
+  x <- x[ord]; y <- y[ord]
+  sum((y[-1] + y[-length(y)]) * diff(x) / 2)
+}
+
+df_auc <- df_slot_k %>%
+  group_by(condition, conversation_id, slot) %>%
+  summarise(k_set = list(k), .groups = "drop") %>%
+  pivot_wider(names_from = slot, values_from = k_set) %>%
+  rowwise() %>%
+  mutate(
+    k_common = list(sort(intersect(`Slot 1`, `Slot 2`)))
+  ) %>%
+  ungroup() %>%
+  select(condition, conversation_id, k_common) %>%
+  # keep stories with enough shared k to integrate
+  filter(lengths(k_common) >= 2)
+
+df_auc_stories <- df_slot_k %>%
+  inner_join(df_auc, by = c("condition", "conversation_id")) %>%
+  rowwise() %>%
+  filter(k %in% k_common) %>%
+  ungroup() %>%
+  group_by(condition, conversation_id, slot) %>%
+  summarise(
+    auc = trap_auc(k, distance),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(names_from = slot, values_from = auc, names_prefix = "auc_") %>%
+  drop_na(`auc_Slot 1`, `auc_Slot 2`) %>%
+  mutate(
+    signed_diff = `auc_Slot 1` - `auc_Slot 2`,
+    A_semexp = abs(signed_diff)
+  )
+
+stopifnot(all(df_auc_stories$A_semexp >= 0))
+
+df_auc_stories %>%
+  count(condition, name = "n_stories") %>%
+  knitr::kable(caption = "Stories with per-story AUC computable in both slots")
+
+df_auc_stories %>%
+  group_by(condition) %>%
+  summarise(
+    n = n(),
+    mean_A = mean(A_semexp),
+    sd_A = sd(A_semexp),
+    median_A = median(A_semexp),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-story |AUC(slot 1) - AUC(slot 2)| by condition"
+  )
+```
+
+```{r primary-auc-test}
+if (n_distinct(df_auc_stories$condition) >= 2 && nrow(df_auc_stories) >= 10) {
+  cat("One-way ANOVA: A_semexp ~ condition\n")
+  print(summary(aov(A_semexp ~ condition, data = df_auc_stories)))
+
+  cat("\nKruskal-Wallis (robust): A_semexp ~ condition\n")
+  print(kruskal.test(A_semexp ~ condition, data = df_auc_stories))
+
+  cat("\nPairwise Wilcoxon (BH-adjusted):\n")
+  print(pairwise.wilcox.test(
+    df_auc_stories$A_semexp,
+    df_auc_stories$condition,
+    p.adjust.method = "BH"
+  ))
+}
+```
+
+```{r primary-auc-plot, fig.width=9, fig.height=5}
+ggplot(df_auc_stories, aes(x = condition, y = A_semexp, fill = condition)) +
+  geom_violin(alpha = 0.4, colour = NA) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
+  geom_jitter(width = 0.08, alpha = 0.35, size = 0.9) +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Per-story semantic-exploration AUC asymmetry by condition",
+    subtitle = "A_semexp(i) = |AUC_{slot 1}(i) - AUC_{slot 2}(i)|",
+    x = "Condition",
+    y = expression("|" * Delta * " AUC|")
+  ) +
+  theme(legend.position = "none")
+```
+
+```{r primary-logk-slope-supplement}
+# Secondary dynamic object: per-story |slope_log(k), slot 1 - slope_log(k), slot 2|
+df_logk <- df_slot_k %>%
+  filter(k > 0, distance > 0) %>%
+  mutate(log_k = log(k), log_distance = log(distance))
+
+df_logk_slopes <- df_logk %>%
+  group_by(condition, conversation_id, slot) %>%
+  summarise(
+    n_points = n(),
+    slope = if (n_points >= 3) coef(lm(log_distance ~ log_k))[2] else NA_real_,
+    .groups = "drop"
+  ) %>%
+  select(condition, conversation_id, slot, slope) %>%
+  pivot_wider(names_from = slot, values_from = slope, names_prefix = "slope_") %>%
+  drop_na(`slope_Slot 1`, `slope_Slot 2`) %>%
+  mutate(A_logk_slope = abs(`slope_Slot 1` - `slope_Slot 2`))
+
+if (nrow(df_logk_slopes) > 0) {
+  df_logk_slopes %>%
+    group_by(condition) %>%
+    summarise(
+      n = n(),
+      mean_A = mean(A_logk_slope),
+      median_A = median(A_logk_slope),
+      .groups = "drop"
+    ) %>%
+    knitr::kable(
+      digits = 3,
+      caption = "Secondary: per-story |log(distance) ~ log(k) slope diff| by condition"
+    )
+}
+```
+
+# Supplemental: Lag-Binned Slot Contrast
 
 ```{r speaker-asymmetry}
 speaker_asymmetry_model <- lmer(
@@ -140,7 +278,7 @@ speaker_asymmetry %>%
   scale_fill_manual(values = condition_colors) +
   labs(
     title = "Speaker-Slot Asymmetry by Condition",
-    subtitle = "Difference: Slot 1 - Slot 2. This is the primary cross-condition asymmetry comparison.",
+    subtitle = "Difference: Slot 1 - Slot 2 (supplemental lag-controlled LMM view).",
     x = "Condition",
     y = "Asymmetry in Semantic Distance"
   ) +
@@ -169,7 +307,7 @@ ggplot(speaker_summary, aes(x = k, y = mean_distance, color = slot)) +
   facet_wrap(~condition) +
   labs(
     title = "Speaker-Level Semantic Exploration by Slot",
-    subtitle = "Slot trajectories shown first because asymmetry is the primary comparison target",
+    subtitle = "Underlying slot trajectories behind the primary AUC object",
     x = "Lag Bin (k)",
     y = "Semantic Distance",
     color = "Slot",
@@ -178,7 +316,7 @@ ggplot(speaker_summary, aes(x = k, y = mean_distance, color = slot)) +
   theme(legend.position = "bottom")
 ```
 
-# General Condition-Level Comparison
+# Supplemental: General Condition-Level Comparison
 
 ```{r interleaved-descriptives}
 df_interleaved %>%
@@ -240,7 +378,7 @@ cat("\nCondition contrasts (interleaved view):\n")
 print(pairs(emm_interleaved, adjust = "bonferroni"))
 ```
 
-# Role-Level View
+# Supplemental: Role-Level View
 
 ```{r speaker-descriptives}
 df_speaker %>%
@@ -288,7 +426,7 @@ ggplot(role_summary, aes(x = k, y = mean_distance, color = condition_role)) +
   theme(legend.position = "bottom")
 ```
 
-# Interleaved vs Speaker View
+# Supplemental: Interleaved vs Speaker View
 
 ```{r view-comparison, fig.width=12, fig.height=5}
 view_summary <- bind_rows(
@@ -320,12 +458,18 @@ ggplot(view_summary, aes(x = k, y = mean_distance, color = condition)) +
 
 # Summary
 
-This notebook is now adapted to the new semantic exploration output by:
+Primary cross-condition result: per-story $A_{\text{semexp}} = |\mathrm{AUC}_{\text{slot 1}} - \mathrm{AUC}_{\text{slot 2}}|$ from trapezoidal integration of the distance(k) curve over the intersected k range. Tested with ANOVA + Kruskal and pairwise BH-adjusted Wilcoxon. A secondary log-distance-slope asymmetry is reported for dynamic-shape continuity with the paper.
 
-- reading the current `semantic_exploration_binned.parquet` files,
-- modelling **lag bin `k`** instead of the obsolete raw-turn structure,
-- putting the **speaker-slot asymmetry comparison first**,
-- separating **interleaved** and **speaker-specific** exploration views,
-- using recovered speaker-role metadata where that interpretation is valid.
+Supplemental views retained:
+
+- lag-controlled slot-contrast LMM (`distance ~ k + slot * condition`)
+- interleaved sequence model and condition descriptives
+- within-condition role curves (Human / AI in Human-AI; Starter-side / Non-starter-side in same-type)
+- interleaved vs speaker-specific side-by-side view
+
+Deferred to a follow-up pass:
+
+- starter-mechanism analysis (signed, starter-normalized AUC asymmetry across all conditions)
+- Human-AI decomposition (`speaker_type \u00d7 speaker_is_starter` within Human-AI only)
 
 *Analysis completed: `r Sys.time()`*

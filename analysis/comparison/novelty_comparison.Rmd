@@ -58,6 +58,10 @@ The notebook now follows the new data structure:
   - **Starter-side / Non-starter-side** in same-type conditions
 - role-labeled plots are therefore **within-condition descriptive views**, not direct cross-condition comparisons
 
+**Primary cross-condition object.** Following the paper's narrative-influence model, the main inferential result is the **within-condition novelty-to-resonance slope interaction** between the two slots, fit as $\text{resonance} \sim \text{surprise} \times \text{slot} + (1 \mid \text{conversation\_id})$ per condition. The cross-condition asymmetry magnitude is
+$$A_{\text{influence}}(\text{condition}) \;=\; \bigl|\, \beta_{\text{surprise},\,\text{slot}=1} - \beta_{\text{surprise},\,\text{slot}=2} \,\bigr|,$$
+extracted via `emtrends`. Slot mean differences are retained as a supplemental view. Starter-mechanism and Human-AI speaker-type decompositions are deferred.
+
 # Load Data
 
 ```{r load-data}
@@ -135,7 +139,131 @@ cat("Slot-level rows:", nrow(df_slots), "\n")
 cat("Metric rows:", nrow(df_long), "\n")
 ```
 
-# Asymmetry Comparison
+# Primary: Within-Condition Slot Slope-Interaction Asymmetry
+
+```{r primary-slope-interaction}
+# Fit resonance ~ surprise * slot + (1|story) within each condition.
+# The magnitude of the slope difference between slots is A_influence(condition).
+slope_results <- purrr::map_dfr(levels(df_slots$condition), function(cond) {
+  df_cond <- df_slots %>% filter(condition == cond)
+  if (nrow(df_cond) < 50 || n_distinct(df_cond$conversation_id) < 5) {
+    return(tibble())
+  }
+
+  # Ensure slot is a 2-level factor with sum contrasts for interpretable interaction
+  df_cond$slot <- factor(df_cond$slot, levels = c("Slot 1", "Slot 2"))
+  contrasts(df_cond$slot) <- contr.sum(2)
+
+  model <- tryCatch(
+    lmer(
+      resonance ~ surprise * slot + (1 | conversation_id),
+      data = df_cond,
+      control = lmerControl(optimizer = "bobyqa")
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(model)) return(tibble())
+
+  slopes <- as.data.frame(emtrends(model, specs = "slot", var = "surprise"))
+  contrast_df <- as.data.frame(
+    contrast(emtrends(model, specs = "slot", var = "surprise"),
+             method = "revpairwise")
+  )
+
+  tibble(
+    condition = cond,
+    slope_slot1 = slopes$surprise.trend[slopes$slot == "Slot 1"],
+    slope_slot2 = slopes$surprise.trend[slopes$slot == "Slot 2"],
+    signed_diff = contrast_df$estimate[1],
+    se = contrast_df$SE[1],
+    t = contrast_df$t.ratio[1],
+    p = contrast_df$p.value[1],
+    A_influence = abs(contrast_df$estimate[1])
+  )
+})
+
+slope_results %>%
+  mutate(
+    sig = case_when(
+      p < 0.001 ~ "***",
+      p < 0.01 ~ "**",
+      p < 0.05 ~ "*",
+      p < 0.1 ~ ".",
+      TRUE ~ ""
+    )
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Primary: |slope_1 - slope_2| from resonance ~ surprise * slot per condition"
+  )
+
+# Sanity: A_influence is unsigned magnitude
+stopifnot(all(slope_results$A_influence >= 0))
+```
+
+```{r primary-slope-interaction-plot, fig.width=9, fig.height=5}
+if (nrow(slope_results) > 0) {
+  slope_results %>%
+    mutate(
+      ci_lower = A_influence - 1.96 * se,
+      ci_upper = A_influence + 1.96 * se
+    ) %>%
+    ggplot(aes(x = condition, y = A_influence, fill = condition)) +
+    geom_col(width = 0.6, alpha = 0.85) +
+    geom_errorbar(aes(ymin = pmax(ci_lower, 0), ymax = ci_upper), width = 0.18) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+    scale_fill_manual(values = condition_colors) +
+    labs(
+      title = "A_influence by condition",
+      subtitle = "|slope(resonance~surprise) diff between slot 1 and slot 2| (LMM, story random intercept)",
+      x = "Condition",
+      y = expression("|" * Delta * beta * "|")
+    ) +
+    theme(legend.position = "none")
+}
+```
+
+```{r primary-per-story-robustness}
+# Robustness: per-story OLS slope difference. Each story needs >= 4 points per slot.
+per_story_slope_diff <- df_slots %>%
+  group_by(condition, conversation_id, slot) %>%
+  summarise(
+    n_points = sum(!is.na(surprise) & !is.na(resonance)),
+    slope = if (n_points >= 4) {
+      coef(lm(resonance ~ surprise))[2]
+    } else {
+      NA_real_
+    },
+    .groups = "drop"
+  ) %>%
+  select(condition, conversation_id, slot, slope) %>%
+  pivot_wider(names_from = slot, values_from = slope, names_prefix = "slope_") %>%
+  drop_na(`slope_Slot 1`, `slope_Slot 2`) %>%
+  mutate(
+    signed_diff = `slope_Slot 1` - `slope_Slot 2`,
+    A_influence_story = abs(signed_diff)
+  )
+
+per_story_slope_diff %>%
+  group_by(condition) %>%
+  summarise(
+    n_stories = n(),
+    median_A = median(A_influence_story),
+    mean_A = mean(A_influence_story),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Robustness: per-story |slope_1 - slope_2| (OLS per story, \u2265 4 points per slot)"
+  )
+
+if (n_distinct(per_story_slope_diff$condition) >= 2 && nrow(per_story_slope_diff) >= 10) {
+  cat("\nKruskal-Wallis on per-story A_influence:\n")
+  print(kruskal.test(A_influence_story ~ condition, data = per_story_slope_diff))
+}
+```
+
+# Supplemental: Slot Mean Comparison
 
 ```{r slot-asymmetry}
 slot_asymmetry <- purrr::map_dfr(levels(df_long$metric), function(metric_name) {
@@ -194,14 +322,14 @@ slot_asymmetry %>%
   facet_wrap(~metric, scales = "free_y") +
   labs(
     title = "Slot Asymmetry by Condition",
-    subtitle = "Difference: Slot 1 - Slot 2. This is the primary cross-condition asymmetry comparison.",
+    subtitle = "Difference: Slot 1 - Slot 2 (supplemental slot-mean view).",
     x = "Condition",
     y = "Asymmetry"
   ) +
   theme(legend.position = "none")
 ```
 
-# General Condition-Level Comparison
+# Supplemental: General Condition-Level Comparison
 
 ```{r descriptives}
 df_long %>%
@@ -242,7 +370,7 @@ for (metric_name in levels(df_long$metric)) {
 }
 ```
 
-# Condition-Level Novelty-to-Resonance Relationship
+# Supplemental: Pooled Novelty-to-Resonance Relationship
 
 ```{r novelty-resonance}
 innovation_model <- lmer(
@@ -272,7 +400,7 @@ df_slots %>%
   theme(legend.position = "bottom")
 ```
 
-# Role-Level View
+# Supplemental: Role-Level View
 
 ```{r role-view, fig.width=12, fig.height=7}
 df_slots %>%
@@ -295,12 +423,19 @@ df_slots %>%
 
 # Summary
 
-This notebook is now aligned with the new structure by:
+Primary cross-condition result: within each condition, $A_{\text{influence}} = |\,\beta_{\text{surprise},\,\text{slot}=1} - \beta_{\text{surprise},\,\text{slot}=2}\,|$ from `resonance ~ surprise * slot + (1|conversation_id)`. Per-story OLS slope differences are reported as a robustness layer.
 
-- loading novelty data through the shared helper layer,
-- restricting the analysis to **complete aligned exchanges**,
-- putting the **cross-condition asymmetry comparison first**,
-- using **slot-based asymmetry** instead of assuming stable author identities,
-- treating the condition-level metric comparison and novelty-to-resonance slope as the second layer.
+Supplemental views retained:
+
+- slot mean differences per metric (LMM `value ~ slot * condition + (1|story)`)
+- condition-level marginal distributions and pooled `condition` LMMs
+- pooled novelty-to-resonance model with `surprise * condition` interaction
+- within-condition role box-plots (Human / AI in Human-AI; Starter-side / Non-starter-side in same-type conditions)
+
+Deferred to a follow-up pass:
+
+- starter-mechanism analysis (signed, starter-normalized asymmetry across all conditions)
+- Human-AI decomposition (`speaker_type \u00d7 speaker_is_starter` within Human-AI only)
+- length-controlled variant (`+ nwords`) mirroring the paper
 
 *Analysis completed: `r Sys.time()`*

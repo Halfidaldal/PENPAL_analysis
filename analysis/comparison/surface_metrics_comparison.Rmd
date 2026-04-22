@@ -52,6 +52,10 @@ Those role labels are useful for **within-condition description**, but they are 
 
 The notebook therefore no longer assumes old wide `author_1_*` / `author_2_*` columns.
 
+**Primary cross-condition object.** Per story and per metric $m$,
+$$A_m(i) \;=\; \bigl|\, \overline{m}_{\text{slot}=1,\,i} - \overline{m}_{\text{slot}=2,\,i} \,\bigr|.$$
+This is the unsigned, label-invariant side-difference magnitude. For each metric we test $A_m \sim \text{condition}$ with ANOVA + Kruskal and apply BH adjustment across the metric panel. The LMM slot-marginal contrasts are retained as supplemental. Starter-mechanism and Human-AI speaker-type decompositions are deferred.
+
 # Load Data
 
 ```{r load-data}
@@ -94,14 +98,91 @@ knitr::kable(
 )
 ```
 
-# Asymmetry Comparison
+# Primary: Per-Story Side-Mean Difference
 
-```{r slot-asymmetry}
+```{r primary-surface-asymmetry}
 df_slots <- df_combined %>%
   filter(speaker_slot %in% c("author_1", "author_2")) %>%
   mutate(
     slot = factor(speaker_slot, levels = c("author_1", "author_2"), labels = c("Slot 1", "Slot 2"))
   )
+
+per_story_abs_diff <- purrr::imap_dfr(selected_metrics, function(col_name, metric_alias) {
+  df_slots %>%
+    select(condition, conversation_id, slot, value = all_of(col_name)) %>%
+    group_by(condition, conversation_id, slot) %>%
+    summarise(side_mean = mean(value, na.rm = TRUE), .groups = "drop") %>%
+    pivot_wider(names_from = slot, values_from = side_mean) %>%
+    drop_na(`Slot 1`, `Slot 2`) %>%
+    transmute(
+      metric = metric_alias,
+      condition,
+      conversation_id,
+      signed_diff = `Slot 1` - `Slot 2`,
+      A = abs(signed_diff)
+    )
+})
+
+stopifnot(all(per_story_abs_diff$A >= 0))
+
+per_story_abs_diff %>%
+  group_by(metric, condition) %>%
+  summarise(
+    n = n(),
+    mean_A = mean(A),
+    median_A = median(A),
+    sd_A = sd(A),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-story |side-mean difference| by condition, per metric"
+  )
+```
+
+```{r primary-surface-tests}
+primary_tests <- per_story_abs_diff %>%
+  group_by(metric) %>%
+  summarise(
+    anova_p = {
+      fit <- tryCatch(aov(A ~ condition), error = function(e) NULL)
+      if (is.null(fit)) NA_real_ else summary(fit)[[1]][["Pr(>F)"]][1]
+    },
+    kw_p = tryCatch(
+      kruskal.test(A ~ condition)$p.value,
+      error = function(e) NA_real_
+    ),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    anova_p_BH = p.adjust(anova_p, method = "BH"),
+    kw_p_BH = p.adjust(kw_p, method = "BH")
+  )
+
+primary_tests %>%
+  knitr::kable(
+    digits = 4,
+    caption = "Primary cross-condition tests for A_m ~ condition, per metric (BH-adjusted across metrics)"
+  )
+```
+
+```{r primary-surface-plot, fig.width=12, fig.height=8}
+ggplot(per_story_abs_diff, aes(x = condition, y = A, fill = condition)) +
+  geom_violin(alpha = 0.4, colour = NA) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
+  scale_fill_manual(values = condition_colors) +
+  facet_wrap(~ metric, scales = "free_y") +
+  labs(
+    title = "Per-story |Slot 1 mean - Slot 2 mean| by condition",
+    x = "Condition",
+    y = expression("|" * Delta * bar(m) * "|")
+  ) +
+  theme(legend.position = "none")
+```
+
+# Supplemental: Slot-Marginal LMM per Metric
+
+```{r slot-asymmetry}
 
 slot_asymmetry <- purrr::imap_dfr(selected_metrics, function(col_name, metric_alias) {
   model <- lmer(
@@ -151,14 +232,14 @@ slot_asymmetry %>%
   facet_wrap(~metric, scales = "free_y") +
   labs(
     title = "Slot Asymmetry by Condition",
-    subtitle = "Difference: Slot 1 - Slot 2. This is the primary cross-condition asymmetry comparison.",
+    subtitle = "Difference: Slot 1 - Slot 2 (supplemental slot-marginal LMM view).",
     x = "Condition",
     y = "Asymmetry"
   ) +
   theme(legend.position = "none")
 ```
 
-# General Condition-Level Comparison
+# Supplemental: General Condition-Level Comparison
 
 ```{r descriptives}
 descriptive_table <- purrr::imap_dfr(selected_metrics, function(col_name, metric_alias) {
@@ -212,7 +293,7 @@ for (metric_alias in names(selected_metrics)) {
 }
 ```
 
-# Role-Level Comparison
+# Supplemental: Role-Level Comparison
 
 ```{r role-comparison, fig.width=12, fig.height=6}
 primary_length_metric <- selected_metrics[[names(selected_metrics)[1]]]
@@ -261,12 +342,17 @@ if ("condition_role" %in% names(df_combined) && any(!is.na(df_combined$condition
 
 # Summary
 
-The notebook is now adapted to the new structure by:
+Primary cross-condition result: per-metric $A_m(i) = |\overline{m}_{\text{slot 1},i} - \overline{m}_{\text{slot 2},i}|$, tested with ANOVA + Kruskal and BH-adjusted across metrics.
 
-- loading long-format contribution-level surface metrics,
-- using the shared backfilled role metadata,
-- restricting the analysis to complete, aligned exchanges,
-- putting the **cross-condition slot asymmetry comparison first**,
-- removing the old wide-format `author_1_*` / `author_2_*` assumptions.
+Supplemental views retained:
+
+- LMM slot-marginal contrasts per metric (`metric ~ slot * condition + (1|story)`)
+- condition-level distributions and marginal `condition` LMMs
+- within-condition role comparisons (Human / AI in Human-AI; Starter-side / Non-starter-side in same-type)
+
+Deferred to a follow-up pass:
+
+- starter-mechanism analysis (signed, starter-normalized side differences across all conditions)
+- Human-AI decomposition (`speaker_type \u00d7 speaker_is_starter` within Human-AI only)
 
 *Analysis completed: `r Sys.time()`*

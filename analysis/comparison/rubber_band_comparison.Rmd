@@ -57,6 +57,10 @@ As in the updated valence notebook:
 - the analysis is restricted to **complete exchanges**
 - the temporal window uses `analysis_turn` / `turn_index`, not the old raw-turn logic
 
+**Primary cross-condition object.** For each story $i$, fit the OLS
+$$\text{gap\_change}_{i,t} \;=\; \alpha_i + \beta_i \cdot \text{valence\_gap\_lag1}_{i,t} + \varepsilon_{i,t}$$
+and define the per-story reversion strength as $R_i = -\beta_i$, so that larger positive $R_i$ means a stronger pull back together. $R_i$ is already label-invariant (the gap enters squared/reversal-style in the relationship). We test $R_i \sim \text{condition}$ with ANOVA + Kruskal and pairwise BH-adjusted Wilcoxon. The pooled LMM slopes are kept as supplemental.
+
 # Load Data
 
 ```{r load-data}
@@ -100,9 +104,74 @@ cat("Analysis rows:", nrow(df_analysis), "\n")
 cat("Stories:", n_distinct(df_analysis$conversation_id), "\n")
 ```
 
-# Cross-Condition Rubber-Band Comparison
+# Primary: Per-Story Reversion Strength
 
-## Condition-Specific Slopes
+```{r primary-reversion}
+min_points <- 4
+
+per_story_rb <- df_analysis %>%
+  group_by(condition, conversation_id) %>%
+  summarise(
+    n_points = sum(!is.na(valence_gap_lag1) & !is.na(gap_change)),
+    beta = if (n_points >= min_points) {
+      coef(lm(gap_change ~ valence_gap_lag1))[2]
+    } else {
+      NA_real_
+    },
+    .groups = "drop"
+  ) %>%
+  mutate(R = -beta) %>%
+  drop_na(R)
+
+per_story_rb %>%
+  group_by(condition) %>%
+  summarise(
+    n = n(),
+    mean_R = mean(R),
+    median_R = median(R),
+    sd_R = sd(R),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-story reversion strength R_i = -beta by condition"
+  )
+```
+
+```{r primary-reversion-test}
+if (n_distinct(per_story_rb$condition) >= 2 && nrow(per_story_rb) >= 10) {
+  cat("One-way ANOVA: R ~ condition\n")
+  print(summary(aov(R ~ condition, data = per_story_rb)))
+
+  cat("\nKruskal-Wallis (robust): R ~ condition\n")
+  print(kruskal.test(R ~ condition, data = per_story_rb))
+
+  cat("\nPairwise Wilcoxon (BH-adjusted):\n")
+  print(pairwise.wilcox.test(
+    per_story_rb$R,
+    per_story_rb$condition,
+    p.adjust.method = "BH"
+  ))
+}
+```
+
+```{r primary-reversion-plot, fig.width=9, fig.height=5}
+ggplot(per_story_rb, aes(x = condition, y = R, fill = condition)) +
+  geom_violin(alpha = 0.4, colour = NA) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
+  geom_jitter(width = 0.08, alpha = 0.35, size = 0.9) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Per-story reversion strength by condition",
+    subtitle = "R_i = -beta_i from gap_change ~ valence_gap_lag1 per story",
+    x = "Condition",
+    y = expression(R[i] == -beta[i])
+  ) +
+  theme(legend.position = "none")
+```
+
+# Supplemental: Pooled Condition-Specific Slopes
 
 ```{r within-condition-models}
 within_results <- list()
@@ -167,7 +236,7 @@ within_summary %>%
   theme(legend.position = "none")
 ```
 
-## Cross-Condition Interaction Model
+## Supplemental: Cross-Condition Interaction Model
 
 ```{r cross-condition-model}
 model_cross <- lmer(
@@ -187,7 +256,7 @@ cat("\nPairwise slope contrasts:\n")
 print(pairs(emm_slopes, adjust = "bonferroni"))
 ```
 
-# General Gap Structure
+# Supplemental: General Gap Structure
 
 ```{r rubberband-scatter, fig.width=12, fig.height=5}
 df_analysis %>%
@@ -272,12 +341,17 @@ df_analysis %>%
 
 # Summary
 
-The notebook is now adapted to the new structure by:
+Primary cross-condition result: per-story reversion strength $R_i = -\beta_i$ from `gap_change ~ valence_gap_lag1`, tested with ANOVA + Kruskal and pairwise BH-adjusted Wilcoxon.
 
-- computing gap dynamics on the **exchange-aligned turn index**,
-- restricting the analysis to **complete exchanges**,
-- using the cleaned slot structure consistently across all three conditions,
-- putting the **cross-condition rubber-band slope comparison first**,
-- replacing the old raw-turn phase split with a phase split built from `turn_index`.
+Supplemental views retained:
+
+- pooled within-condition LMM slopes (population-level rubber-band estimate per condition)
+- cross-condition interaction LMM (`gap_change ~ valence_gap_lag1 * condition + (1|story)`)
+- gap distributions and story-phase splits
+
+Deferred to a follow-up pass:
+
+- starter-mechanism analysis of the reversion object
+- Human-AI decomposition of who pulls the gap back (requires per-turn speaker identity)
 
 *Analysis completed: `r Sys.time()`*

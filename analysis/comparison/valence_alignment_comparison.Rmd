@@ -71,6 +71,10 @@ Important structural note:
 
 The analysis window is restricted to **complete exchanges** and the default aligned turn range (`analysis_turn` 1 to 9).
 
+**Primary cross-condition object.** Each story contributes one unsigned, label-invariant dyad asymmetry magnitude:
+$$A_{\text{valence}}(i) \;=\; \bigl|\, \operatorname{atanh}(r_{1\to 2,i}) - \operatorname{atanh}(r_{2\to 1,i}) \,\bigr|$$
+where $r_{1\to 2,i}$ is the per-story Pearson correlation between same-turn slot 1 and slot 2 valence, and $r_{2\to 1,i}$ is the correlation between slot 2's previous-turn valence and slot 1's current-turn valence. The main question is whether $A_{\text{valence}}$ differs across conditions. The directional-slope LMMs are retained as supplemental views. Starter-mechanism and Human-AI speaker-type decompositions are deferred to a follow-up pass.
+
 # Load Data
 
 ```{r load-data}
@@ -190,7 +194,110 @@ p_slot2 <- df_analysis %>%
 p_slot1 + p_slot2 + plot_layout(guides = "collect")
 ```
 
-# Within-Condition Directional Asymmetry
+# Primary: Per-Story Asymmetry Magnitude
+
+```{r primary-asymmetry}
+# Per-story Pearson correlations under both pairing rules, on non-standardized
+# predictor/response pairs (r is scale-invariant).
+min_pairs <- 3
+
+df_r12 <- df_alignment_long %>%
+  filter(alignment_direction == "Slot 1 \u2192 Slot 2") %>%
+  group_by(conversation_id, condition) %>%
+  summarise(
+    n_pairs = sum(!is.na(predictor_valence) & !is.na(response_valence)),
+    r = if (n_pairs >= min_pairs) {
+      suppressWarnings(cor(predictor_valence, response_valence, use = "complete.obs"))
+    } else {
+      NA_real_
+    },
+    .groups = "drop"
+  ) %>%
+  transmute(conversation_id, condition, n_pairs_12 = n_pairs, r_12 = r)
+
+df_r21 <- df_alignment_long %>%
+  filter(alignment_direction == "Slot 2(t-1) \u2192 Slot 1") %>%
+  group_by(conversation_id, condition) %>%
+  summarise(
+    n_pairs = sum(!is.na(predictor_valence) & !is.na(response_valence)),
+    r = if (n_pairs >= min_pairs) {
+      suppressWarnings(cor(predictor_valence, response_valence, use = "complete.obs"))
+    } else {
+      NA_real_
+    },
+    .groups = "drop"
+  ) %>%
+  transmute(conversation_id, condition, n_pairs_21 = n_pairs, r_21 = r)
+
+df_asym <- df_r12 %>%
+  inner_join(df_r21, by = c("conversation_id", "condition")) %>%
+  mutate(
+    # Clamp |r|<1 before atanh to avoid infinities on degenerate stories
+    r_12_c = pmin(pmax(r_12, -0.999999), 0.999999),
+    r_21_c = pmin(pmax(r_21, -0.999999), 0.999999),
+    z_12 = atanh(r_12_c),
+    z_21 = atanh(r_21_c),
+    signed_z_diff = z_12 - z_21,
+    A_valence = abs(signed_z_diff)
+  ) %>%
+  filter(!is.na(A_valence))
+
+cat("Stories with both directional correlations available:\n")
+df_asym %>%
+  count(condition) %>%
+  knitr::kable(caption = "Per-story A_valence sample sizes by condition")
+
+# Sanity checks
+stopifnot(all(df_asym$A_valence >= 0))
+```
+
+```{r primary-asymmetry-descriptives}
+df_asym %>%
+  group_by(condition) %>%
+  summarise(
+    n = n(),
+    mean_A = mean(A_valence),
+    sd_A = sd(A_valence),
+    median_A = median(A_valence),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-story |Fisher-z asymmetry| by condition"
+  )
+```
+
+```{r primary-asymmetry-test}
+cat("One-way ANOVA: A_valence ~ condition\n")
+print(summary(aov(A_valence ~ condition, data = df_asym)))
+
+cat("\nKruskal-Wallis (robust): A_valence ~ condition\n")
+print(kruskal.test(A_valence ~ condition, data = df_asym))
+
+cat("\nPairwise Wilcoxon (BH-adjusted):\n")
+print(pairwise.wilcox.test(
+  df_asym$A_valence,
+  df_asym$condition,
+  p.adjust.method = "BH"
+))
+```
+
+```{r primary-asymmetry-plot, fig.width=9, fig.height=5}
+ggplot(df_asym, aes(x = condition, y = A_valence, fill = condition)) +
+  geom_violin(alpha = 0.4, colour = NA) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
+  geom_jitter(width = 0.08, alpha = 0.35, size = 0.9) +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Per-story valence alignment asymmetry by condition",
+    subtitle = "A_valence(i) = |atanh(r_{1\u21922,i}) - atanh(r_{2\u21921,i})|",
+    x = "Condition",
+    y = expression("|" * Delta * z * "|")
+  ) +
+  theme(legend.position = "none")
+```
+
+# Supplemental: Within-Condition Directional Asymmetry
 
 ```{r within-condition-models}
 within_condition_results <- list()
@@ -280,7 +387,7 @@ if (nrow(within_summary) > 0) {
 }
 ```
 
-# Cross-Condition Model
+# Supplemental: Cross-Condition Directional Model
 
 ```{r cross-condition-model}
 df_std$condition <- factor(df_std$condition)
@@ -315,7 +422,7 @@ cat("\nWithin-condition direction contrasts:\n")
 print(contrast(slopes_by_condition, method = "revpairwise", by = "condition"))
 ```
 
-# Visualizations
+# Supplemental: Directional Scatter Visualizations
 
 ```{r scatterplots, fig.width=13, fig.height=5}
 p_cross_turn <- df_alignment_long %>%
@@ -379,11 +486,17 @@ ggplot(slopes_df, aes(x = condition, y = predictor_z.trend, fill = alignment_dir
 
 # Summary
 
-The notebook now runs on the new structure by:
+Primary cross-condition result: per-story $A_{\text{valence}} = |\operatorname{atanh}(r_{1\to2,i}) - \operatorname{atanh}(r_{2\to1,i})|$, tested with ANOVA + Kruskal and pairwise BH-adjusted Wilcoxon.
 
-- restricting the analysis to **complete exchanges** and the aligned turn window,
-- treating `author_1` / `author_2` as **structural slots** rather than fixed identities,
-- using `turn_index` / `analysis_turn` rather than the old raw-turn assumptions,
-- keeping directional alignment tests comparable across conditions while remaining valid for same-type conversations.
+Supplemental views retained:
+
+- within-condition directional slope LMMs (two pairing rules)
+- full cross-condition LMM with direction \u00d7 condition interactions
+- directional scatterplots
+
+Deferred to a follow-up pass:
+
+- starter-mechanism analysis (signed, starter-normalized asymmetry across all conditions)
+- Human-AI decomposition (`speaker_type \u00d7 speaker_is_starter` within Human-AI only)
 
 *Analysis completed: `r Sys.time()`*
