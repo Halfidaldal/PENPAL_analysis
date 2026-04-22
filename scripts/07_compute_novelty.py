@@ -44,7 +44,7 @@ def main():
     tokenizer, model, device = load_language_model(model_name)
     
     print("Computing novelty scores...")
-    df = compute_novelty_scores(df, tokenizer, model, window_size=128)
+    df = compute_novelty_scores(df, tokenizer, model, window_size=window_size)
     
     print("Computing transience scores...")
     df = compute_transience_scores(df, tokenizer, model, window_size=window_size)

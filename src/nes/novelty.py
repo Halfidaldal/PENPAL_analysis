@@ -27,6 +27,14 @@ def _normalize_metric_text(value):
         return None
     return text
 
+
+def _tokenize_metric_text(value, tokenizer):
+    """Normalize scalar text-like values before tokenization."""
+    text = _normalize_metric_text(value)
+    if text is None:
+        return []
+    return tokenizer(text, add_special_tokens=False)["input_ids"]
+
 def load_language_model(model_path, device=None):
     """
     Load a causal language model and tokenizer.
@@ -149,13 +157,8 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     author_1_has_text = author_1_text.notna()
     author_2_has_text = author_2_text.notna()
 
-    df["author_1_ids"] = author_1_text.apply(
-        lambda txt: tokenizer(txt or "", add_special_tokens=False)["input_ids"]
-    )
-
-    df["author_2_ids"] = author_2_text.apply(
-        lambda txt: tokenizer(txt or "", add_special_tokens=False)["input_ids"]
-    )
+    df["author_1_ids"] = author_1_text.apply(lambda txt: _tokenize_metric_text(txt, tokenizer))
+    df["author_2_ids"] = author_2_text.apply(lambda txt: _tokenize_metric_text(txt, tokenizer))
     
     # Identify a safe start token for unconditional probability
     bos_token_id = tokenizer.bos_token_id
