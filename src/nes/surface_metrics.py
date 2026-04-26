@@ -92,6 +92,21 @@ def _mask_non_substantive_rows(metrics_df: pd.DataFrame, substantive_mask: pd.Se
         "model_id",
     }
     metric_columns = [col for col in metrics_df.columns if col not in metadata_columns]
+
+    # textdescriptives emits a mix of float, int, bool, and object columns.
+    # Newer pandas versions reject assigning pd.NA into numpy bool/int columns,
+    # so convert metric columns to nullable dtypes before masking.
+    for col in metric_columns:
+        dtype = metrics_df[col].dtype
+        if pd.api.types.is_bool_dtype(dtype):
+            metrics_df[col] = metrics_df[col].astype("boolean")
+        elif pd.api.types.is_integer_dtype(dtype):
+            metrics_df[col] = metrics_df[col].astype("Int64")
+        elif pd.api.types.is_float_dtype(dtype):
+            metrics_df[col] = metrics_df[col].astype("Float64")
+        elif pd.api.types.is_categorical_dtype(dtype):
+            metrics_df[col] = metrics_df[col].astype("object")
+
     metrics_df.loc[missing_mask, metric_columns] = pd.NA
     return metrics_df
 
