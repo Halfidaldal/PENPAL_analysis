@@ -66,7 +66,8 @@ and define the per-story reversion strength as $R_i = -\beta_i$, so that larger 
 ```{r load-data}
 df_combined <- load_valence_data(c("human-ai", "human-human", "ai-ai")) %>%
   filter_complete_exchange_window() %>%
-  prepare_condition_factor(reference = "human-ai")
+  prepare_condition_factor(reference = "human-ai") %>%
+  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959")
 
 df_combined %>%
   group_by(condition) %>%

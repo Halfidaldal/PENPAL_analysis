@@ -61,7 +61,8 @@ This is the unsigned, label-invariant side-difference magnitude. For each metric
 ```{r load-data}
 df_combined <- load_surface_metrics(c("human-ai", "human-human", "ai-ai")) %>%
   filter_complete_exchange_window() %>%
-  prepare_condition_factor(reference = "human-ai")
+  prepare_condition_factor(reference = "human-ai") %>%
+  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959")
 
 df_combined %>%
   group_by(condition) %>%

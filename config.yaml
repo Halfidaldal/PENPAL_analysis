@@ -1,7 +1,7 @@
 # PENPAL Analysis Configuration
 
 # Active experiment: "human-ai", "human-human", or "ai-ai"
-active_experiment: "ai-ai"
+active_experiment: "human-ai"
 
 # Experiment-specific configuration
 experiments:
@@ -15,7 +15,7 @@ experiments:
     firestore:
       collection_name: "story_data_TEXT"
       stories_collection: "stories_TEXT"
-      min_interactions: 10
+      min_interactions: 9
       schema: "flat"  # flat collection with all interactions
     
     # Cleaning parameters

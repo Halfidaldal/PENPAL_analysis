@@ -44,17 +44,15 @@ theme_set(theme_comparison())
 
 ```{r}
 folder_path <- "~/Documents/PENPAL_analysis/data"
-file_names <- list.files(folder_path, pattern = "*interaction_level_stories_filtered.csv", full.names = TRUE, recursive = TRUE)
+file_names <- list.files(folder_path, pattern = "*stories_full_text_filtered.csv", full.names = TRUE, recursive = TRUE)
 data_list <- lapply(file_names, read.csv)
 selected_data_list <- lapply(data_list, function(df) {
-    df %>% select("conversation_id", "author_1", "author_2")
+    df %>% select("conversation_id", "full_story")
 })
 
-combined_data <- bind_rows(selected_data_list)
-combined_data <- combined_data[sample(nrow(combined_data)), ]
-combined_data$combined_interaction <- str_c(combined_data$author_1, combined_data$author_2, sep = " ")
+combined_data <- bind_rows(selected_data_list) %>% filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959")
 
-write.csv(combined_data, "combined_data.csv", row.names = FALSE)
+write.csv(combined_data, "combined_data_2.csv", row.names = FALSE)
 ```
 
 This notebook compares **valence alignment** across the three experimental conditions using the new exchange-aligned structure.
@@ -83,7 +81,8 @@ print(check_data_availability())
 
 df_combined <- load_valence_data(c("human-ai", "human-human", "ai-ai")) %>%
   filter_complete_exchange_window() %>%
-  prepare_condition_factor(reference = "human-ai")
+  prepare_condition_factor(reference = "human-ai") %>%
+  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959")
 
 df_combined %>%
   group_by(condition) %>%

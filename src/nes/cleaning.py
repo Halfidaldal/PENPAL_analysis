@@ -112,7 +112,7 @@ def normalize_columns(df: pd.DataFrame, experiment: str) -> pd.DataFrame:
 def download_stories_from_firestore(
     db: firestore.Client,
     collection_name: str = "story_data_TEXT",
-    min_interactions: int = 10,
+    min_interactions: int = 9,
     schema: str = "flat"
 ) -> pd.DataFrame:
     """

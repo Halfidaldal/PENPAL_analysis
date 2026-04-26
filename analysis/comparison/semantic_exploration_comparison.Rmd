@@ -67,7 +67,8 @@ This is label-invariant and comparable across conditions. The lag-binned LMM slo
 
 ```{r load-data}
 df_combined <- load_exploration_data(c("human-ai", "human-human", "ai-ai")) %>%
-  prepare_condition_factor(reference = "human-ai")
+  prepare_condition_factor(reference = "human-ai") %>%
+  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959")
 
 df_combined %>%
   group_by(condition, agent) %>%
