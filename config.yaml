@@ -1,7 +1,7 @@
 # PENPAL Analysis Configuration
 
 # Active experiment: "human-ai", "human-human", or "ai-ai"
-active_experiment: "human-ai"
+active_experiment: "human-human"
 
 # Experiment-specific configuration
 experiments:
