@@ -11,6 +11,7 @@ This module handles:
 
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
+import re
 import pandas as pd
 import numpy as np
 import firebase_admin
@@ -360,6 +361,272 @@ def filter_by_edit_distance(
     
     return filtered_df
 
+
+def split_repeated_conversation_ids(
+    df: pd.DataFrame,
+    group_col: str = "conversation_id",
+    expected_length: Optional[int] = None,
+    source_col: str = "source_conversation_id"
+) -> pd.DataFrame:
+    """
+    Split repeated Firestore conversation IDs into analysis story IDs.
+
+    The flat Firestore downloader can emit multiple complete story slices with
+    the same conversation_id when a source conversation contains 2x, 3x, ...
+    the expected number of rows. Downstream analysis treats conversation_id as
+    the story key, so repeated IDs need stable per-slice suffixes.
+    """
+    if expected_length is None:
+        return df.copy()
+    if group_col not in df.columns:
+        raise ValueError(f"Expected '{group_col}' column in DataFrame")
+
+    df = df.copy()
+    df[source_col] = df[group_col]
+
+    split_count = 0
+    split_story_count = 0
+
+    for group_value, group_index in df[df[group_col].notna()].groupby(group_col, sort=False).groups.items():
+        indices = list(group_index)
+        group_size = len(indices)
+        if group_size <= expected_length or group_size % expected_length != 0:
+            continue
+
+        n_slices = group_size // expected_length
+        split_count += 1
+        split_story_count += n_slices
+
+        for offset, idx in enumerate(indices):
+            story_number = (offset // expected_length) + 1
+            df.at[idx, group_col] = f"{group_value}__story_{story_number:02d}"
+
+    if split_count:
+        print(
+            f"Split {split_count} repeated conversation_id value(s) into "
+            f"{split_story_count} story instance IDs"
+        )
+
+    return df
+
+
+_LETTER_RE = re.compile(r'[^\W\d_]', re.UNICODE)
+_WORD_RE = re.compile(r'[A-Za-zÀ-ÖØ-öø-ÿ]+')
+_KEYBOARD_PATTERN_RE = re.compile(
+    r'asdf|sdf|dfg|fgh|jkl|klj|qwer|wert|zxc|xcv|lkj|dflk|fkl|kldf|dfjk|jkas|ælk|ølk',
+    re.IGNORECASE
+)
+_VOWELS = set('aeiouyæøå')
+
+
+def _text_quality_metrics(value: Any) -> Dict[str, Any]:
+    text = '' if pd.isna(value) else str(value)
+    stripped = text.strip()
+    no_space = re.sub(r'\s+', '', stripped)
+    letters = _LETTER_RE.findall(stripped)
+    words = _WORD_RE.findall(stripped.lower())
+    keyboard_pattern_chars = sum(
+        len(match.group(0)) for match in _KEYBOARD_PATTERN_RE.finditer(stripped)
+    )
+
+    nonspace_chars = len(no_space)
+    letter_chars = len(letters)
+    word_chars = sum(len(word) for word in words)
+    word_count = len(words)
+    symbol_chars = sum(1 for char in no_space if not char.isalnum())
+    long_no_vowel_tokens = sum(
+        len(word) >= 8 and not any(char in _VOWELS for char in word)
+        for word in words
+    )
+    longest_token_chars = max((len(word) for word in words), default=0)
+    vowel_word_count = sum(any(char in _VOWELS for char in word) for word in words)
+
+    return {
+        'char_count': len(stripped),
+        'nonspace_chars': nonspace_chars,
+        'letter_chars': letter_chars,
+        'word_chars': word_chars,
+        'word_count': word_count,
+        'alpha_ratio': letter_chars / max(nonspace_chars, 1),
+        'symbol_ratio': symbol_chars / max(nonspace_chars, 1),
+        'keyboard_pattern_ratio': keyboard_pattern_chars / max(letter_chars, 1),
+        'word_vowel_ratio': vowel_word_count / max(word_count, 1),
+        'long_no_vowel_tokens': long_no_vowel_tokens,
+        'longest_token_chars': longest_token_chars,
+    }
+
+
+def add_text_quality_qc(
+    df: pd.DataFrame,
+    text_columns: List[str],
+    group_col: str = 'conversation_id',
+    min_substantive_chars: int = 3,
+    min_alpha_ratio: float = 0.45,
+    max_symbol_ratio: float = 0.35,
+    max_keyboard_pattern_ratio: float = 0.12,
+    min_word_vowel_ratio: float = 0.35,
+    long_token_chars: int = 24,
+    min_word_count_for_vowel_check: int = 3,
+) -> pd.DataFrame:
+    """
+    Add deterministic text-quality QC columns without changing text.
+
+    The goal is to flag likely invalid/test/gibberish inputs for audit and
+    story-level exclusion. This is deliberately not a spell-correction step.
+    Ordinary spelling mistakes remain in the analysis text.
+    """
+    if group_col not in df.columns:
+        raise ValueError(f"Expected '{group_col}' column in DataFrame")
+    missing = [column for column in text_columns if column not in df.columns]
+    if missing:
+        raise ValueError(f"Missing text columns for QC: {missing}")
+
+    df = df.copy()
+    slot_flag_columns = []
+    slot_reason_columns = []
+
+    for column in text_columns:
+        metrics = df[column].map(_text_quality_metrics).apply(pd.Series)
+        prefix = f'{column}_text_qc_'
+        for metric_column in metrics.columns:
+            df[f'{prefix}{metric_column}'] = metrics[metric_column]
+
+        protocol_empty = pd.Series(False, index=df.index)
+        if column == 'author_1' and {'starter', 'turn'}.issubset(df.columns):
+            protocol_empty = (
+                df['starter'].eq('author_2')
+                & df['turn'].eq(1)
+                & df[f'{prefix}word_chars'].lt(min_substantive_chars)
+            )
+
+        non_substantive = (
+            df[f'{prefix}word_chars'].lt(min_substantive_chars)
+            & ~protocol_empty
+        )
+        low_alpha = (
+            df[f'{prefix}nonspace_chars'].ge(min_substantive_chars)
+            & df[f'{prefix}alpha_ratio'].lt(min_alpha_ratio)
+        )
+        high_symbols = (
+            df[f'{prefix}nonspace_chars'].ge(min_substantive_chars)
+            & df[f'{prefix}symbol_ratio'].gt(max_symbol_ratio)
+        )
+        keyboard_smash = (
+            df[f'{prefix}keyboard_pattern_ratio'].gt(max_keyboard_pattern_ratio)
+            | df[f'{prefix}long_no_vowel_tokens'].ge(2)
+            | (
+                df[f'{prefix}longest_token_chars'].ge(long_token_chars)
+                & df[f'{prefix}keyboard_pattern_ratio'].gt(0)
+            )
+        )
+        low_vowels = (
+            df[f'{prefix}word_count'].ge(min_word_count_for_vowel_check)
+            & df[f'{prefix}word_vowel_ratio'].lt(min_word_vowel_ratio)
+        )
+
+        flag_column = f'{prefix}flagged'
+        reason_column = f'{prefix}reasons'
+        df[flag_column] = non_substantive | low_alpha | high_symbols | keyboard_smash | low_vowels
+
+        reasons = pd.Series('', index=df.index, dtype='object')
+        for mask, reason in [
+            (non_substantive, 'non_substantive'),
+            (low_alpha, 'low_alpha_ratio'),
+            (high_symbols, 'high_symbol_ratio'),
+            (keyboard_smash, 'keyboard_smash_pattern'),
+            (low_vowels, 'low_word_vowel_ratio'),
+        ]:
+            reasons = reasons.mask(mask, reasons + reason + ';')
+        reasons = reasons.str.rstrip(';')
+        reasons = reasons.mask(protocol_empty & reasons.eq(''), 'protocol_empty')
+        df[reason_column] = reasons
+
+        slot_flag_columns.append(flag_column)
+        slot_reason_columns.append(reason_column)
+
+    df['text_qc_flagged'] = df[slot_flag_columns].any(axis=1)
+
+    def combine_reasons(row: pd.Series) -> str:
+        parts = []
+        for column, reason_column in zip(text_columns, slot_reason_columns):
+            reason = row[reason_column]
+            if isinstance(reason, str) and reason and reason != 'protocol_empty':
+                parts.append(f'{column}:{reason}')
+        return '|'.join(parts)
+
+    df['text_qc_reasons'] = df.apply(combine_reasons, axis=1)
+    return df
+
+
+def build_text_quality_story_summary(
+    df: pd.DataFrame,
+    group_col: str = 'conversation_id',
+    story_exclusion_min_flagged_rows: int = 2,
+    exclude_if_first_human_flagged: bool = True,
+) -> pd.DataFrame:
+    """Summarize deterministic text-quality QC at story level."""
+    if group_col not in df.columns:
+        raise ValueError(f"Expected '{group_col}' column in DataFrame")
+    if 'text_qc_flagged' not in df.columns:
+        raise ValueError("Expected 'text_qc_flagged' column in DataFrame")
+
+    agg = {
+        'n_rows': (group_col, 'size'),
+        'n_text_qc_flagged': ('text_qc_flagged', 'sum'),
+        'starter': ('starter', 'first'),
+    }
+    for optional_col in [
+        'respondent_id', 'respondent_id_u1', 'respondent_id_u2',
+        'source_conversation_id', 'condition'
+    ]:
+        if optional_col in df.columns:
+            agg[optional_col] = (optional_col, 'first')
+
+    summary = df.groupby(group_col, dropna=False).agg(**agg).reset_index()
+
+    first_human_flagged = pd.Series(False, index=summary.index)
+    if exclude_if_first_human_flagged and {'starter', 'turn', 'author_1_text_qc_flagged'}.issubset(df.columns):
+        first_human_stories = set(
+            df[
+                df['starter'].eq('author_1')
+                & df['turn'].eq(1)
+                & df['author_1_text_qc_flagged']
+            ][group_col]
+        )
+        first_human_flagged = summary[group_col].isin(first_human_stories)
+
+    summary['exclude_first_human_qc_flagged'] = first_human_flagged
+    summary['exclude_for_text_qc'] = (
+        summary['n_text_qc_flagged'].ge(story_exclusion_min_flagged_rows)
+        | summary['exclude_first_human_qc_flagged']
+    )
+    return summary
+
+
+def filter_by_text_quality_story_qc(
+    df: pd.DataFrame,
+    story_summary: pd.DataFrame,
+    group_col: str = 'conversation_id',
+) -> pd.DataFrame:
+    """Remove full stories marked for exclusion by text-quality QC summary."""
+    if group_col not in df.columns:
+        raise ValueError(f"Expected '{group_col}' column in DataFrame")
+    if group_col not in story_summary.columns or 'exclude_for_text_qc' not in story_summary.columns:
+        raise ValueError("Story summary must include conversation IDs and exclude_for_text_qc")
+
+    n_before = len(df)
+    excluded_ids = set(story_summary.loc[story_summary['exclude_for_text_qc'], group_col])
+    filtered = df[~df[group_col].isin(excluded_ids)].copy()
+    n_after = len(filtered)
+    n_removed = n_before - n_after
+    print("Text-quality story filtering:")
+    print(f"  Excluding: {len(excluded_ids)} conversation(s)")
+    print(f"  Before: {n_before} rows")
+    print(f"  After: {n_after} rows")
+    print(f"  Removed: {n_removed} rows ({100*n_removed/max(n_before, 1):.1f}%)")
+    return filtered
+
+
 def append_turn_numbers(df: pd.DataFrame) -> pd.DataFrame:
     """
     Append turn numbers within each conversation_id.
@@ -395,10 +662,11 @@ def filter_by_respondent_id(
         raise ValueError(f"Column '{column}' not found in DataFrame")
     
     n_before = len(df)
-    filtered_df = df[df[column].astype(str).str.len() == threshold].copy()
+    respondent_ids = df[column].astype(str)
+    filtered_df = df[respondent_ids.str.len() == threshold].copy()
 
     # removing remaining test_ids
-    filtered_df = filtered_df[~filtered_df[column].str.startswith("test-")]
+    filtered_df = filtered_df[~filtered_df[column].astype(str).str.startswith("test-")]
 
     n_after = len(filtered_df)
     n_removed = n_before - n_after
@@ -458,6 +726,7 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
     # Add metadata columns if present
     for col in ['condition', 'language', 'client_id', 'workshop_id', 'timestamp', 
                 'respondent_id', 'respondent_id_u1', 'respondent_id_u2',
+                'source_conversation_id',
                 'interaction_count', 'starter', 'starter_side', 'starter_type',
                 'author_1_type', 'author_2_type', 'llm_type', 'model_id', 'turn']:
         if col in df.columns:
@@ -530,6 +799,7 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_tu
         Cleaned DataFrame with 'starter' column
     """
     BASELINE = "This is the story of"
+    BASELINE_PATTERN = re.compile(r'^\s*this\s+is\s+the\s+story\s+of\b[\s:,\-.]*', re.IGNORECASE)
     MIN_CONTENT_LENGTH = 10  # Minimum chars beyond baseline to count as "started"
     
     df = df.copy()
@@ -541,6 +811,12 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_tu
     
     # Add turn numbers within each group
     df['turn'] = df.groupby(group_col).cumcount() + 1
+
+    def strip_baseline(text: Any) -> Any:
+        """Remove a leading story-prefix placeholder while preserving missing values."""
+        if pd.isna(text):
+            return text
+        return BASELINE_PATTERN.sub('', str(text), count=1).strip()
     
     # Identify starters based on first turn content
     def detect_starter(group):
@@ -552,7 +828,7 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_tu
         author_1_text = str(first_row['author_1'].iloc[0]) if pd.notna(first_row['author_1'].iloc[0]) else ''
         
         # Remove baseline and check remaining content
-        remainder = author_1_text.replace(BASELINE, '').strip()
+        remainder = strip_baseline(author_1_text)
         
         # If author_1 only had the baseline placeholder (no real content), author_2 started
         if len(remainder) < MIN_CONTENT_LENGTH:
@@ -575,9 +851,9 @@ def clean_user_ai_start(df: pd.DataFrame, interaction_count: bool = True, max_tu
     else:
         df = df[df['turn'] <= max_turns].copy()
     
-    # Remove baseline text from both columns
-    df['author_1'] = df['author_1'].str.replace(BASELINE, "", regex=False).str.strip()
-    df['author_2'] = df['author_2'].str.replace(BASELINE, "", regex=False).str.strip()
+    # Remove leading baseline text from both columns after starter detection.
+    df['author_1'] = df['author_1'].map(strip_baseline)
+    df['author_2'] = df['author_2'].map(strip_baseline)
 
     return df 
 

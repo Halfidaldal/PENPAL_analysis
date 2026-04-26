@@ -4,7 +4,7 @@ Script 02: Filter and clean story data.
 
 This script:
 1. Loads raw story data
-2. Applies edit distance filtering (optional, human experiments only)
+2. Applies deterministic text-quality QC (human experiments only)
 3. Removes "This is the story of" prefix
 4. Adds exchange-aligned analysis metadata
 5. Builds full story text (full_story, full_author_1, full_author_2 columns)
@@ -19,10 +19,8 @@ Usage:
     python scripts/02_clean_dataset.py
 """
 
-import os
 import sys
 from pathlib import Path
-from tqdm import tqdm
 import argparse
 
 from dotenv import load_dotenv
@@ -32,9 +30,7 @@ load_dotenv()
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from nes.process_spelling_openai import correct_spelling, compute_edit_distance_values
 from nes.cleaning import (
-    filter_by_edit_distance,
     build_full_story_text,
     build_long_format_analysis,
     filter_by_respondent_id,
@@ -43,6 +39,10 @@ from nes.cleaning import (
     keep_complete_conversations,
     randomize_author_assignment,
     add_exchange_aligned_metadata,
+    split_repeated_conversation_ids,
+    add_text_quality_qc,
+    build_text_quality_story_summary,
+    filter_by_text_quality_story_qc,
 )
 from nes.io import load_csv, save_csv, get_project_root, load_config, get_active_experiment, get_experiment_config, get_shared_config
 
@@ -57,23 +57,35 @@ def main():
         help="Path to input CSV file with raw story data (auto-detected based on experiment)"
     )
     parser.add_argument(
-        "--api-key",
-        type=str,
+        "--skip-text-qc",
+        action="store_true",
+        help="Skip deterministic text-quality QC"
+    )
+    parser.add_argument(
+        "--text-qc-story-min-rows",
+        type=int,
         default=None,
-        help="Google API key (or set GOOGLE_API_KEY environment variable)"
+        help="Exclude a full story when at least this many rows are text-quality flagged"
     )
     args = parser.parse_args()
-    
-    api_key = os.environ.get('GOOGLE_API_KEY')
     
     # Load config
     experiment = get_active_experiment()
     exp_config = get_experiment_config()
     shared_config = get_shared_config()
     
-    edit_distance_threshold = shared_config['cleaning']['edit_distance_threshold']
+    text_qc_config = shared_config['cleaning'].get('text_quality_qc', {})
+    text_qc_story_min_rows = text_qc_config.get(
+        'story_exclusion_min_flagged_rows',
+        2,
+    )
+    if args.text_qc_story_min_rows is not None:
+        text_qc_story_min_rows = args.text_qc_story_min_rows
     simulated = shared_config['cleaning']['simulated']
     max_turns = exp_config['cleaning']['max_turns']
+    min_interactions = None
+    if exp_config.get('firestore'):
+        min_interactions = exp_config['firestore'].get('min_interactions')
 
     print("=" * 60)
     print(f"Script 02: Clean Dataset ({experiment})")
@@ -98,6 +110,12 @@ def main():
     df['condition'] = experiment
     
     print(f"Loaded {len(df)} rows")
+    if experiment == 'human-ai':
+        df = split_repeated_conversation_ids(
+            df,
+            group_col='conversation_id',
+            expected_length=min_interactions,
+        )
     
     # AI-AI has its own cleaning path
     if experiment == 'ai-ai':
@@ -110,44 +128,77 @@ def main():
         df_filtered = randomize_author_assignment(df_filtered, group_col='conversation_id', seed=random_seed)
         
     else:
-        # Human experiments: optional spell correction + edit distance filtering
-        if api_key and experiment in ['human-ai', 'human-human']:
-            print("\nApplying spell correction to author_1 inputs...")
-            df['author_1_corrected'] = [correct_spelling(text, api_key=api_key) for text in tqdm(df["author_1"], desc="Spell Correction")]
-            print("Spell correction complete.")
-            df['edit_distance'] = [
-                compute_edit_distance_values(orig, corr)
-                for orig, corr in tqdm(
-                    zip(df["author_1"], df["author_1_corrected"]),
-                    total=len(df),
-                    desc="Edit Distance Computation"
-                )
-            ]
-            print("Edit distance computation complete.")
-            
-            df['author_1'] = df['author_1_corrected']
-            df.drop(columns=['author_1_corrected'], inplace=True)
-        else:
-            print("\nSkipping spell correction (no API key or not applicable)")
-        
-        # Filter by edit distance (if column exists)
-        if 'edit_distance' in df.columns:
-            print(f"\nFiltering by edit distance (threshold={edit_distance_threshold})...")
-            df_filtered = filter_by_edit_distance(df, threshold=edit_distance_threshold)
-        else:
-            print("\nNo edit_distance column found, skipping filter")
-            df_filtered = df.copy()
-        
-        # Clean starter text and identify who started
-        df_filtered = clean_user_ai_start(df_filtered, max_turns=max_turns, experiment=experiment)
-        
-        # Filter by respondent_id (human-ai only)
+        # Clean starter text and identify who started before any row/story filter
+        # can make a later row look like the beginning of the story.
+        df_filtered = clean_user_ai_start(df, max_turns=max_turns, experiment=experiment)
+
+        # Filter by respondent_id (human-ai only) before text QC so invalid/test
+        # rows do not inflate quality-control removal counts.
         if 'respondent_id' in df_filtered.columns and experiment == 'human-ai':
             print("\nFiltering by respondent ID...")
             df_filtered = filter_by_respondent_id(df_filtered, threshold=12)
             print(f"✓ Filtered to {len(df_filtered)} rows with valid respondent IDs")
         else:
             print("\nNo respondent_id filtering (not applicable for this experiment)")
+
+        if not args.skip_text_qc and experiment in ['human-ai', 'human-human']:
+            print("\nApplying deterministic text-quality QC...")
+            text_qc_slots = ['author_1']
+            if experiment == 'human-human':
+                text_qc_slots.append('author_2')
+
+            df_filtered = add_text_quality_qc(
+                df_filtered,
+                text_columns=text_qc_slots,
+                min_substantive_chars=text_qc_config.get('min_substantive_chars', 3),
+                min_alpha_ratio=text_qc_config.get('min_alpha_ratio', 0.45),
+                max_symbol_ratio=text_qc_config.get('max_symbol_ratio', 0.35),
+                max_keyboard_pattern_ratio=text_qc_config.get('max_keyboard_pattern_ratio', 0.12),
+                min_word_vowel_ratio=text_qc_config.get('min_word_vowel_ratio', 0.35),
+                long_token_chars=text_qc_config.get('long_token_chars', 24),
+                min_word_count_for_vowel_check=text_qc_config.get('min_word_count_for_vowel_check', 3),
+            )
+
+            text_qc_audit = df_filtered[df_filtered['text_qc_flagged']].copy()
+            audit_columns = [
+                'conversation_id', 'source_conversation_id', 'turn',
+                'interaction_count', 'starter', 'respondent_id',
+                'respondent_id_u1', 'respondent_id_u2', 'llm_type',
+                'timestamp', 'text_qc_reasons',
+                'author_1', 'author_1_text_qc_reasons',
+                'author_1_text_qc_char_count', 'author_1_text_qc_alpha_ratio',
+                'author_1_text_qc_symbol_ratio', 'author_1_text_qc_keyboard_pattern_ratio',
+                'author_1_text_qc_word_vowel_ratio', 'author_1_text_qc_long_no_vowel_tokens',
+                'author_2', 'author_2_text_qc_reasons',
+                'author_2_text_qc_char_count', 'author_2_text_qc_alpha_ratio',
+                'author_2_text_qc_symbol_ratio', 'author_2_text_qc_keyboard_pattern_ratio',
+                'author_2_text_qc_word_vowel_ratio', 'author_2_text_qc_long_no_vowel_tokens',
+            ]
+            audit_columns = [col for col in audit_columns if col in text_qc_audit.columns]
+            save_csv(
+                text_qc_audit[audit_columns],
+                "text_quality_qc_flagged_rows.csv",
+                stage="interim",
+            )
+
+            story_qc = build_text_quality_story_summary(
+                df_filtered,
+                story_exclusion_min_flagged_rows=text_qc_story_min_rows,
+                exclude_if_first_human_flagged=text_qc_config.get(
+                    'exclude_if_first_human_flagged',
+                    True,
+                ),
+            )
+            save_csv(
+                story_qc,
+                "text_quality_qc_story_summary.csv",
+                stage="interim",
+            )
+            print(f"✓ Saved {len(text_qc_audit)} text-quality flagged row(s)")
+            print(f"✓ Saved {len(story_qc)} text-quality story QC summary row(s)")
+            df_filtered = filter_by_text_quality_story_qc(df_filtered, story_qc)
+        else:
+            print("\nSkipping deterministic text-quality QC")
         
         # Randomize author assignment for human-human (to match human-ai randomness)
         if experiment == 'human-human':

@@ -103,7 +103,20 @@ shared:
   
   # Cleaning parameters
   cleaning:
+    # Legacy edit-distance settings are intentionally no longer used by
+    # scripts/02_clean_dataset.py. The primary pipeline uses deterministic
+    # text-quality QC without rewriting participant text.
     edit_distance_threshold: 100
+    text_quality_qc:
+      story_exclusion_min_flagged_rows: 2
+      exclude_if_first_human_flagged: true
+      min_substantive_chars: 3
+      min_alpha_ratio: 0.45
+      max_symbol_ratio: 0.35
+      max_keyboard_pattern_ratio: 0.12
+      min_word_vowel_ratio: 0.35
+      long_token_chars: 24
+      min_word_count_for_vowel_check: 3
     simulated: false
   
   # Embedding models

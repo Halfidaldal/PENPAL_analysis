@@ -85,6 +85,21 @@ python scripts/03_compute_embeddings.py
 
 # 4. Compute sentiment scores
 python scripts/04_compute_sentiment.py
+
+# 5. Compute surface-form metrics
+python scripts/06_compute_textdescriptives.py
+
+# 6. Compute novelty and transience scores
+python scripts/07_compute_novelty.py
+
+# 7. Compute semantic exploration metrics
+python scripts/08_compute_semantic_exploration.py
+```
+
+You can also run the same sequence with:
+
+```bash
+bash scripts/run_full_pipeline.sh
 ```
 
 ### Optional: Delete incomplete stories from Firestore
@@ -101,11 +116,14 @@ All parameters are centralized in `config.yaml`:
 
 - **Data paths**: Where to save raw/interim/processed data
 - **Firestore settings**: Collection names, minimum interactions
-- **Cleaning parameters**: Edit distance threshold, filters
+- **Cleaning parameters**: deterministic text-quality QC, respondent filters, completeness filters
 - **Model settings**: Embedding models, sentiment models, batch sizes
 - **Analysis parameters**: Random seeds, language filters
 
-To change a parameter (e.g., edit distance threshold), edit `config.yaml` and rerun the relevant script.
+The default cleaning path does not rewrite participant text. It strips protocol
+prefixes, filters invalid/test respondent IDs, adds deterministic text-quality
+QC columns, and excludes whole stories only when the story-level QC rule is met.
+QC audit files are written to `data/<experiment>/interim/`.
 
 ## Data Outputs
 
