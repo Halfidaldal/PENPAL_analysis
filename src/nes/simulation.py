@@ -14,13 +14,19 @@ Context management per provider (matching experiment server/adapters):
           Only current turn text sent as 'input'; provider manages history.
           System prompt sent as 'instructions'.
           (Matches server/adapters/OpenAIAdapter.ts)
-- Anthropic: Stateless. Caller builds alternating user/assistant history.
-             System prompt sent separately via Anthropic's 'system' parameter.
-             Messages trimmed to 12k char limit.
+- Anthropic: Routed through an OpenAI-compatible chat/completions endpoint
+             (e.g. OpenRouter), the SAME transport the experiment uses for Claude.
+             System prompt is included in the messages array as {role: 'system'}
+             via buildMessagesForCompat, NOT sent as Anthropic's native 'system'
+             parameter. Requires a base_url.
              (Matches server/adapters/ClaudeAdapter.ts + server/utils/messages.ts)
-- HuggingFace: Stateless. Caller builds [system, ...history, user: current_input].
-               Messages trimmed to 12k char limit.
+- HuggingFace: Stateless. Builds [system, ...history, user: current_input] via
+               buildMessagesForCompat. Messages trimmed to 12k char limit.
                (Matches server/adapters/VLLMAdapterA.ts + server/utils/messages.ts)
+
+Post-processing (matching experiment frontend src/services/aiService.jsx):
+- After every generation, if the response begins with the partner's input
+  (case-insensitive), strip the echo. Applied uniformly to all providers.
 """
 
 from typing import Optional, List, Dict, Literal
@@ -63,8 +69,53 @@ def trim_messages_to_char_limit(messages: List[Dict[str, str]], limit: int = 120
     
     if system_message:
         kept.insert(0, system_message)
-    
+
     return kept
+
+
+def build_messages_for_compat(
+    system_prompt: Optional[str],
+    history: Optional[List[Dict[str, str]]],
+    user_input: str,
+    char_limit: int = 12000,
+) -> List[Dict[str, str]]:
+    """Mirror of server/utils/messages.ts buildMessagesForCompat.
+
+    Prepends a system message (unless history already starts with one), copies
+    history skipping empty content, appends the current user input if non-empty,
+    then trims to the char limit.
+    """
+    history_copy: List[Dict[str, str]] = [dict(m) for m in (history or [])]
+    result: List[Dict[str, str]] = []
+
+    if system_prompt:
+        first = history_copy[0] if history_copy else None
+        if not first or first.get("role") != "system":
+            result.append({"role": "system", "content": system_prompt})
+
+    for msg in history_copy:
+        content = msg.get("content", "")
+        if not content or not content.strip():
+            continue
+        result.append(msg)
+
+    if user_input and user_input.strip():
+        result.append({"role": "user", "content": user_input})
+
+    return trim_messages_to_char_limit(result, limit=char_limit)
+
+
+def strip_input_echo(response_text: str, user_input: str) -> str:
+    """Mirror of the echo-strip in src/services/aiService.jsx generateAIResponse.
+
+    If the response begins (case-insensitively) with the partner's input,
+    strip that prefix. Applied to all providers in the experiment frontend.
+    """
+    ai = (response_text or "").strip()
+    ui = (user_input or "").strip()
+    if ai and ui and ai.lower().startswith(ui.lower()):
+        ai = ai[len(ui):].strip()
+    return ai
 
 
 class BaseProvider(ABC):
@@ -173,54 +224,59 @@ class OpenAIProvider(BaseProvider):
 
 
 class AnthropicProvider(BaseProvider):
-    """Anthropic API provider using messages API.
-    
-    Matches experiment's ClaudeAdapter pattern (server/adapters/ClaudeAdapter.ts):
-    - STATELESS: no internal conversation_history
-    - Receives full message history from caller as alternating user/assistant turns
-    - System prompt passed separately via Anthropic's 'system' parameter
-    - Messages trimmed to 12k char limit (matching server/utils/messages.ts)
+    """Claude provider via an OpenAI-compatible endpoint.
+
+    Matches experiment's ClaudeAdapter (server/adapters/ClaudeAdapter.ts), which
+    routes Claude through an OpenAI-compatible chat/completions endpoint
+    (e.g. OpenRouter) — NOT Anthropic's native messages API.
+
+    - STATELESS: no internal history
+    - System prompt is the first message in the messages array
+      ({role: 'system', ...}), placed by buildMessagesForCompat
+    - Messages trimmed to 12k char limit
+    - Requires base_url pointing at the compat endpoint root (e.g.
+      "https://openrouter.ai/api/v1"). The OpenAI SDK appends /chat/completions.
+    - model_name must be the proxy's identifier for Claude
+      (e.g. "anthropic/claude-sonnet-4.5" on OpenRouter).
     """
-    
-    def __init__(self, api_key: str, model_name: str = "claude-sonnet-4-5-20250929"):
-        from anthropic import Anthropic
-        self.client = Anthropic(api_key=api_key)
+
+    def __init__(self, api_key: str, model_name: str, base_url: str):
+        from openai import OpenAI
+        if not base_url:
+            raise ValueError(
+                "AnthropicProvider requires base_url (OpenAI-compatible endpoint). "
+                "Set 'base_url' in model_configs to match the experiment's MODEL2_BASE_URL."
+            )
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
-    
+
     def generate(self, system_prompt: str, user_input: str,
                  history: Optional[List[Dict[str, str]]] = None,
                  temperature: float = 1.0, max_tokens: int = 35) -> str:
-        """Generate using Anthropic's messages API (stateless).
-        
-        Matches experiment's ClaudeAdapter.respond() + buildMessagesForCompat():
-        - Builds messages from history + current user_input
-        - System prompt sent separately via Anthropic's 'system' parameter
-        - No internal state between calls (no conversation_history accumulation)
-        - Trims to 12k char limit matching experiment's buildMessagesForCompat
+        """Generate via OpenAI-compatible chat completions.
+
+        Mirrors ClaudeAdapter.respond(): builds messages with
+        buildMessagesForCompat (system in-array), then POSTs to the compat
+        endpoint with the same payload shape (model, messages, temperature,
+        max_tokens).
         """
-        # Build messages array: history + current user input
-        # Matches experiment's buildMessagesForCompat which assembles
-        # [...history, {role: "user", content: userInput}]
-        messages = []
-        if history:
-            messages.extend(history)
-        messages.append({"role": "user", "content": user_input})
-        
-        # Trim to match experiment's 12k char limit
-        messages = trim_messages_to_char_limit(messages, limit=12000)
-        
-        response = self.client.messages.create(
-            model=self.model_name,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system_prompt,
-            messages=messages
+        messages = build_messages_for_compat(
+            system_prompt=system_prompt,
+            history=history,
+            user_input=user_input,
+            char_limit=12000,
         )
-        
-        # Extract response text
-        out = response.content[0].text if response.content else ""
-        return out.strip()
-    
+
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        out = response.choices[0].message.content if response.choices else ""
+        return out.strip() if out else ""
+
     def reset_conversation(self):
         """No internal state to reset (stateless provider)."""
         pass
@@ -254,16 +310,13 @@ class HuggingFaceProvider(BaseProvider):
         - No internal conversation state
         - Trims to 12k char limit
         """
-        # Build messages: [system, ...history, user: current_input]
-        # Matches experiment's buildMessagesForCompat output
-        messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
-        if history:
-            messages.extend(history)
-        messages.append({"role": "user", "content": user_input})
-        
-        # Trim to match experiment's char limit
-        messages = trim_messages_to_char_limit(messages, limit=12000)
-        
+        messages = build_messages_for_compat(
+            system_prompt=system_prompt,
+            history=history,
+            user_input=user_input,
+            char_limit=12000,
+        )
+
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
@@ -295,7 +348,7 @@ def get_provider(provider_type: ProviderType, api_key: str, model_name: str,
     if provider_type == "openai":
         return OpenAIProvider(api_key=api_key, model_name=model_name)
     elif provider_type == "anthropic":
-        return AnthropicProvider(api_key=api_key, model_name=model_name)
+        return AnthropicProvider(api_key=api_key, model_name=model_name, base_url=base_url)
     elif provider_type == "huggingface":
         return HuggingFaceProvider(api_key=api_key, model_name=model_name, base_url=base_url)
     else:
@@ -428,7 +481,11 @@ def simulate_single_story(
             temperature=temperature,
             max_tokens=max_tokens
         )
-        
+
+        # Strip echo of partner input — matches experiment frontend
+        # (src/services/aiService.jsx generateAIResponse), applied to all providers.
+        agent1_text = strip_input_echo(agent1_text, agent1_input)
+
         # Update agent 1's history (user = partner input, assistant = own response)
         agent1_history.append({"role": "user", "content": agent1_input})
         agent1_history.append({"role": "assistant", "content": agent1_text})
@@ -456,7 +513,11 @@ def simulate_single_story(
             temperature=temperature,
             max_tokens=max_tokens
         )
-        
+
+        # Strip echo of partner input — matches experiment frontend
+        # (src/services/aiService.jsx generateAIResponse), applied to all providers.
+        agent2_text = strip_input_echo(agent2_text, agent2_input)
+
         # Update agent 2's history
         agent2_history.append({"role": "user", "content": agent2_input})
         agent2_history.append({"role": "assistant", "content": agent2_text})

@@ -1,6 +1,6 @@
-Metric,ai1,ai2
-Mean Valence,0.08,0.069
-Sentiment Alignment (β),0.154,0.037
-Alignment Frequency (%),45.417,53.214
-Mean Alignment Duration (turns),1.758,1.886
-Semantic Alignment (Cosine),0.7,0.702
+Metric,author_1,author_2
+Mean Valence,0.08,0.088
+Sentiment Alignment (β),0.177,0.182
+Alignment Frequency (%),52.083,48.929
+Mean Alignment Duration (turns),1.736,1.671
+Semantic Alignment (Cosine),0.706,0.706

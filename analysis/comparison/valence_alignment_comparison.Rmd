@@ -50,7 +50,13 @@ selected_data_list <- lapply(data_list, function(df) {
     df %>% select("conversation_id", "full_story")
 })
 
-combined_data <- bind_rows(selected_data_list) %>% filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959")
+excluded_story_ids <- c(
+  "conv_ed575a06c11d42358e3eeb7826d2f959",
+  "conv_a79338efb1384551affc0d7597822b0f"
+)
+
+combined_data <- bind_rows(selected_data_list) %>%
+  filter(!conversation_id %in% excluded_story_ids)
 
 write.csv(combined_data, "combined_data_2.csv", row.names = FALSE)
 ```
@@ -82,7 +88,7 @@ print(check_data_availability())
 df_combined <- load_valence_data(c("human-ai", "human-human", "ai-ai")) %>%
   filter_complete_exchange_window() %>%
   prepare_condition_factor(reference = "human-ai") %>%
-  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959")
+  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959", conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225")
 
 df_combined %>%
   group_by(condition) %>%

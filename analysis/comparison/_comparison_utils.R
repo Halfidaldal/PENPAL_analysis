@@ -35,6 +35,151 @@ coerce_numeric_cols <- function(df, cols = c("turn", "interaction_count", "analy
     mutate(across(all_of(present_cols), ~ suppressWarnings(as.numeric(.x))))
 }
 
+coerce_text_reason_cols <- function(df) {
+  reason_cols <- names(df)[str_detect(names(df), "(^|_)qc_reasons$|_reasons$")]
+  if (length(reason_cols) == 0) {
+    return(df)
+  }
+
+  df %>%
+    mutate(across(all_of(reason_cols), ~ na_if(as.character(.x), "")))
+}
+
+normalize_condition_id <- function(x) {
+  as.character(x) %>%
+    str_to_lower() %>%
+    str_replace_all("_", "-")
+}
+
+provider_error_patterns <- c(
+  "Network error while generating a response",
+  "Claude adapter: no text returned from provider"
+)
+
+# Provider failures are excluded post-hoc because recomputing GPU-derived
+# features is not currently available. Turn-level metrics drop only the failed
+# exchange unless a full story is explicitly listed below.
+provider_error_exchanges <- tibble::tribble(
+  ~condition, ~conversation_id, ~turn,
+  "human-ai", "conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256", 6,
+  "human-ai", "conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80", 7,
+  "human-ai", "conv_7c23347e-6172-4c84-9fd0-45ef34290bd5", 3
+)
+
+provider_error_stories <- tibble::tribble(
+  ~condition, ~conversation_id,
+  "ai-ai", "conv_a79338efb1384551affc0d7597822b0f"
+)
+
+is_provider_error_text <- function(x) {
+  replace_na(str_detect(
+    as.character(x),
+    regex(paste(provider_error_patterns, collapse = "|"), ignore_case = TRUE)
+  ), FALSE)
+}
+
+drop_provider_error_exchanges <- function(df) {
+  if (!"conversation_id" %in% names(df) || nrow(df) == 0) {
+    return(df)
+  }
+
+  df_out <- df %>%
+    mutate(conversation_id = clean_conversation_id(conversation_id))
+
+  text_cols <- intersect(
+    c("author_1", "author_2", "text", "full_text", "story_text", "author_1_text", "author_2_text"),
+    names(df_out)
+  )
+  has_error_text <- rep(FALSE, nrow(df_out))
+  for (text_col in text_cols) {
+    has_error_text <- has_error_text | is_provider_error_text(df_out[[text_col]])
+  }
+
+  turn_cols <- intersect(c("turn", "interaction_count"), names(df_out))
+  exact_error_exchange <- rep(FALSE, nrow(df_out))
+  exact_error_story <- rep(FALSE, nrow(df_out))
+
+  condition_id <- if ("condition" %in% names(df_out)) {
+    normalize_condition_id(df_out$condition)
+  } else {
+    rep(NA_character_, nrow(df_out))
+  }
+
+  story_keys <- tibble(
+    .row = seq_len(nrow(df_out)),
+    condition = condition_id,
+    conversation_id = df_out$conversation_id
+  )
+
+  story_rows <- story_keys %>%
+    inner_join(provider_error_stories, by = c("condition", "conversation_id")) %>%
+    pull(.row)
+
+  exact_error_story[story_rows] <- TRUE
+
+  if (length(turn_cols) > 0) {
+    turn_index <- suppressWarnings(as.numeric(df_out[[turn_cols[[1]]]]))
+    if (length(turn_cols) > 1) {
+      for (turn_col in turn_cols[-1]) {
+        turn_index <- coalesce(turn_index, suppressWarnings(as.numeric(df_out[[turn_col]])))
+      }
+    }
+
+    row_keys <- tibble(
+      .row = seq_len(nrow(df_out)),
+      condition = condition_id,
+      conversation_id = df_out$conversation_id,
+      turn = turn_index
+    )
+
+    exact_rows <- row_keys %>%
+      inner_join(provider_error_exchanges, by = c("condition", "conversation_id", "turn")) %>%
+      pull(.row)
+
+    exact_error_exchange[exact_rows] <- TRUE
+  }
+
+  df_out %>%
+    filter(!(has_error_text | exact_error_exchange | exact_error_story))
+}
+
+drop_provider_error_stories <- function(df) {
+  if (!"conversation_id" %in% names(df) || nrow(df) == 0) {
+    return(df)
+  }
+
+  bad_story_keys <- bind_rows(
+    provider_error_exchanges %>% select(condition, conversation_id),
+    provider_error_stories
+  ) %>%
+    distinct()
+
+  df_out <- df %>%
+    mutate(conversation_id = clean_conversation_id(conversation_id))
+
+  condition_id <- if ("condition" %in% names(df_out)) {
+    normalize_condition_id(df_out$condition)
+  } else {
+    rep(NA_character_, nrow(df_out))
+  }
+
+  story_keys <- tibble(
+    .row = seq_len(nrow(df_out)),
+    condition = condition_id,
+    conversation_id = df_out$conversation_id
+  )
+
+  story_rows <- story_keys %>%
+    inner_join(bad_story_keys, by = c("condition", "conversation_id")) %>%
+    pull(.row)
+
+  if (length(story_rows) == 0) {
+    return(df_out)
+  }
+
+  df_out[-story_rows, , drop = FALSE]
+}
+
 load_interaction_metadata <- function(condition) {
   path <- here("data", condition, "interim", "interaction_level_stories_filtered.csv")
 
@@ -246,7 +391,7 @@ add_turn_index <- function(df) {
 }
 
 filter_complete_exchange_window <- function(df, min_analysis_turn = 1, max_analysis_turn = 9) {
-  df_out <- df
+  df_out <- drop_provider_error_exchanges(df)
 
   if ("complete_exchange" %in% names(df_out)) {
     df_out <- df_out %>%
@@ -324,6 +469,7 @@ load_condition_data <- function(condition, filename, format = "parquet") {
       condition = condition,
       conversation_id = if ("conversation_id" %in% names(.)) clean_conversation_id(conversation_id) else NULL
     ) %>%
+    coerce_text_reason_cols() %>%
     coerce_numeric_cols()
 }
 
@@ -534,7 +680,8 @@ load_exploration_data <- function(conditions = c("human-ai", "human-human", "ai-
         attach_interaction_metadata(cond) %>%
         ensure_role_metadata() %>%
         derive_condition_role() %>%
-        add_turn_index()
+        add_turn_index() %>%
+        drop_provider_error_stories()
       all_data[[cond]] <- df
     }
   }
