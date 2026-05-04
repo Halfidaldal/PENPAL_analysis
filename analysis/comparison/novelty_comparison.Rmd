@@ -64,6 +64,7 @@ extracted via `emtrends`. Per-story OLS slope differences provide a label-invari
 
 **Article-use note.** The article-facing result is the magnitude of the novelty-to-resonance slope gap. Do not infer Human-AI specificity from within-condition significance alone; the direct cross-condition question requires comparing the slot-slope gap across conditions and checking the per-story absolute gap as a robustness layer.
 
+
 # Load Data
 
 ```{r load-data}

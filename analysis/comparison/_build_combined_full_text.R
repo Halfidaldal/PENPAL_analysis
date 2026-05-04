@@ -21,8 +21,15 @@ excluded_story_ids <- c(
 )
 
 combined_data <- file_names %>%
-  lapply(read.csv) %>%
-  lapply(function(df) df %>% select("conversation_id", "full_story")) %>%
+  lapply(function(file) {
+    df <- read.csv(file) %>% select("conversation_id", "full_story")
+    # Take only first 20 rows if this is the ai-ai dataset
+    if (grepl("ai-ai", file)) {
+      head(df, 20)
+    } else {
+      df
+    }
+  }) %>%
   bind_rows() %>%
   filter(!conversation_id %in% excluded_story_ids)
 

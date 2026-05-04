@@ -63,55 +63,36 @@ def load_language_model(model_path, device=None):
     device = next(model.parameters()).device
     return tokenizer, model, device
 
-def calc_sentence_surprisal(context_ids, target_ids, model, window_size=128):
+def calc_sentence_surprisal(context_ids, target_ids, model, window_size=None):
     """
     Compute average surprisal (bits/token) and total surprisal (bits)
-    for target tokens given context.
-    
-    Parameters
-    ----------
-    context_ids : list of int
-        Token IDs for context
-    target_ids : list of int
-        Token IDs for target sentence
-    model : transformers.PreTrainedModel
-        Causal language model
-    window_size : int
-        Maximum context window size
-        
-    Returns
-    -------
-    tuple
-        (average_surprisal, total_surprisal)
+    for target tokens given context, using dynamic context window limits.
     """
-    # Use larger context for prediction history (up to model max or reasonable limit like 1024)
-    # The 'window_size' parameter will now strictly control the FUTURE/TARGET evaluation window size
-    prediction_history_limit = 1024 
+    # Dynamically extract model's maximum context length, defaulting to 128k for Maverick if undefined
+    max_context = getattr(model.config, "max_position_embeddings", 131072) 
+    
+    # Define how much history we can safely keep (leaving room for the target sentence)
+    prediction_history_limit = max_context - len(target_ids) - 1
+    
+    # Truncate context to fit within the model's actual limits rather than a hardcoded 1024
     context_ids = context_ids[-prediction_history_limit:]
-    
-    # We only care about the target tokens being predicted
-    # If target is longer than window_size, we crop it (for Transience consistency)
-    # For Novelty, target_ids is the full turn, so we usually want the full turn.
-    # To support both, we'll respect the passed target_ids length, but caller should trim if needed.
-    # But wait, for Transience dilution check, we want to limit target_ids to say 40.
-    # Let's handle trimming in the caller functions instead of here for flexibility.
-    
     combined_ids = context_ids + target_ids
     
     if len(combined_ids) < 2 or not target_ids:
         return 0.0, 0.0
     
-    # Forward pass
+    # Convert to tensors and explicitly create an attention mask
     input_tensor = torch.tensor([combined_ids], device=model.device)
+    attention_mask = torch.ones_like(input_tensor, device=model.device)
+    
     with torch.no_grad():
-        outputs = model(input_tensor)
+        outputs = model(input_ids=input_tensor, attention_mask=attention_mask)
     
     logits = outputs.logits[:, :-1, :]  # Distributions for each next token
     
     total_nll = 0.0
     for idx, token_id in enumerate(target_ids):
         pos = len(context_ids) + idx - 1
-        # Safety check for index
         if pos >= logits.shape[1]:
              break 
         dist = logits[0, pos]
@@ -164,11 +145,11 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     bos_token_id = tokenizer.bos_token_id
     if bos_token_id is None:
         bos_token_id = tokenizer.eos_token_id
-    base_context = [bos_token_id] if bos_token_id is not None else []
-    
+    anchor_text = "Speaker:"
+    anchor_ids = tokenizer(anchor_text, add_special_tokens=False)["input_ids"]
+    context_buffer = ([bos_token_id] if bos_token_id is not None else []) + anchor_ids    
     # Initialize context buffer with BOS token to ensure first turn works correctly
-    # Otherwise calc_sentence_surprisal can have negative index issue on first turn (context=[])
-    context_buffer = [bos_token_id] if bos_token_id is not None else []
+
     
     last_client = None
     author_1_novelty, author_1_raw, author_1_entropy = [], [], []
