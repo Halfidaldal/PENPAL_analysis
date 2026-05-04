@@ -330,6 +330,128 @@ def delete_incomplete_stories_from_firestore(
     return deleted_count
 
 
+def apply_spell_correction(
+    df: pd.DataFrame,
+    text_columns: List[str],
+    api_key: str,
+    preserve_raw_suffix: str = "_raw",
+    edit_distance_suffix: str = "_edit_distance",
+    edit_distance_threshold: Optional[int] = 70,
+    skip_if_qc_flagged: bool = True,
+) -> pd.DataFrame:
+    """
+    Apply LLM spell-correction to selected text columns.
+
+    For each row in each target column the text is sent to GPT-4o-mini via
+    `nes.process_spelling_openai.correct_spelling`. The original text is
+    preserved in a `<column><preserve_raw_suffix>` column, the Levenshtein
+    distance between original and corrected text is stored in
+    `<column><edit_distance_suffix>`, and the column itself is replaced with
+    the corrected text.
+
+    Rows with text-quality QC flags on a given slot are not sent to the
+    correction API (they are typically gibberish that the corrector cannot
+    repair); their original text is retained and edit distance is set to 0.
+
+    If `edit_distance_threshold` is provided, rows whose edit distance on any
+    target column exceeds the threshold are marked in
+    `spell_correction_excessive_edit` (boolean). They are not dropped here -
+    downstream code or `filter_by_edit_distance` decides whether to drop them.
+
+    Args:
+        df: Input DataFrame.
+        text_columns: Columns to spell-correct (e.g., ['author_1'] for HA,
+            ['author_1', 'author_2'] for HH).
+        api_key: OpenAI API key.
+        preserve_raw_suffix: Suffix for the preserved original text column.
+        edit_distance_suffix: Suffix for the per-row edit distance column.
+        edit_distance_threshold: Optional Levenshtein cutoff for the audit flag.
+        skip_if_qc_flagged: If True, skip API calls on rows where the slot's
+            text_qc_flagged is True.
+
+    Returns:
+        DataFrame with corrected text + audit columns.
+    """
+    from nes.process_spelling_openai import correct_spelling, compute_edit_distance_values
+
+    if not text_columns:
+        return df.copy()
+    missing = [c for c in text_columns if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing text columns for spell correction: {missing}")
+    if not api_key:
+        raise ValueError("api_key is required for spell correction")
+
+    df = df.copy()
+    excessive = pd.Series(False, index=df.index)
+
+    for column in text_columns:
+        raw_col = f"{column}{preserve_raw_suffix}"
+        ed_col = f"{column}{edit_distance_suffix}"
+        df[raw_col] = df[column]
+
+        flag_col = f"{column}_text_qc_flagged"
+        skip_mask = (
+            df[flag_col].fillna(False).astype(bool)
+            if (skip_if_qc_flagged and flag_col in df.columns)
+            else pd.Series(False, index=df.index)
+        )
+
+        corrected = []
+        n_calls = 0
+        n_skipped = 0
+        for idx, value in df[column].items():
+            if skip_mask.loc[idx]:
+                corrected.append(value)
+                n_skipped += 1
+                continue
+            corrected.append(correct_spelling(value, api_key=api_key))
+            n_calls += 1
+        df[column] = corrected
+
+        df[ed_col] = [
+            compute_edit_distance_values(orig, corr)
+            for orig, corr in zip(df[raw_col], df[column])
+        ]
+
+        if edit_distance_threshold is not None:
+            excessive = excessive | (df[ed_col].fillna(0) > edit_distance_threshold)
+
+        print(
+            f"  Spell correction on '{column}': "
+            f"{n_calls} API call(s), {n_skipped} skipped (qc-flagged), "
+            f"mean edit distance = {df[ed_col].mean():.2f}"
+        )
+
+    df["spell_correction_excessive_edit"] = excessive
+    if edit_distance_threshold is not None:
+        n_excessive = int(excessive.sum())
+        print(
+            f"  Rows with edit distance > {edit_distance_threshold} flagged: "
+            f"{n_excessive}/{len(df)} ({100*n_excessive/max(len(df),1):.1f}%)"
+        )
+    return df
+
+
+def drop_text_qc_flagged_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Drop turn-level rows where text-quality QC has flagged any author slot.
+
+    Used as a row-level outlier filter (alternative to story-level exclusion).
+    Requires the `text_qc_flagged` column produced by `add_text_quality_qc`.
+    """
+    if "text_qc_flagged" not in df.columns:
+        return df.copy()
+    n_before = len(df)
+    out = df[~df["text_qc_flagged"].fillna(False).astype(bool)].copy()
+    n_after = len(out)
+    print(
+        f"Row-level QC filtering: dropped {n_before - n_after} flagged row(s) "
+        f"({100*(n_before - n_after)/max(n_before, 1):.1f}%)"
+    )
+    return out
+
+
 def filter_by_edit_distance(
     df: pd.DataFrame,
     threshold: int,
@@ -1000,20 +1122,47 @@ def add_exchange_aligned_metadata(
     author_2_substantive = _is_substantive_text(df['author_2'], min_substantive_chars=min_substantive_chars)
     df['complete_exchange'] = author_1_substantive & author_2_substantive
 
+    # Option A: symmetrize starter handling.
+    #
+    # When the AI starts a story (starter_side == 'author_2'), the AI primer is
+    # encoded as an incomplete row (author_1 is empty), so it is already excluded
+    # from analysis_turn by virtue of complete_exchange == False.
+    #
+    # When the user starts a story (starter_side == 'author_1'), the first row
+    # is encoded as a complete exchange that pairs the user's opening with the
+    # AI's first response. The user's opening, however, has no prior context
+    # within the dialog, so any context-dependent metric (e.g., surprisal-based
+    # novelty) is structurally zero on that slot. To match the treatment of the
+    # AI primer in AI-starter stories, the first complete row of every
+    # user-starter story is marked as pre-exchange (analysis_turn = NA). The
+    # row itself is preserved (complete_exchange remains True), but it falls
+    # outside the analysis window the same way the AI primer does.
     ordered = df.sort_values([group_col, 'turn'], kind='stable').copy()
-    ordered['analysis_turn'] = ordered.groupby(group_col)['complete_exchange'].cumsum()
+    ordered['_complete_idx'] = ordered.groupby(group_col)['complete_exchange'].cumsum()
+    pre_exchange_user_starter = (
+        ordered['starter_side'].eq('author_1')
+        & ordered['complete_exchange']
+        & ordered['_complete_idx'].eq(1)
+    )
+    ordered['_contextualized_exchange'] = (
+        ordered['complete_exchange'] & ~pre_exchange_user_starter
+    )
+
     ordered['analysis_turn'] = (
-        ordered['analysis_turn']
-        .where(ordered['complete_exchange'], pd.NA)
+        ordered.groupby(group_col)['_contextualized_exchange'].cumsum()
+        .where(ordered['_contextualized_exchange'], pd.NA)
         .astype('Int64')
     )
     df['analysis_turn'] = ordered.sort_index()['analysis_turn']
 
+    n_user_starter_first = int(pre_exchange_user_starter.sum())
     complete_count = int(df['complete_exchange'].sum())
     incomplete_count = int((~df['complete_exchange']).sum())
     print(
         "Exchange alignment metadata added: "
-        f"{complete_count} complete exchanges, {incomplete_count} incomplete rows"
+        f"{complete_count} complete exchanges, {incomplete_count} incomplete rows, "
+        f"{n_user_starter_first} user-starter first turns marked as pre-exchange "
+        "(analysis_turn=NA)"
     )
 
     return df

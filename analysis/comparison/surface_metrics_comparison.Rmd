@@ -56,11 +56,14 @@ The notebook therefore no longer assumes old wide `author_1_*` / `author_2_*` co
 $$A_m(i) \;=\; \bigl|\, \overline{m}_{\text{slot}=1,\,i} - \overline{m}_{\text{slot}=2,\,i} \,\bigr|.$$
 This is the unsigned, label-invariant side-difference magnitude. For each metric we test $A_m \sim \text{condition}$ with ANOVA + Kruskal and apply BH adjustment across the metric panel. The LMM slot-marginal contrasts are retained as supplemental. Starter-mechanism and Human-AI speaker-type decompositions are deferred.
 
+**Article-use note.** The primary result is the per-story unsigned side-difference test. Slot-marginal LMMs and role plots are useful for explaining where the difference comes from, but they should not replace the label-invariant cross-condition result.
+
 # Load Data
 
 ```{r load-data}
 df_combined <- load_surface_metrics(c("human-ai", "human-human", "ai-ai")) %>%
   filter_complete_exchange_window() %>%
+  filter(turn_index > 1) %>%
   prepare_condition_factor(reference = "human-ai") %>%
   filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959", conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225")
 
@@ -181,63 +184,131 @@ ggplot(per_story_abs_diff, aes(x = condition, y = A, fill = condition)) +
   theme(legend.position = "none")
 ```
 
-# Supplemental: Slot-Marginal LMM per Metric
+# Bootstrap CIs and Effect Sizes per Metric
 
-```{r slot-asymmetry}
+```{r boot-effects-surface}
+boot_by_metric <- per_story_abs_diff %>%
+  group_by(metric) %>%
+  group_modify(~ bootstrap_condition_means(.x, "A", R = 10000)) %>%
+  ungroup()
 
-slot_asymmetry <- purrr::imap_dfr(selected_metrics, function(col_name, metric_alias) {
-  model <- lmer(
-    as.formula(paste(col_name, "~ slot * condition + (1 | conversation_id)")),
-    data = df_slots
-  )
-
-  emm <- emmeans(model, specs = c("condition", "slot"))
-  emm_df <- as.data.frame(emm)
-  contrast_df <- as.data.frame(pairs(emm, by = "condition"))
-
-  tibble(
-    metric = metric_alias,
-    condition = contrast_df$condition,
-    slot_1_mean = purrr::map_dbl(
-      contrast_df$condition,
-      ~ emm_df$emmean[emm_df$condition == .x & emm_df$slot == "Slot 1"][1]
-    ),
-    slot_2_mean = purrr::map_dbl(
-      contrast_df$condition,
-      ~ emm_df$emmean[emm_df$condition == .x & emm_df$slot == "Slot 2"][1]
-    ),
-    difference = contrast_df$estimate,
-    se = contrast_df$SE,
-    t = contrast_df$t.ratio,
-    p = contrast_df$p.value
-  )
-})
-
-slot_asymmetry %>%
+boot_by_metric %>%
   knitr::kable(
     digits = 3,
-    caption = "Slot asymmetry by condition for selected surface metrics"
+    caption = "Bootstrap 95% CI on per-condition mean of A per metric (R = 10,000)"
+  )
+
+effects_by_metric <- per_story_abs_diff %>%
+  group_by(metric) %>%
+  group_modify(~ effect_sizes_pairwise(.x, "A")) %>%
+  ungroup()
+
+effects_by_metric %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Pairwise Cliff's delta on A per metric"
   )
 ```
 
-```{r slot-asymmetry-plot, fig.width=12, fig.height=8}
-slot_asymmetry %>%
-  ggplot(aes(x = condition, y = difference, fill = condition)) +
-  geom_col(width = 0.6, alpha = 0.8) +
-  geom_errorbar(
-    aes(ymin = difference - 1.96 * se, ymax = difference + 1.96 * se),
-    width = 0.2
-  ) +
+# Planned Contrast: HA vs (HH + AA)/2 per Metric
+
+```{r planned-contrast-surface}
+planned_by_metric <- per_story_abs_diff %>%
+  group_by(metric) %>%
+  group_modify(~ planned_contrast_HA_vs_same(.x, "A")) %>%
+  ungroup() %>%
+  mutate(p_BH = p.adjust(p, method = "BH"))
+
+planned_by_metric %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Planned HA vs (HH+AA)/2 contrast per metric, BH-adjusted across metrics"
+  )
+```
+
+# Directional Stability of Signed Side-Mean Differences (per Metric)
+
+Tests whether the *direction* of the slot-1 vs slot-2 side-mean difference is
+consistent across stories within each condition, per metric. The signed
+quantity is $\text{signed}_i = \overline{m}_{\text{slot 1},i} - \overline{m}_{\text{slot 2},i}$.
+
+```{r directional-stability-surface}
+ds_surface <- per_story_abs_diff %>%
+  dplyr::group_split(metric) %>%
+  purrr::map_dfr(function(df_m) {
+    metric_name <- unique(df_m$metric)
+    res <- directional_stability(df_m, "signed_diff")
+    res$by_condition %>%
+      mutate(metric = metric_name, variance_equality_p = res$variance_equality_p)
+  })
+
+ds_surface %>%
+  select(metric, condition, n, mean, sd, stability, sign_consistency, one_sample_t_p, variance_equality_p) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-metric directional stability of signed side-mean differences"
+  )
+```
+
+```{r directional-stability-surface-plot, fig.width=12, fig.height=8}
+ggplot(per_story_abs_diff, aes(x = condition, y = signed_diff, fill = condition)) +
+  geom_violin(alpha = 0.4, colour = NA) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
   scale_fill_manual(values = condition_colors) +
-  facet_wrap(~metric, scales = "free_y") +
+  facet_wrap(~ metric, scales = "free_y") +
   labs(
-    title = "Slot Asymmetry by Condition",
-    subtitle = "Difference: Slot 1 - Slot 2 (supplemental slot-marginal LMM view).",
+    title = "Signed Slot 1 - Slot 2 side-mean difference by condition",
     x = "Condition",
-    y = "Asymmetry"
+    y = expression(Delta * bar(m))
   ) +
   theme(legend.position = "none")
+```
+
+# Multivariate Composite over Surface Metrics
+
+Stacks the per-story `A_m` vector across all selected surface metrics into one
+matrix and tests whether the joint condition profiles differ via PERMANOVA
+(`vegan::adonis2`). A single multivariate answer to "is the cross-metric
+surface-asymmetry profile distinct in HA?".
+
+```{r multivariate-surface, fig.width=10, fig.height=6}
+A_matrix <- per_story_abs_diff %>%
+  pivot_wider(
+    id_cols = c(conversation_id, condition),
+    names_from = metric,
+    values_from = A
+  ) %>%
+  drop_na()
+
+cat(sprintf(
+  "Stories with complete A-vector across all %d metrics: %d\n",
+  length(selected_metrics), nrow(A_matrix)
+))
+
+if (nrow(A_matrix) >= 30 && requireNamespace("vegan", quietly = TRUE)) {
+  X <- A_matrix %>% select(-conversation_id, -condition) %>% as.matrix()
+  set.seed(42)
+  perm_res <- vegan::adonis2(X ~ condition, data = A_matrix, method = "euclidean", permutations = 9999)
+  print(perm_res)
+
+  pca <- prcomp(X, scale. = TRUE)
+  pca_df <- as_tibble(pca$x[, 1:2]) %>%
+    bind_cols(condition = A_matrix$condition)
+
+  ggplot(pca_df, aes(x = PC1, y = PC2, color = condition)) +
+    geom_point(alpha = 0.6, size = 1.8) +
+    stat_ellipse(level = 0.95, linewidth = 0.8) +
+    scale_color_manual(values = condition_colors) +
+    labs(
+      title = "PCA of per-story surface-metric asymmetry vector",
+      subtitle = "95% data ellipses per condition",
+      x = sprintf("PC1 (%.1f%%)", 100 * pca$sdev[1]^2 / sum(pca$sdev^2)),
+      y = sprintf("PC2 (%.1f%%)", 100 * pca$sdev[2]^2 / sum(pca$sdev^2))
+    )
+} else {
+  cat("Skipping multivariate test: insufficient stories or vegan package missing.\n")
+}
 ```
 
 # Supplemental: General Condition-Level Comparison
@@ -314,13 +385,20 @@ df_combined %>%
 ```
 
 ```{r role-models}
+# Role-contrast LMMs are run only for HH and AA, where the role labels are
+# Starter-side / Non-starter-side and have no counterpart elsewhere. The HA
+# Human-vs-AI role LMM lives in
+# analysis/human-ai/surface_metrics_analysis.Rmd and is not duplicated here.
 if ("condition_role" %in% names(df_combined) && any(!is.na(df_combined$condition_role))) {
+  same_type_conditions <- intersect(levels(df_combined$condition),
+                                    c("Human-Human", "AI-AI"))
+
   for (metric_alias in names(selected_metrics)[1:min(3, length(selected_metrics))]) {
     col_name <- selected_metrics[[metric_alias]]
 
-    cat("\n=== Role contrast for", metric_alias, "===\n")
+    cat("\n=== Role contrast for", metric_alias, "(HH and AA only) ===\n")
 
-    for (cond_name in levels(df_combined$condition)) {
+    for (cond_name in same_type_conditions) {
       df_subset <- df_combined %>%
         filter(condition == cond_name, !is.na(condition_role))
 
@@ -345,15 +423,20 @@ if ("condition_role" %in% names(df_combined) && any(!is.na(df_combined$condition
 
 Primary cross-condition result: per-metric $A_m(i) = |\overline{m}_{\text{slot 1},i} - \overline{m}_{\text{slot 2},i}|$, tested with ANOVA + Kruskal and BH-adjusted across metrics.
 
+Robustness layers added:
+
+- bootstrap 95% CIs on per-condition mean of $A_m$, per metric
+- pairwise Cliff's $\delta$ effect sizes per metric
+- planned single-df contrast HA vs (HH+AA)/2 per metric, BH-adjusted across metrics
+- multivariate composite over the surface-metric panel via PERMANOVA + PCA biplot
+
 Supplemental views retained:
 
-- LMM slot-marginal contrasts per metric (`metric ~ slot * condition + (1|story)`)
 - condition-level distributions and marginal `condition` LMMs
-- within-condition role comparisons (Human / AI in Human-AI; Starter-side / Non-starter-side in same-type)
+- within-condition role comparisons restricted to HH / AA (Starter-side / Non-starter-side); HA Human-vs-AI role LMM lives in [analysis/human-ai/surface_metrics_analysis.Rmd](../human-ai/surface_metrics_analysis.Rmd) and is not duplicated here
 
 Deferred to a follow-up pass:
 
 - starter-mechanism analysis (signed, starter-normalized side differences across all conditions)
-- Human-AI decomposition (`speaker_type \u00d7 speaker_is_starter` within Human-AI only)
 
 *Analysis completed: `r Sys.time()`*

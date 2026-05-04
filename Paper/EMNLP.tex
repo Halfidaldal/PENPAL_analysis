@@ -1,0 +1,302 @@
+\documentclass[11pt]{article}
+
+% Change "review" to "final" to generate the final (sometimes called camera-ready) version.
+% Change to "preprint" to generate a non-anonymous version with page numbers.
+\usepackage[review]{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+
+% For proper rendering and hyphenation of words containing Latin characters (including in bib files)
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+% For Vietnamese characters
+% \usepackage[T5]{fontenc}
+% See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
+
+% This assumes your files are encoded as UTF8
+\usepackage[utf8]{inputenc}
+
+% This is not strictly necessary, and may be commented out,
+% but it will improve the layout of the manuscript,
+% and will typically save some space.
+\usepackage{microtype}
+
+% This is also not strictly necessary, and may be commented out.
+% However, it will improve the aesthetics of text in
+% the typewriter font.
+\usepackage{inconsolata}
+
+%Including images in your LaTeX document requires adding
+%additional package(s)
+\usepackage{graphicx}
+
+% If the title and author information does not fit in the area allocated, uncomment the following
+%
+%\setlength\titlebox{<dim>}
+%
+% and set <dim> to something 5cm or larger.
+
+\title{Instructions for *ACL Proceedings}
+
+% Author information can be set in various styles:
+% For several authors from the same institution:
+% \author{Author 1 \and ... \and Author n \\
+%         Address line \\ ... \\ Address line}
+% if the names do not fit well on one line use
+%         Author 1 \\ {\bf Author 2} \\ ... \\ {\bf Author n} \\
+% For authors from different institutions:
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \And  ... \And
+%         Author n \\ Address line \\ ... \\ Address line}
+% To start a separate ``row'' of authors use \AND, as in
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \AND
+%         Author 2 \\ Address line \\ ... \\ Address line \And
+%         Author 3 \\ Address line \\ ... \\ Address line}
+
+\author{First Author \\
+  Affiliation / Address line 1 \\
+  Affiliation / Address line 2 \\
+  Affiliation / Address line 3 \\
+  \texttt{email@domain} \\\And
+  Second Author \\
+  Affiliation / Address line 1 \\
+  Affiliation / Address line 2 \\
+  Affiliation / Address line 3 \\
+  \texttt{email@domain} \\}
+
+%\author{
+%  \textbf{First Author\textsuperscript{1}},
+%  \textbf{Second Author\textsuperscript{1,2}},
+%  \textbf{Third T. Author\textsuperscript{1}},
+%  \textbf{Fourth Author\textsuperscript{1}},
+%\\
+%  \textbf{Fifth Author\textsuperscript{1,2}},
+%  \textbf{Sixth Author\textsuperscript{1}},
+%  \textbf{Seventh Author\textsuperscript{1}},
+%  \textbf{Eighth Author \textsuperscript{1,2,3,4}},
+%\\
+%  \textbf{Ninth Author\textsuperscript{1}},
+%  \textbf{Tenth Author\textsuperscript{1}},
+%  \textbf{Eleventh E. Author\textsuperscript{1,2,3,4,5}},
+%  \textbf{Twelfth Author\textsuperscript{1}},
+%\\
+%  \textbf{Thirteenth Author\textsuperscript{3}},
+%  \textbf{Fourteenth F. Author\textsuperscript{2,4}},
+%  \textbf{Fifteenth Author\textsuperscript{1}},
+%  \textbf{Sixteenth Author\textsuperscript{1}},
+%\\
+%  \textbf{Seventeenth S. Author\textsuperscript{4,5}},
+%  \textbf{Eighteenth Author\textsuperscript{3,4}},
+%  \textbf{Nineteenth N. Author\textsuperscript{2,5}},
+%  \textbf{Twentieth Author\textsuperscript{1}}
+%\\
+%\\
+%  \textsuperscript{1}Affiliation 1,
+%  \textsuperscript{2}Affiliation 2,
+%  \textsuperscript{3}Affiliation 3,
+%  \textsuperscript{4}Affiliation 4,
+%  \textsuperscript{5}Affiliation 5
+%\\
+%  \small{
+%    \textbf{Correspondence:} \href{mailto:email@domain}{email@domain}
+%  }
+%}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Human--AI creative co-writing is increasingly popular for open ended text generation, yet most evaluations focus on final outputs rather than the interactional dynamics that produce the stories. We investigate narrative agency in turn-based co-writing across three settings: Human--Human, Human--AI, and AI--AI collaboration. Building on a previously introduced Human--AI corpus, we add Human--Human and AI--AI conditions under the same storytelling paradigm, enabling controlled comparison across pairings. We use an analytical framework that combines measures of affective alignment, semantic novelty, transience, and resonance to model how writers adapt to one another and shape subsequent narrative development. Our analysis shows that Human--AI co-writing constitutes a distinct asymmetric regime: LLMs accommodate human emotional tone and elaborate prior context, while humans introduce more novel and more persistent narrative material. In contrast, Human--Human and AI--AI interactions exhibit more symmetric patterns of adaptation. These findings suggest that LLMs function as adaptive amplifiers, both stabilizing and extending human-led narrative trajectories.
+\end{abstract}
+
+\section{Introduction}
+
+Human-AI creative co-writing is becoming a common mode of open-ended text generation \citep{noy2023experimental,clark-smith-2021-choose,cheng2025inspiration}, as human creative writers, professional or otherwise, integrate large language models (LLMs) into their workflows. Human writers tend to treat these systems, trained on vast textual corpora, as collaborators capable of contributing to narrative production \citep{lee2022coauthor, wan2024felt}. As such interactions become widespread, it becomes important to understand how these models participate in the unfolding, turn-by-turn dynamics of collaborative storytelling. 
+
+Turn-based co-writing produces a controlled setting for studying human-LLM interaction as a process. In this setting, writing unfolds as a sequence of interdependent contributions: each turn conditions the next turn and may shift the storyøs semantic direction, emotional trajectory and subsequent context. So turn-based narrative generation makes it possible to track how emotional tone, semantic novelty and narrative influence move between writers over time. However, most existing evaluations of LLMs focus on final outputs or aggregate quality mtrics, and overlook the fine-grained interactional dynamics that contruct a story.
+
+In this work we move from single-condition analysis to a comparative framework of collaborative dynamics. We test whether narrative agency and emotional alignment differ across three co-writing settings: Human-AI (HA), HUman-Human (HH) and AI-AI (AA). Specifically, we examine how different pairings allocate two core functions of storytelling: the generation of novel narrative material and the adaptation to the evolving context of the story. 
+
+We use a turn-level analytical framework that models co-writing as a dynamic process of interaction. By modeling contributions at the level of individual turns, the framework measures semantic novelty, direction influence and affective alignment, allowing us to trace how human and artificial writers respond to prior context and shape subsequent narrative development. 
+
+
+This comparative perspective allows us to ask \textbf{whether the asymmetries observed in human-AI interaction reflect properties specific to LLMs}, or more general features of collaborative writing. 
+
+
+We use this framework to investigate the following research questions:
+
+\begin{enumerate}
+    \item \textbf{RQ1. Are alignment dynamics symmetric or asymmetric across conditions?}
+    \item \textbf{Which actor introduces novelty, and whose novelty persists?}
+    \item \textbf{Do human-AI stories resemble human-human collaboration, AI-AI collaboration, or a distinct regime?}
+\end{enumerate}
+
+Our contributions are twofold. First, building on an existing Human--AI co-writing corpus, we introduce Human--Human and AI--AI conditions under the same turn-based storytelling paradigm. Second, we use a turn-level framework for measuring affective alignment, semantic novelty, transience, and resonance across dyadic writing conditions to show that Human--AI co-writing forms a distinct asymmetric regime, unlike Human--Human or AI--AI.
+
+\section{Related Works}
+
+Human--AI co-writing is often motivated by the promise of hybrid intelligence: the possibility that human and artificial writers together may produce forms of creativity that neither could achieve alone \cite{cheng2025inspiration}.
+
+Prior work on human–AI creativity has focused on evaluating the quality and productivity of generated outputs, finding mixed effects on creativity and ideation. 
+
+A second line of work studies alignment and adaptation in dialogue, showing that human and artificial agents exhibit forms of linguistic and emotional coordination. 
+
+Finally, computational approaches to narrative analysis have modeled sentiment trajectories and information flow in static texts. 
+
+However, we lack a framework for analyzing how creative roles and narrative influence emerge during dynamic collaborative writing.
+
+%\section{Framework and Definitions}
+
+\section{Datasets}
+
+% Ida and Charlotte territory
+% Yb: I suggest a diagram of hh, ha, aa showing how they follow the same 10 interactions setup.
+
+% Also a Table: dataset statistics: number of stories, participants and models, turns, mean words per turn and models used. 
+\begin{table}[t]
+\centering
+\begin{tabular}{lccc}
+\hline
+Condition & Stories & Turns & Mean words/turn \\
+\hline
+HH & -- & -- & -- \\
+HA & -- & -- & -- \\
+AA & -- & -- & -- \\
+\hline
+\end{tabular}
+\caption{Dataset statistics across co-writing conditions.}
+\label{tab:dataset}
+\end{table}
+
+We use the same turn-based storytelling paradigm across three dyadic conditions, to compare collaborative dynamics holding a constant task structure.\footnote{We will release our dataset and analysis framework upon acceptance}
+
+To the best of our knowledge, this is the first dataset that enables direct comparison of Human-Human, Human-Ai and AI-Ai turn-based co-writing under a shared experiment paradigm. 
+
+\section{Methods}
+%Yb: perhaps a table here, for the metrics: metric, unit, tool, and subsection. 
+
+
+
+
+We operationalize co-writing dynamics through three dimensions: affective alignment, semantic novelty and surface narrative influence (captured via transience and resonance).
+
+We use a turn-level analytical framework that integrates embedding-based measures of semantic novelty and directional influence with sentiment-based measures of affective alignment.
+
+\subsection{Valence}
+\subsection{Directional Alignment}
+
+
+
+\subsection{Novelty, transience and resonance}
+
+\textbf{Novelty}: which actor introduces new material?
+
+\textbf{Transience}: how much does new material fail to persist?
+
+\textbf{Resonance}: whose novelty matters for the future of the story?
+
+\begin{equation}
+\mathrm{Resonance}_t = \mathrm{Novelty}_t - \mathrm{Transience}_t
+\end{equation}
+
+etc.
+
+\subsection{Surface textual measures? Word count, readability, diversity}
+
+%Yb: results table here: alginment, novelty etc. for the three settings
+
+\begin{table*}[t]
+\centering
+\begin{tabular}{lccc}
+\hline
+Question & Comparison & Finding & Significance \\
+\hline
+RQ1: Alignment & HA vs HH/AA & HA asymmetric & -- \\
+RQ2: Novelty & Human vs AI & Humans introduce more & -- \\
+RQ2: Resonance & Human vs AI & Human novelty persists more & -- \\
+RQ3: Regime & HA vs HH/AA & HA is distinct & -- \\
+\hline
+\end{tabular}
+\caption{Placeholder summary of main findings across research questions.}
+\label{tab:results}
+\end{table*}
+
+\section{Results}
+\subsection{Emotional Alignment}
+Human-AI collaboration exhibits unique asymmetries: LLMs accommodate human emotional tone. Human-Human and AI-AI pairs show symmetric adaptation. 
+% Yb: Picture: three panels, each show responder valence predicted by previous/current partner valence, with separate slopes for direction? 
+\begin{figure}[t]
+    \centering
+    \fbox{\parbox{0.45\textwidth}{
+        Placeholder for Figure 2: Directional emotional alignment slopes across HH, HA, and AA.
+    }}
+    \caption{Directional emotional alignment across co-writing conditions.}
+    \label{fig:alignment}
+\end{figure}
+
+\subsection{Narrative Agency}
+Humans are the main source of narrative novelty and resonance in Human-Ai writing. AI-AI collaborations are, in a relative sense, predictable.
+% Yb: Image: regression lines? 
+
+
+\subsection{Rubber-Band Effect}
+Across conditions emotional divergence tends to trigger subsequent convergence, suggesting a general corrective dynamic in collaborative storytelling. 
+
+\subsection{Style and Surface Properties}
+Human-Human stories are more readable than stories involving AI. LLM participation leaves a detectable stylistic signature in mixed collaboration, leading to a surface-complex language that is more complex than the human average.
+
+\section{Discussion}
+Treating co-writing as an unfolding interaction, our work has provided a finer grained account of creativity and coordination in open ended text generation. We have revealed systematic patterns in how narrative influence and alingment unfold across conditions. 
+
+Together these findings suggest that Human-AI co-writing is a distinct interactional regime characterized by asymmetric agency and adaptive alignment, with properties the differ from both Human-Human and AI-AI co-writing. 
+
+Our approach improves over prior evaluations by enabling a fine-grained analysis of co-writing dynamics and capturing both narrative innovation and adaptive behavior. 
+
+Our approach contributes to NLP research on human-AI collaboration by modeling narrative development as an emergence distribution of agency across interactive writers, as well as to creative co-writing research in general ...
+
+\section{Conclusion and Future Works}
+
+\section*{Limitations}
+
+This document does not cover the content requirements for ACL or any
+other specific venue.  Check the author instructions for
+information on
+maximum page lengths, the required ``Limitations'' section,
+and so on.
+
+\section*{Acknowledgments}
+
+This document has been adapted
+by Steven Bethard, Ryan Cotterell and Rui Yan
+from the instructions for earlier ACL and NAACL proceedings, including those for
+ACL 2019 by Douwe Kiela and Ivan Vuli\'{c},
+NAACL 2019 by Stephanie Lukin and Alla Roskovskaya,
+ACL 2018 by Shay Cohen, Kevin Gimpel, and Wei Lu,
+NAACL 2018 by Margaret Mitchell and Stephanie Lukin,
+Bib\TeX{} suggestions for (NA)ACL 2017/2018 from Jason Eisner,
+ACL 2017 by Dan Gildea and Min-Yen Kan,
+NAACL 2017 by Margaret Mitchell,
+ACL 2012 by Maggie Li and Michael White,
+ACL 2010 by Jing-Shin Chang and Philipp Koehn,
+ACL 2008 by Johanna D. Moore, Simone Teufel, James Allan, and Sadaoki Furui,
+ACL 2005 by Hwee Tou Ng and Kemal Oflazer,
+ACL 2002 by Eugene Charniak and Dekang Lin,
+and earlier ACL and EACL formats written by several people, including
+John Chen, Henry S. Thompson and Donald Walker.
+Additional elements were taken from the formatting instructions of the \emph{International Joint Conference on Artificial Intelligence} and the \emph{Conference on Computer Vision and Pattern Recognition}.
+
+% Bibliography entries for the entire Anthology, followed by custom entries
+%\bibliography{anthology,custom}
+% Custom bibliography entries only
+\bibliography{custom}
+
+\appendix
+
+\section{Example Appendix}
+\label{sec:appendix}
+
+This is an appendix.
+
+\end{document}

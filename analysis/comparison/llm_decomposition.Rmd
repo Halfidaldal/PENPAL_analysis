@@ -1,0 +1,659 @@
+---
+title: "LLM-Identity Decomposition: Per-Model Asymmetry within HA and AA"
+subtitle: "Does dyad asymmetry depend on which LLM is in the conversation?"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 11,
+  fig.height = 6,
+  dpi = 300
+)
+
+source(here::here("analysis/comparison/_comparison_utils.R"))
+
+pacman::p_load(lme4, lmerTest, patchwork, emmeans)
+
+theme_set(theme_comparison())
+
+# Map HA llm_type integer codes to model names (matches the experiment design in
+# the ACL paper). AA stores model names directly in `model_id`.
+HA_LLM_LABELS <- c(
+  "1" = "GPT-4.1",
+  "2" = "Claude-sonnet-4-5",
+  "3" = "Llama-3.3-70B",
+  "4" = "Qwen2.5-72B"
+)
+
+normalize_aa_model <- function(x) {
+  out <- as.character(x)
+  out <- dplyr::case_when(
+    grepl("gpt", out, ignore.case = TRUE) ~ "GPT-4.1",
+    grepl("claude", out, ignore.case = TRUE) ~ "Claude-sonnet-4-5",
+    grepl("llama", out, ignore.case = TRUE) ~ "Llama-3.3-70B",
+    grepl("qwen", out, ignore.case = TRUE) ~ "Qwen2.5-72B",
+    TRUE ~ out
+  )
+  factor(out, levels = c("GPT-4.1", "Claude-sonnet-4-5", "Llama-3.3-70B", "Qwen2.5-72B"))
+}
+
+normalize_ha_llm <- function(x) {
+  factor(HA_LLM_LABELS[as.character(x)],
+         levels = c("GPT-4.1", "Claude-sonnet-4-5", "Llama-3.3-70B", "Qwen2.5-72B"))
+}
+
+attach_llm_identity <- function(df, conditions = c("human-ai", "ai-ai")) {
+  metadata <- purrr::map_dfr(conditions, function(cond) {
+    meta <- load_interaction_metadata(cond)
+    if (!is.null(meta)) {
+      meta <- meta %>%
+        dplyr::select(dplyr::any_of(c("conversation_id", "llm_type", "model_id")))
+    }
+
+    novelty_path <- here::here("data", cond, "processed", "novelty_scores.csv")
+    if (file.exists(novelty_path)) {
+      novelty_meta <- readr::read_csv(novelty_path, show_col_types = FALSE) %>%
+        dplyr::select(dplyr::any_of(c("conversation_id", "llm_type", "model_id")))
+      meta <- dplyr::bind_rows(meta, novelty_meta)
+    }
+
+    if (is.null(meta)) return(tibble::tibble())
+
+    if (!"llm_type" %in% names(meta)) meta$llm_type <- NA_real_
+    if (!"model_id" %in% names(meta)) meta$model_id <- NA_character_
+
+    meta %>%
+      dplyr::transmute(
+        conversation_id = clean_conversation_id(conversation_id),
+        llm_type_meta = suppressWarnings(as.numeric(llm_type)),
+        model_id_meta = as.character(model_id)
+      ) %>%
+      dplyr::distinct(conversation_id, .keep_all = TRUE)
+  })
+
+  if (!nrow(metadata)) return(df)
+
+  df %>%
+    dplyr::mutate(conversation_id = clean_conversation_id(conversation_id)) %>%
+    dplyr::left_join(metadata, by = "conversation_id") %>%
+    dplyr::mutate(
+      llm_type = dplyr::coalesce(
+        suppressWarnings(as.numeric(llm_type)),
+        llm_type_meta
+      ),
+      model_id = dplyr::coalesce(as.character(model_id), model_id_meta)
+    ) %>%
+    dplyr::select(-llm_type_meta, -model_id_meta)
+}
+
+llm_palette <- c(
+  "GPT-4.1"            = "#1f77b4",
+  "Claude-sonnet-4-5"  = "#d62728",
+  "Llama-3.3-70B"      = "#2ca02c",
+  "Qwen2.5-72B"        = "#9467bd"
+)
+```
+
+# Overview
+
+The cross-condition notebooks treat HA and AA as monoliths. This notebook
+decomposes both by which LLM is in the dyad and asks two questions per
+metric:
+
+1. **Per-LLM magnitude.** Does unsigned asymmetry $A_m$ vary across the four
+   LLMs within HA? Within AA?
+2. **Per-LLM direction.** Does signed slot-asymmetry vary across LLMs (i.e.
+   are some models more likely to drive in a particular direction)?
+
+Sample sizes per LLM are small (HA: ~22-29 stories per model; AA: 20 per
+model), so reported tests are non-parametric (Kruskal-Wallis + pairwise
+Wilcoxon BH-adjusted). Bootstrap CIs are also reported.
+
+Where it makes sense, the same-model rows in HA and AA are placed
+side-by-side: does Claude paired with a human exhibit the same asymmetry
+profile as Claude paired with itself?
+
+```{r helper-fns}
+# Compute per-condition summary + KW + Cliff's d-style pairwise effect sizes
+# on a per-story value. Wraps existing helpers and returns a tidy result.
+per_llm_summary <- function(df, value_col, group_col = "llm") {
+  d <- df %>%
+    dplyr::filter(!is.na(.data[[value_col]]), !is.na(.data[[group_col]]))
+  if (!nrow(d)) return(list(by_group = tibble::tibble(), kw_p = NA_real_))
+
+  by_group <- d %>%
+    dplyr::group_by(.data[[group_col]]) %>%
+    dplyr::summarise(
+      n = dplyr::n(),
+      mean = mean(.data[[value_col]]),
+      median = median(.data[[value_col]]),
+      sd = sd(.data[[value_col]]),
+      .groups = "drop"
+    )
+
+  kw_p <- tryCatch(
+    kruskal.test(d[[value_col]] ~ as.factor(d[[group_col]]))$p.value,
+    error = function(e) NA_real_
+  )
+
+  list(by_group = by_group, kw_p = kw_p)
+}
+
+# Reshape directional_stability output to use llm as the grouping column.
+per_llm_directional <- function(df, value_col, llm_col = "llm") {
+  df_in <- df
+  # `directional_stability` reads from `condition`, so swap llm in temporarily.
+  df_in$condition <- df_in[[llm_col]]
+  res <- directional_stability(df_in, value_col)
+  if ("condition" %in% names(res$by_condition)) {
+    res$by_condition <- res$by_condition %>%
+      dplyr::rename(!!llm_col := condition)
+  } else {
+    res$by_condition <- tibble::tibble(
+      !!llm_col := character(),
+      n = integer(),
+      mean = numeric(),
+      sd = numeric(),
+      stability = numeric(),
+      sign_consistency = numeric(),
+      one_sample_t_p = numeric()
+    )
+  }
+  res
+}
+```
+
+# Build per-metric per-story tables
+
+```{r build-tables}
+# ---- Valence: per-story signed Fisher-z difference and unsigned A_valence
+df_val <- load_valence_data(c("human-ai", "ai-ai")) %>%
+  filter_complete_exchange_window() %>%
+  filter(turn_index > 1) %>%
+  prepare_condition_factor(reference = "human-ai") %>%
+  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959",
+         conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225")
+
+df_val_pairs <- df_val %>%
+  group_by(conversation_id, condition) %>%
+  arrange(turn_index, .by_group = TRUE) %>%
+  mutate(author_2_valence_lag1 = lag(author_2_valence)) %>%
+  ungroup() %>%
+  drop_na(author_1_valence, author_2_valence, author_2_valence_lag1)
+
+valence_per_story <- df_val_pairs %>%
+  group_by(conversation_id, condition) %>%
+  summarise(
+    n_pairs = sum(!is.na(author_1_valence) & !is.na(author_2_valence)),
+    r_12 = if (n_pairs >= 3) suppressWarnings(cor(author_1_valence, author_2_valence)) else NA_real_,
+    r_21 = if (n_pairs >= 3) suppressWarnings(cor(author_2_valence_lag1, author_1_valence)) else NA_real_,
+    llm_type = suppressWarnings(as.numeric(na.omit(unique(llm_type))[1])),
+    model_id = as.character(na.omit(unique(model_id))[1]),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    r_12 = pmin(pmax(r_12, -0.999999), 0.999999),
+    r_21 = pmin(pmax(r_21, -0.999999), 0.999999),
+    z_12 = atanh(r_12),
+    z_21 = atanh(r_21),
+    signed_diff = z_12 - z_21,
+    A_valence = abs(signed_diff),
+    llm = ifelse(condition == "Human-AI", as.character(normalize_ha_llm(llm_type)),
+                 as.character(normalize_aa_model(model_id))),
+    llm = factor(llm, levels = names(llm_palette))
+  ) %>%
+  drop_na(A_valence, llm)
+
+# ---- Novelty: per-story OLS slope difference (resonance ~ surprise per slot)
+df_nov <- load_novelty_data(c("human-ai", "ai-ai")) %>%
+  filter_complete_exchange_window() %>%
+  filter(turn_index > 1) %>%
+  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959",
+         conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225")
+
+df_nov_slots <- bind_rows(
+  df_nov %>% transmute(condition, conversation_id, turn_index,
+                       slot = "author_1",
+                       surprise = author_1_surprise,
+                       resonance = author_1_surprise - author_1_transience,
+                       llm_type, model_id),
+  df_nov %>% transmute(condition, conversation_id, turn_index,
+                       slot = "author_2",
+                       surprise = author_2_surprise,
+                       resonance = author_2_surprise - author_2_transience,
+                       llm_type, model_id)
+) %>%
+  drop_na(surprise, resonance) %>%
+  mutate(
+    condition = factor(condition,
+      levels = c("human-ai", "ai-ai"),
+      labels = c("Human-AI", "AI-AI")
+    ),
+    slot = factor(slot, levels = c("author_1", "author_2"),
+                  labels = c("Slot 1", "Slot 2"))
+  )
+
+novelty_per_story <- df_nov_slots %>%
+  group_by(condition, conversation_id, slot) %>%
+  summarise(
+    n_pts = sum(!is.na(surprise) & !is.na(resonance)),
+    slope = if (n_pts >= 4) coef(lm(resonance ~ surprise))[2] else NA_real_,
+    llm_type = suppressWarnings(as.numeric(na.omit(unique(llm_type))[1])),
+    model_id = as.character(na.omit(unique(model_id))[1]),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(names_from = slot, values_from = slope, names_prefix = "slope_",
+              id_cols = c(condition, conversation_id, llm_type, model_id)) %>%
+  drop_na(`slope_Slot 1`, `slope_Slot 2`) %>%
+  mutate(
+    signed_diff = `slope_Slot 1` - `slope_Slot 2`,
+    A_influence = abs(signed_diff),
+    llm = ifelse(condition == "Human-AI", as.character(normalize_ha_llm(llm_type)),
+                 as.character(normalize_aa_model(model_id))),
+    llm = factor(llm, levels = names(llm_palette))
+  ) %>%
+  drop_na(A_influence, llm)
+
+# ---- Semantic exploration: per-story AUC asymmetry
+df_sem <- load_exploration_data(c("human-ai", "ai-ai")) %>%
+  filter(k > 1) %>%
+  prepare_condition_factor(reference = "human-ai") %>%
+  attach_llm_identity(c("human-ai", "ai-ai")) %>%
+  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959",
+         conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225")
+
+df_sem_speaker <- df_sem %>%
+  filter(agent != "interleaved") %>%
+  filter(speaker_slot %in% c("author_1", "author_2")) %>%
+  mutate(slot = factor(speaker_slot, levels = c("author_1", "author_2"),
+                       labels = c("Slot 1", "Slot 2"))) %>%
+  drop_na(distance, k)
+
+trap_auc <- function(x, y) {
+  if (length(x) < 2) return(NA_real_)
+  ord <- order(x); x <- x[ord]; y <- y[ord]
+  sum((y[-1] + y[-length(y)]) * diff(x) / 2)
+}
+
+semexp_per_story <- df_sem_speaker %>%
+  group_by(condition, conversation_id, slot, k) %>%
+  summarise(distance = mean(distance, na.rm = TRUE),
+            llm_type = suppressWarnings(as.numeric(na.omit(unique(llm_type))[1])),
+            model_id = as.character(na.omit(unique(model_id))[1]),
+            .groups = "drop") %>%
+  group_by(condition, conversation_id, slot) %>%
+  summarise(auc = trap_auc(k, distance),
+            llm_type = suppressWarnings(as.numeric(na.omit(unique(llm_type))[1])),
+            model_id = as.character(na.omit(unique(model_id))[1]),
+            .groups = "drop") %>%
+  pivot_wider(names_from = slot, values_from = auc, names_prefix = "auc_",
+              id_cols = c(condition, conversation_id, llm_type, model_id)) %>%
+  drop_na(`auc_Slot 1`, `auc_Slot 2`) %>%
+  mutate(
+    signed_diff = `auc_Slot 1` - `auc_Slot 2`,
+    A_semexp = abs(signed_diff),
+    llm = ifelse(condition == "Human-AI", as.character(normalize_ha_llm(llm_type)),
+                 as.character(normalize_aa_model(model_id))),
+    llm = factor(llm, levels = names(llm_palette))
+  ) %>%
+  drop_na(A_semexp, llm)
+
+cat(sprintf("Per-story tables built:\n  valence: %d (HA=%d, AA=%d)\n  novelty: %d (HA=%d, AA=%d)\n  semexp:  %d (HA=%d, AA=%d)\n",
+  nrow(valence_per_story),
+  sum(valence_per_story$condition == "Human-AI"),
+  sum(valence_per_story$condition == "AI-AI"),
+  nrow(novelty_per_story),
+  sum(novelty_per_story$condition == "Human-AI"),
+  sum(novelty_per_story$condition == "AI-AI"),
+  nrow(semexp_per_story),
+  sum(semexp_per_story$condition == "Human-AI"),
+  sum(semexp_per_story$condition == "AI-AI")
+))
+```
+
+# Within-HA: per-LLM Asymmetry
+
+## Magnitude
+
+```{r ha-mag}
+ha_mag <- bind_rows(
+  per_llm_summary(valence_per_story %>% filter(condition == "Human-AI"), "A_valence")$by_group %>%
+    mutate(metric = "A_valence"),
+  per_llm_summary(novelty_per_story %>% filter(condition == "Human-AI"), "A_influence")$by_group %>%
+    mutate(metric = "A_influence"),
+  per_llm_summary(semexp_per_story %>% filter(condition == "Human-AI"), "A_semexp")$by_group %>%
+    mutate(metric = "A_semexp")
+) %>%
+  select(metric, llm, n, mean, median, sd)
+
+ha_mag %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-LLM unsigned asymmetry magnitude within HA"
+  )
+
+ha_kw <- tibble::tibble(
+  metric = c("A_valence", "A_influence", "A_semexp"),
+  kw_p = c(
+    per_llm_summary(valence_per_story %>% filter(condition == "Human-AI"), "A_valence")$kw_p,
+    per_llm_summary(novelty_per_story %>% filter(condition == "Human-AI"), "A_influence")$kw_p,
+    per_llm_summary(semexp_per_story %>% filter(condition == "Human-AI"), "A_semexp")$kw_p
+  )
+)
+ha_kw %>%
+  knitr::kable(digits = 4, caption = "Within-HA Kruskal-Wallis: A_m ~ llm")
+```
+
+```{r ha-mag-plot, fig.width=12, fig.height=4}
+plot_one_mag <- function(df, value_col, title) {
+  ggplot(df, aes(x = llm, y = .data[[value_col]], fill = llm)) +
+    geom_violin(alpha = 0.4, colour = NA) +
+    geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.85) +
+    geom_jitter(width = 0.08, alpha = 0.4, size = 0.8) +
+    scale_fill_manual(values = llm_palette) +
+    labs(title = title, x = NULL, y = value_col) +
+    theme(legend.position = "none",
+          axis.text.x = element_text(angle = 25, hjust = 1))
+}
+
+(plot_one_mag(valence_per_story %>% filter(condition == "Human-AI"), "A_valence", "Valence asymmetry") |
+ plot_one_mag(novelty_per_story %>% filter(condition == "Human-AI"), "A_influence", "Novelty-resonance asymmetry") |
+ plot_one_mag(semexp_per_story %>% filter(condition == "Human-AI"), "A_semexp", "Semexp AUC asymmetry"))
+```
+
+## Direction
+
+Per-LLM directional stability of the SIGNED slot difference within HA. If
+the human-side identity is what drives directionality, all four LLMs should
+look similar (same signed direction). If specific LLMs shape directionality
+(e.g., Claude is more deferential than Qwen), the stability index will
+differ across models.
+
+```{r ha-dir-tables}
+ha_dir_val <- per_llm_directional(
+  valence_per_story %>% filter(condition == "Human-AI"),
+  "signed_diff", "llm"
+)
+ha_dir_nov <- per_llm_directional(
+  novelty_per_story %>% filter(condition == "Human-AI"),
+  "signed_diff", "llm"
+)
+ha_dir_sem <- per_llm_directional(
+  semexp_per_story %>% filter(condition == "Human-AI"),
+  "signed_diff", "llm"
+)
+
+bind_rows(
+  ha_dir_val$by_condition %>% mutate(metric = "valence"),
+  ha_dir_nov$by_condition %>% mutate(metric = "novelty"),
+  ha_dir_sem$by_condition %>% mutate(metric = "semexp")
+) %>%
+  select(metric, llm, n, mean, sd, stability, sign_consistency, one_sample_t_p) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Within-HA directional stability of signed asymmetry per LLM"
+  )
+
+tibble::tibble(
+  metric = c("valence", "novelty", "semexp"),
+  brown_forsythe_p = c(
+    ha_dir_val$variance_equality_p,
+    ha_dir_nov$variance_equality_p,
+    ha_dir_sem$variance_equality_p
+  )
+) %>%
+  knitr::kable(digits = 4, caption = "Variance-equality across LLMs (within HA)")
+```
+
+```{r ha-dir-plot, fig.width=12, fig.height=4}
+plot_signed <- function(df, value_col, title) {
+  ggplot(df, aes(x = llm, y = .data[[value_col]], fill = llm)) +
+    geom_violin(alpha = 0.4, colour = NA) +
+    geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.85) +
+    geom_jitter(width = 0.08, alpha = 0.4, size = 0.8) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+    scale_fill_manual(values = llm_palette) +
+    labs(title = title, x = NULL, y = "signed slot difference") +
+    theme(legend.position = "none",
+          axis.text.x = element_text(angle = 25, hjust = 1))
+}
+
+(plot_signed(valence_per_story %>% filter(condition == "Human-AI"), "signed_diff", "Valence direction") |
+ plot_signed(novelty_per_story %>% filter(condition == "Human-AI"), "signed_diff", "Novelty direction") |
+ plot_signed(semexp_per_story %>% filter(condition == "Human-AI"), "signed_diff", "Semexp direction"))
+```
+
+# Within-AA: per-Model Asymmetry
+
+The AA dataset only contains same-model self-pairings (no cross-model
+pairs). The four levels are therefore pure within-model ai-vs-ai
+conversations.
+
+## Magnitude
+
+```{r aa-mag}
+aa_mag <- bind_rows(
+  per_llm_summary(valence_per_story %>% filter(condition == "AI-AI"), "A_valence")$by_group %>%
+    mutate(metric = "A_valence"),
+  per_llm_summary(novelty_per_story %>% filter(condition == "AI-AI"), "A_influence")$by_group %>%
+    mutate(metric = "A_influence"),
+  per_llm_summary(semexp_per_story %>% filter(condition == "AI-AI"), "A_semexp")$by_group %>%
+    mutate(metric = "A_semexp")
+) %>%
+  select(metric, llm, n, mean, median, sd)
+
+aa_mag %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-model unsigned asymmetry magnitude within AA"
+  )
+
+aa_kw <- tibble::tibble(
+  metric = c("A_valence", "A_influence", "A_semexp"),
+  kw_p = c(
+    per_llm_summary(valence_per_story %>% filter(condition == "AI-AI"), "A_valence")$kw_p,
+    per_llm_summary(novelty_per_story %>% filter(condition == "AI-AI"), "A_influence")$kw_p,
+    per_llm_summary(semexp_per_story %>% filter(condition == "AI-AI"), "A_semexp")$kw_p
+  )
+)
+aa_kw %>%
+  knitr::kable(digits = 4, caption = "Within-AA Kruskal-Wallis: A_m ~ model")
+```
+
+```{r aa-mag-plot, fig.width=12, fig.height=4}
+(plot_one_mag(valence_per_story %>% filter(condition == "AI-AI"), "A_valence", "Valence asymmetry") |
+ plot_one_mag(novelty_per_story %>% filter(condition == "AI-AI"), "A_influence", "Novelty-resonance asymmetry") |
+ plot_one_mag(semexp_per_story %>% filter(condition == "AI-AI"), "A_semexp", "Semexp AUC asymmetry"))
+```
+
+## Direction
+
+```{r aa-dir-tables}
+aa_dir_val <- per_llm_directional(
+  valence_per_story %>% filter(condition == "AI-AI"), "signed_diff", "llm"
+)
+aa_dir_nov <- per_llm_directional(
+  novelty_per_story %>% filter(condition == "AI-AI"), "signed_diff", "llm"
+)
+aa_dir_sem <- per_llm_directional(
+  semexp_per_story %>% filter(condition == "AI-AI"), "signed_diff", "llm"
+)
+
+bind_rows(
+  aa_dir_val$by_condition %>% mutate(metric = "valence"),
+  aa_dir_nov$by_condition %>% mutate(metric = "novelty"),
+  aa_dir_sem$by_condition %>% mutate(metric = "semexp")
+) %>%
+  select(metric, llm, n, mean, sd, stability, sign_consistency, one_sample_t_p) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Within-AA directional stability of signed asymmetry per model"
+  )
+
+tibble::tibble(
+  metric = c("valence", "novelty", "semexp"),
+  brown_forsythe_p = c(
+    aa_dir_val$variance_equality_p,
+    aa_dir_nov$variance_equality_p,
+    aa_dir_sem$variance_equality_p
+  )
+) %>%
+  knitr::kable(digits = 4, caption = "Variance-equality across models (within AA)")
+```
+
+# Same Model Across Conditions: HA vs AA per-LLM
+
+For each LLM, place its HA stories (paired with a human) next to its AA
+stories (paired with itself). Asks whether a given model's asymmetry
+profile depends on partner type.
+
+```{r ha-vs-aa-per-llm-mag, fig.width=12, fig.height=7}
+ha_vs_aa_mag_plot_df <- bind_rows(
+  valence_per_story %>%
+    transmute(condition, llm, metric = "Valence asymmetry", value = A_valence),
+  novelty_per_story %>%
+    transmute(condition, llm, metric = "Novelty-resonance asymmetry", value = A_influence),
+  semexp_per_story %>%
+    transmute(condition, llm, metric = "Semexp AUC asymmetry", value = A_semexp)
+) %>%
+  mutate(
+    metric = factor(
+      metric,
+      levels = c(
+        "Valence asymmetry",
+        "Novelty-resonance asymmetry",
+        "Semexp AUC asymmetry"
+      )
+    )
+  ) %>%
+  drop_na(condition, llm, value)
+
+ggplot(ha_vs_aa_mag_plot_df, aes(x = llm, y = value, fill = condition)) +
+  geom_boxplot(alpha = 0.75, outlier.alpha = 0.25,
+               position = position_dodge(width = 0.75)) +
+  facet_wrap(vars(metric), ncol = 1, scales = "free_y") +
+  scale_fill_manual(values = c("Human-AI" = "#1f77b4", "AI-AI" = "#ff7f0e")) +
+  labs(x = NULL, y = "Unsigned asymmetry", fill = "Condition") +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(size = 11, face = "bold"),
+    axis.text.x = element_text(angle = 25, hjust = 1, size = 9)
+  )
+```
+
+```{r ha-vs-aa-per-llm-tests}
+# For each metric x LLM, Wilcoxon test HA vs AA on the unsigned A
+ha_vs_aa_per_llm <- function(df, value_col, metric_label) {
+  df %>%
+    group_by(llm) %>%
+    summarise(
+      n_HA = sum(condition == "Human-AI"),
+      n_AA = sum(condition == "AI-AI"),
+      median_HA = median(.data[[value_col]][condition == "Human-AI"], na.rm = TRUE),
+      median_AA = median(.data[[value_col]][condition == "AI-AI"], na.rm = TRUE),
+      wilcox_p = tryCatch(
+        wilcox.test(.data[[value_col]] ~ condition)$p.value,
+        error = function(e) NA_real_
+      ),
+      cliff_delta = tryCatch({
+        a <- .data[[value_col]][condition == "Human-AI"]
+        b <- .data[[value_col]][condition == "AI-AI"]
+        (sum(outer(a, b, ">")) - sum(outer(a, b, "<"))) / (length(a) * length(b))
+      }, error = function(e) NA_real_),
+      .groups = "drop"
+    ) %>%
+    mutate(metric = metric_label, p_BH = p.adjust(wilcox_p, method = "BH")) %>%
+    select(metric, llm, n_HA, n_AA, median_HA, median_AA, cliff_delta, wilcox_p, p_BH)
+}
+
+bind_rows(
+  ha_vs_aa_per_llm(valence_per_story, "A_valence", "valence"),
+  ha_vs_aa_per_llm(novelty_per_story, "A_influence", "novelty"),
+  ha_vs_aa_per_llm(semexp_per_story, "A_semexp", "semexp")
+) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "HA vs AA per-LLM Wilcoxon (BH-adjusted within metric)"
+  )
+```
+
+# Discussion-friendly summary tables
+
+Quick-read summary across all metrics: which LLMs (if any) stand out on
+magnitude, on direction, and on partner-sensitivity?
+
+```{r summary-quickread}
+ha_dir_summary <- bind_rows(
+  ha_dir_val$by_condition %>% mutate(metric = "valence"),
+  ha_dir_nov$by_condition %>% mutate(metric = "novelty"),
+  ha_dir_sem$by_condition %>% mutate(metric = "semexp")
+) %>%
+  mutate(condition = "Human-AI")
+
+aa_dir_summary <- bind_rows(
+  aa_dir_val$by_condition %>% mutate(metric = "valence"),
+  aa_dir_nov$by_condition %>% mutate(metric = "novelty"),
+  aa_dir_sem$by_condition %>% mutate(metric = "semexp")
+) %>%
+  mutate(condition = "AI-AI")
+
+bind_rows(ha_dir_summary, aa_dir_summary) %>%
+  select(condition, metric, llm, n, stability, sign_consistency, one_sample_t_p) %>%
+  arrange(condition, metric, llm) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Directional stability per LLM, by condition (Human-AI vs AI-AI)"
+  )
+```
+
+# Summary
+
+What this notebook adds:
+
+- **Within-HA per-LLM**: tests whether the four LLMs differ in unsigned
+  asymmetry $A_m$ (KW + per-LLM bootstrap-style CIs in the magnitude
+  table) and in directional stability of the signed slot difference. If
+  the HA-specific identity-tied directionality reading from the main
+  notebook holds, all four LLMs should show high stability and a
+  consistent sign on each metric. If it breaks down for one LLM, that
+  LLM contributes less to the HA-distinct signature.
+
+- **Within-AA per-model**: tests whether self-pairings of different LLMs
+  produce different asymmetry profiles. A pure mathematical-baseline
+  reading predicts no difference; a model-specific stylistic reading
+  predicts variation (e.g., Claude self-pair more aligning, Qwen
+  self-pair more divergent).
+
+- **HA vs AA per-LLM**: holds the LLM constant and varies the partner.
+  Same-model HA-vs-AA differences (Wilcoxon + Cliff's $\delta$, BH-adjusted
+  per metric) isolate the effect of swapping a human partner for a same-LLM
+  partner.
+
+Article-use notes:
+- Use the Within-HA per-LLM table to support a sentence in the Discussion
+  on whether the HA finding is model-general or model-driven.
+- Use Within-AA per-LLM to qualify the structural-null result: if AA's
+  rubber-band excess is concentrated in one model (likely Claude or GPT),
+  this reads as model-specific homogenization, not "AI-AI dyads in
+  general".
+- Use HA vs AA per-LLM as a partner-sensitivity panel that complements the
+  three primary cross-condition tests.
+
+*Analysis completed: `r Sys.time()`*

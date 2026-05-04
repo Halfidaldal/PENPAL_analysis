@@ -43,8 +43,12 @@ from nes.cleaning import (
     add_text_quality_qc,
     build_text_quality_story_summary,
     filter_by_text_quality_story_qc,
+    apply_spell_correction,
+    drop_text_qc_flagged_rows,
 )
 from nes.io import load_csv, save_csv, get_project_root, load_config, get_active_experiment, get_experiment_config, get_shared_config
+
+import os
 
 
 def main():
@@ -66,6 +70,22 @@ def main():
         type=int,
         default=None,
         help="Exclude a full story when at least this many rows are text-quality flagged"
+    )
+    parser.add_argument(
+        "--skip-spell-correction",
+        action="store_true",
+        help="Skip GPT-4o-mini spell correction on human-authored slots"
+    )
+    parser.add_argument(
+        "--drop-flagged-rows",
+        action="store_true",
+        help="Drop QC-flagged rows at the row level (alternative to story-level exclusion)"
+    )
+    parser.add_argument(
+        "--spell-correction-edit-threshold",
+        type=int,
+        default=70,
+        help="Edit-distance threshold to flag rows where spell correction changed text excessively"
     )
     args = parser.parse_args()
     
@@ -199,7 +219,32 @@ def main():
             df_filtered = filter_by_text_quality_story_qc(df_filtered, story_qc)
         else:
             print("\nSkipping deterministic text-quality QC")
-        
+
+        if not args.skip_spell_correction and experiment in ['human-ai', 'human-human']:
+            spell_slots = ['author_1']
+            if experiment == 'human-human':
+                spell_slots.append('author_2')
+
+            api_key = os.environ.get('OPENAI_API_KEY')
+            if not api_key:
+                print(
+                    "\nSkipping spell correction: OPENAI_API_KEY environment variable is not set"
+                )
+            else:
+                print(
+                    f"\nApplying GPT-4o-mini spell correction to: {', '.join(spell_slots)}"
+                )
+                df_filtered = apply_spell_correction(
+                    df_filtered,
+                    text_columns=spell_slots,
+                    api_key=api_key,
+                    edit_distance_threshold=args.spell_correction_edit_threshold,
+                )
+
+        if args.drop_flagged_rows and 'text_qc_flagged' in df_filtered.columns:
+            print("\nApplying row-level QC outlier filter (drop flagged rows)...")
+            df_filtered = drop_text_qc_flagged_rows(df_filtered)
+
         # Randomize author assignment for human-human (to match human-ai randomness)
         if experiment == 'human-human':
             print("\nRandomizing author assignment (50/50 swap)...")

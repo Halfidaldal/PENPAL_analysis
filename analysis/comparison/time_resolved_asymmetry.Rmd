@@ -1,0 +1,292 @@
+---
+title: "Time-Resolved Asymmetry: Human-AI vs Human-Human vs AI-AI"
+subtitle: "How story-internal asymmetry evolves across early / middle / late phases"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 12,
+  fig.height = 6,
+  dpi = 300
+)
+
+source(here::here("analysis/comparison/_comparison_utils.R"))
+
+pacman::p_load(lme4, lmerTest, patchwork, emmeans)
+
+theme_set(theme_comparison())
+```
+
+# Overview
+
+This notebook tracks how within-dyad asymmetry evolves *across the story*.
+For each metric (valence, novelty-resonance slope, semantic-exploration AUC),
+we compute the per-story signed and unsigned slot-1 vs slot-2 difference
+within rolling thirds (Early / Middle / Late) of the story turn window, and
+test whether condition $\times$ phase interactions appear.
+
+Two outcomes per metric:
+
+- **Magnitude**: per-story $|A|$ in each phase.
+- **Direction**: per-story signed slot-difference in each phase (with the
+  identity-tied directionality reading: HA should keep a stable sign across
+  phases; HH and AA should show no fixed sign).
+
+# Phase definition
+
+```{r phase-fn}
+assign_phase <- function(df, turn_col = "turn_index") {
+  df %>%
+    group_by(conversation_id) %>%
+    mutate(
+      max_t = max(.data[[turn_col]], na.rm = TRUE),
+      phase = case_when(
+        .data[[turn_col]] <= max_t / 3 ~ "Early",
+        .data[[turn_col]] <= 2 * max_t / 3 ~ "Middle",
+        TRUE ~ "Late"
+      ),
+      phase = factor(phase, levels = c("Early", "Middle", "Late"))
+    ) %>%
+    ungroup()
+}
+```
+
+# Valence Asymmetry by Phase
+
+```{r valence-by-phase, fig.width=12, fig.height=5}
+df_val <- load_valence_data(c("human-ai", "human-human", "ai-ai")) %>%
+  filter_complete_exchange_window() %>%
+  filter(turn_index > 1) %>%
+  prepare_condition_factor(reference = "human-ai") %>%
+  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959",
+         conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225") %>%
+  assign_phase()
+
+# Pearson correlation per (story, phase, direction) on signed valence pairs.
+df_val_pairs <- df_val %>%
+  group_by(conversation_id, condition) %>%
+  arrange(turn_index, .by_group = TRUE) %>%
+  mutate(author_2_valence_lag1 = lag(author_2_valence)) %>%
+  ungroup() %>%
+  drop_na(author_1_valence, author_2_valence, author_2_valence_lag1)
+
+valence_phase_A <- df_val_pairs %>%
+  group_by(conversation_id, condition, phase) %>%
+  summarise(
+    n_pairs = sum(!is.na(author_1_valence) & !is.na(author_2_valence)),
+    r_12 = if (n_pairs >= 3) suppressWarnings(cor(author_1_valence, author_2_valence)) else NA_real_,
+    r_21 = if (n_pairs >= 3) suppressWarnings(cor(author_2_valence_lag1, author_1_valence)) else NA_real_,
+    .groups = "drop"
+  ) %>%
+  mutate(
+    r_12 = pmin(pmax(r_12, -0.999999), 0.999999),
+    r_21 = pmin(pmax(r_21, -0.999999), 0.999999),
+    z_12 = atanh(r_12),
+    z_21 = atanh(r_21),
+    signed_diff = z_12 - z_21,
+    A_valence = abs(signed_diff)
+  ) %>%
+  drop_na(signed_diff)
+
+valence_phase_summary <- valence_phase_A %>%
+  group_by(condition, phase) %>%
+  summarise(
+    n = n(),
+    mean_signed = mean(signed_diff),
+    sd_signed = sd(signed_diff),
+    mean_abs = mean(A_valence),
+    .groups = "drop"
+  )
+
+valence_phase_summary %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-story valence asymmetry by condition and story phase"
+  )
+
+p_val_abs <- ggplot(valence_phase_A, aes(x = phase, y = A_valence, fill = condition)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.2, position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = condition_colors) +
+  labs(title = "Magnitude: |A_valence|", x = "Story phase", y = expression("|" * Delta * z * "|"))
+
+p_val_signed <- ggplot(valence_phase_A, aes(x = phase, y = signed_diff, fill = condition)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.2, position = position_dodge(width = 0.75)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
+  labs(title = "Direction: signed Δz", x = "Story phase", y = expression(Delta * z))
+
+p_val_abs + p_val_signed + plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+```{r valence-phase-models}
+if (nrow(valence_phase_A) >= 30) {
+  cat("LMM: A_valence ~ condition * phase + (1 | conversation_id)\n")
+  m_abs <- lmer(A_valence ~ condition * phase + (1 | conversation_id),
+                data = valence_phase_A)
+  print(summary(m_abs))
+
+  cat("\nLMM: signed_diff ~ condition * phase + (1 | conversation_id)\n")
+  m_signed <- lmer(signed_diff ~ condition * phase + (1 | conversation_id),
+                   data = valence_phase_A)
+  print(summary(m_signed))
+}
+```
+
+# Novelty-Resonance Slope Asymmetry by Phase
+
+```{r novelty-by-phase, fig.width=12, fig.height=5}
+df_nov <- load_novelty_data(c("human-ai", "human-human", "ai-ai")) %>%
+  filter_complete_exchange_window() %>%
+  filter(turn_index > 1) %>%
+  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959",
+         conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225")
+
+df_nov_slots <- bind_rows(
+  df_nov %>% transmute(condition, conversation_id, turn_index,
+                       slot = "author_1",
+                       surprise = author_1_surprise,
+                       resonance = author_1_surprise - author_1_transience),
+  df_nov %>% transmute(condition, conversation_id, turn_index,
+                       slot = "author_2",
+                       surprise = author_2_surprise,
+                       resonance = author_2_surprise - author_2_transience)
+) %>%
+  drop_na(surprise, resonance) %>%
+  mutate(
+    condition = factor(condition,
+      levels = c("human-ai", "human-human", "ai-ai"),
+      labels = c("Human-AI", "Human-Human", "AI-AI")
+    ),
+    slot = factor(slot, levels = c("author_1", "author_2"),
+                  labels = c("Slot 1", "Slot 2"))
+  ) %>%
+  assign_phase()
+
+novelty_phase_A <- df_nov_slots %>%
+  group_by(condition, conversation_id, phase, slot) %>%
+  summarise(
+    n_pts = sum(!is.na(surprise) & !is.na(resonance)),
+    slope = if (n_pts >= 3) coef(lm(resonance ~ surprise))[2] else NA_real_,
+    .groups = "drop"
+  ) %>%
+  pivot_wider(names_from = slot, values_from = slope, names_prefix = "slope_") %>%
+  drop_na(`slope_Slot 1`, `slope_Slot 2`) %>%
+  select(-starts_with("n_pts")) %>%
+  mutate(
+    signed_diff = `slope_Slot 1` - `slope_Slot 2`,
+    A_influence = abs(signed_diff)
+  )
+
+novelty_phase_A %>%
+  group_by(condition, phase) %>%
+  summarise(
+    n = n(),
+    mean_signed = mean(signed_diff),
+    sd_signed = sd(signed_diff),
+    mean_abs = mean(A_influence),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-story novelty-resonance slope asymmetry by condition and story phase"
+  )
+
+p_nov_abs <- ggplot(novelty_phase_A, aes(x = phase, y = A_influence, fill = condition)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.2, position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = condition_colors) +
+  labs(title = "Magnitude: |A_influence|", x = "Story phase",
+       y = expression("|" * Delta * beta * "|"))
+
+p_nov_signed <- ggplot(novelty_phase_A, aes(x = phase, y = signed_diff, fill = condition)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.2, position = position_dodge(width = 0.75)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
+  labs(title = "Direction: signed Δβ", x = "Story phase",
+       y = expression(Delta * beta))
+
+p_nov_abs + p_nov_signed + plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+```{r novelty-phase-models}
+if (nrow(novelty_phase_A) >= 30) {
+  cat("LMM: A_influence ~ condition * phase + (1 | conversation_id)\n")
+  m_abs <- lmer(A_influence ~ condition * phase + (1 | conversation_id),
+                data = novelty_phase_A)
+  print(summary(m_abs))
+
+  cat("\nLMM: signed_diff ~ condition * phase + (1 | conversation_id)\n")
+  m_signed <- lmer(signed_diff ~ condition * phase + (1 | conversation_id),
+                   data = novelty_phase_A)
+  print(summary(m_signed))
+}
+```
+
+# Mean Valence Trajectory by Slot and Condition
+
+A descriptive companion view: how does each slot's mean valence drift across
+phase, by condition? Useful for the "story-evolution" narrative without
+relying on the asymmetry abstraction.
+
+```{r mean-trajectory, fig.width=12, fig.height=5}
+df_val_long <- df_val %>%
+  pivot_longer(c(author_1_valence, author_2_valence),
+               names_to = "slot", values_to = "valence") %>%
+  mutate(slot = factor(slot,
+                       levels = c("author_1_valence", "author_2_valence"),
+                       labels = c("Slot 1", "Slot 2")))
+
+mean_traj <- df_val_long %>%
+  group_by(condition, phase, slot) %>%
+  summarise(
+    mean_val = mean(valence, na.rm = TRUE),
+    se = sd(valence, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+ggplot(mean_traj, aes(x = phase, y = mean_val, color = slot, group = slot)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5) +
+  geom_errorbar(aes(ymin = mean_val - 1.96 * se, ymax = mean_val + 1.96 * se),
+                width = 0.15) +
+  facet_wrap(~ condition) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = "Mean valence by slot, phase, and condition",
+    subtitle = "Shows whether slot-level emotional baselines diverge or converge across the story",
+    x = "Story phase", y = "Mean valence", color = "Slot"
+  )
+```
+
+# Summary
+
+What this notebook adds beyond the cross-section comparisons:
+
+- **Per-phase magnitude $|A|$** for valence and novelty-resonance: tests whether asymmetry strengthens, weakens, or stays flat across the story.
+- **Per-phase signed asymmetry**: combined with per-story directional-stability, this is the strongest visual evidence for HA-specific identity-tied directionality. A signed-asymmetry boxplot that stays *consistently above zero* in HA across all three phases, while HH/AA hover around zero, is the publication-quality figure for the reframed RQ1.
+- **Mean valence trajectory by slot and condition**: a story-evolution view that does not depend on the asymmetry abstraction and helps illustrate qualitative drift.
+
+Open additions worth considering:
+
+- Add a per-phase semantic-exploration AUC view (the lag $k$ axis is itself an evolution axis, but a phase split could surface fine-grained shifts).
+- Replace fixed thirds with overlapping rolling windows for smoother trajectories.
+
+*Analysis completed: `r Sys.time()`*

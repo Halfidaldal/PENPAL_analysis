@@ -69,10 +69,13 @@ experiments:
     
     # Simulation configuration (matches actual experiment parameters)
     simulation:
-      n_stories_per_model: 10
+      n_stories_per_model: 20
       n_turns_per_story: 10
       temperature: 1.0       # Matches LLM_HYPERPARAMS.TEMPERATURE from experiment
-      max_tokens: 35         # Matches LLM_HYPERPARAMS.MAX_TOKENS from experiment
+      max_tokens: 40         # Asymmetric HS design: one agent per story is the
+                             # "human stand-in" (output word-truncated 2..5 words),
+                             # the other is the "AI" (passed through). 40 tokens
+                             # roughly matches USER_INPUT_LIMITS char range.
       models:
       #do not change these!
         - id: "gpt-4.1-2025-04-14"

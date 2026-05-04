@@ -61,11 +61,14 @@ As in the updated valence notebook:
 $$\text{gap\_change}_{i,t} \;=\; \alpha_i + \beta_i \cdot \text{valence\_gap\_lag1}_{i,t} + \varepsilon_{i,t}$$
 and define the per-story reversion strength as $R_i = -\beta_i$, so that larger positive $R_i$ means a stronger pull back together. $R_i$ is already label-invariant (the gap enters squared/reversal-style in the relationship). We test $R_i \sim \text{condition}$ with ANOVA + Kruskal and pairwise BH-adjusted Wilcoxon. The pooled LMM slopes are kept as supplemental.
 
+**Article-use note.** This notebook tests a dyad-level regulation mechanism, not an agent-level asymmetry. If $R_i$ does not differ by condition, the conclusion is that emotional re-convergence is a general co-writing dynamic rather than a Human-AI-specific asymmetry.
+
 # Load Data
 
 ```{r load-data}
 df_combined <- load_valence_data(c("human-ai", "human-human", "ai-ai")) %>%
   filter_complete_exchange_window() %>%
+  filter(turn_index > 1) %>%
   prepare_condition_factor(reference = "human-ai") %>%
   filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959", conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225")
 
@@ -170,6 +173,159 @@ ggplot(per_story_rb, aes(x = condition, y = R, fill = condition)) +
     y = expression(R[i] == -beta[i])
   ) +
   theme(legend.position = "none")
+```
+
+# Bootstrap CIs and Effect Sizes on `R_i`
+
+```{r boot-effects-rubber}
+bootstrap_condition_means(per_story_rb, "R", R = 10000) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Bootstrap 95% CI on per-condition mean of reversion strength R_i (R = 10,000)"
+  )
+
+effect_sizes_pairwise(per_story_rb, "R") %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Pairwise Cliff's delta on R_i"
+  )
+```
+
+# Planned Contrast: HA vs (HH + AA)/2
+
+```{r planned-contrast-rubber}
+planned_contrast_HA_vs_same(per_story_rb, "R") %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Planned contrast: R_i in HA vs the average of HH and AA"
+  )
+```
+
+# Time-Resolved Reversion Strength
+
+```{r time-resolved-rubber, fig.width=12, fig.height=5}
+df_phased <- df_analysis %>%
+  drop_na(valence_gap_lag1, gap_change) %>%
+  group_by(conversation_id, condition) %>%
+  mutate(
+    max_t = max(turn_index, na.rm = TRUE),
+    phase = case_when(
+      turn_index <= max_t / 3 ~ "Early",
+      turn_index <= 2 * max_t / 3 ~ "Middle",
+      TRUE ~ "Late"
+    ),
+    phase = factor(phase, levels = c("Early", "Middle", "Late"))
+  ) %>%
+  ungroup()
+
+per_story_phase_rb <- df_phased %>%
+  group_by(condition, conversation_id, phase) %>%
+  summarise(
+    n_points = sum(!is.na(valence_gap_lag1) & !is.na(gap_change)),
+    beta = if (n_points >= 3) coef(lm(gap_change ~ valence_gap_lag1))[2] else NA_real_,
+    .groups = "drop"
+  ) %>%
+  mutate(R_phase = -beta) %>%
+  drop_na(R_phase)
+
+per_story_phase_rb %>%
+  group_by(condition, phase) %>%
+  summarise(
+    n = n(),
+    mean_R = mean(R_phase),
+    sd_R = sd(R_phase),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-story reversion strength by condition and story phase"
+  )
+
+if (nrow(per_story_phase_rb) >= 30 &&
+    n_distinct(per_story_phase_rb$condition) >= 2 &&
+    n_distinct(per_story_phase_rb$phase) >= 2) {
+  cat("LMM: R_phase ~ condition * phase + (1 | conversation_id)\n")
+  phase_model <- lmer(R_phase ~ condition * phase + (1 | conversation_id),
+                      data = per_story_phase_rb)
+  print(summary(phase_model))
+}
+
+ggplot(per_story_phase_rb, aes(x = phase, y = R_phase, fill = condition)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.2, position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Reversion strength by story phase and condition",
+    x = "Story phase",
+    y = expression(R[phase])
+  )
+```
+
+# Structural-Null Permutation Test
+
+Motivation: the observed rubber-band slope is near-identical across HH, HA,
+and AA, suggesting a structural / mean-reversion artifact of the
+`gap_change ~ gap_lag1` parameterization rather than genuine coordination.
+This test pools all turn-level (slot1, slot2) valence pairs across all
+stories and conditions, randomly repartitions them into pseudo-stories of 10
+turns, and recomputes per-pseudo-story `R = -beta`. If the observed mean R
+falls inside the resulting null distribution, the rubber-band effect is
+structural; if observed exceeds the null, it reflects genuine dyadic
+coordination.
+
+```{r structural-null-rubber, fig.width=10, fig.height=5}
+# Pool turn-level valence pairs, ignoring story / condition.
+df_pool <- df_combined %>%
+  drop_na(author_1_valence, author_2_valence) %>%
+  select(author_1_valence, author_2_valence)
+
+null_obj <- null_rubber_band(df_pool, B = 1000, story_size = 10, seed = 42)
+
+null_df <- tibble(null_mean_R = null_obj$null_means)
+
+obs_R <- per_story_rb %>%
+  group_by(condition) %>%
+  summarise(observed_mean_R = mean(R, na.rm = TRUE), .groups = "drop")
+
+obs_R_overall <- tibble(condition = "Pooled", observed_mean_R = mean(per_story_rb$R, na.rm = TRUE))
+
+obs_table <- bind_rows(obs_R, obs_R_overall) %>%
+  rowwise() %>%
+  mutate(
+    null_mean = mean(null_obj$null_means),
+    null_sd = sd(null_obj$null_means),
+    p_perm_two_sided = (sum(abs(null_obj$null_means - null_mean) >=
+                            abs(observed_mean_R - null_mean)) + 1) /
+                       (length(null_obj$null_means) + 1)
+  ) %>%
+  ungroup()
+
+obs_table %>%
+  knitr::kable(
+    digits = 4,
+    caption = sprintf(
+      "Structural-null test: observed mean R per condition vs %d-iter null (pseudo-stories of 10 turns from %d pooled pairs)",
+      null_obj$B, null_obj$pool_size
+    )
+  )
+
+ggplot(null_df, aes(x = null_mean_R)) +
+  geom_density(fill = "gray70", alpha = 0.5) +
+  geom_vline(
+    data = obs_table,
+    aes(xintercept = observed_mean_R, color = condition),
+    linewidth = 1
+  ) +
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Structural null vs observed reversion strength",
+    subtitle = sprintf(
+      "Density: B = %d pseudo-stories of 10 turns randomly assembled from pooled turn pairs",
+      null_obj$B
+    ),
+    x = "Mean R across pseudo-stories",
+    y = "Density",
+    color = "Observed (condition)"
+  )
 ```
 
 # Supplemental: Pooled Condition-Specific Slopes
@@ -344,15 +500,24 @@ df_analysis %>%
 
 Primary cross-condition result: per-story reversion strength $R_i = -\beta_i$ from `gap_change ~ valence_gap_lag1`, tested with ANOVA + Kruskal and pairwise BH-adjusted Wilcoxon.
 
+Robustness layers added:
+
+- bootstrap 95% CIs on per-condition mean of $R_i$
+- pairwise Cliff's $\delta$ effect sizes
+- planned single-df contrast HA vs (HH+AA)/2
+- time-resolved view of $R$ across early / middle / late story phases
+- **structural-null permutation test**: shuffles all turn-level valence pairs across stories and conditions, repartitions into pseudo-stories, and compares observed mean $R$ to the resulting null. Tests whether the rubber-band effect is a coordination dynamic or a mathematical / mean-reversion artifact
+
 Supplemental views retained:
 
 - pooled within-condition LMM slopes (population-level rubber-band estimate per condition)
 - cross-condition interaction LMM (`gap_change ~ valence_gap_lag1 * condition + (1|story)`)
 - gap distributions and story-phase splits
 
+The Human-AI rubber-band decomposition lives in [analysis/human-ai/rubber_band_analysis.Rmd](../human-ai/rubber_band_analysis.Rmd) and is not duplicated here.
+
 Deferred to a follow-up pass:
 
 - starter-mechanism analysis of the reversion object
-- Human-AI decomposition of who pulls the gap back (requires per-turn speaker identity)
 
 *Analysis completed: `r Sys.time()`*

@@ -99,7 +99,9 @@ df_field <- df_field %>%
     ai_valence = author_2_sentiment_projection,
     user_valence = author_1_sentiment_projection,
     user = author_1,
-    ai = author_2
+    ai = author_2,
+    user_embedding = author_1_embedding,
+    ai_embedding = author_2_embedding
   ) %>%
   mutate(
     # Token counts

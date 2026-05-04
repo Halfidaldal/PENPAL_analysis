@@ -27,6 +27,25 @@ Context management per provider (matching experiment server/adapters):
 Post-processing (matching experiment frontend src/services/aiService.jsx):
 - After every generation, if the response begins with the partner's input
   (case-insensitive), strip the echo. Applied uniformly to all providers.
+
+Symmetric word-truncation design (matching the human-human experiment):
+- BOTH agents have their output word-truncated by random.randint(2, 5)
+  words after each generation. The truncated text is permanent — both
+  stored AND passed to the next agent as its user input.
+- Mirrors truncateUserInput from src/utils/submissionHelpers.js, applied
+  to both partners (analogous to the human-human condition where both
+  humans' inputs were truncated). Deployed JS uses a session-constant
+  Math.floor(Math.random()*5)+1 in USER_INPUT_LIMITS.TRUNCATE_WORDS;
+  the simulation re-randomizes per turn for cleaner statistical properties.
+- Both agents use max_tokens=40, roughly matching the experiment's human
+  character limit (USER_INPUT_LIMITS.MIN_CHARS=130 / MAX_CHARS=190 in
+  src/constants/bookConstants.js). Word-truncation then trims a few words
+  off the end so each side's input looks similarly mid-thought.
+- Rationale for symmetric (not asymmetric) in AI-AI: in HH and AI-AI both
+  partners are equally constrained, so symmetric treatment matches HH and
+  avoids introducing a within-condition role nuisance variable. In HA the
+  asymmetry is intrinsic (human vs AI), so truncation there is asymmetric
+  by necessity.
 """
 
 from typing import Optional, List, Dict, Literal
@@ -103,6 +122,25 @@ def build_messages_for_compat(
         result.append({"role": "user", "content": user_input})
 
     return trim_messages_to_char_limit(result, limit=char_limit)
+
+
+def truncate_user_input(text: str, words_to_truncate: int = 2) -> str:
+    """Mirror of truncateUserInput from src/utils/submissionHelpers.js.
+
+    Removes the last `words_to_truncate` whitespace-separated words from
+    `text`. If the text has fewer words than that, returns an empty string
+    (matching the JS behavior of `slice(0, len - n)` when n >= len).
+    """
+    if not isinstance(text, str):
+        return ""
+    trimmed = text.strip()
+    if not trimmed:
+        return ""
+    words = trimmed.split()  # \\s+ splits, matches JS split(/\\s+/)
+    if words_to_truncate <= 0:
+        return trimmed
+    clipped = words[: max(0, len(words) - words_to_truncate)]
+    return " ".join(clipped)
 
 
 def strip_input_echo(response_text: str, user_input: str) -> str:
@@ -400,41 +438,46 @@ def simulate_single_story(
     story_id: str = "story_1",
     model_id: str = "unknown",
     temperature: float = 1.0,
-    max_tokens: int = 35
+    max_tokens: int = 40,
+    truncate_words_min: int = 2,
+    truncate_words_max: int = 5,
 ) -> pd.DataFrame:
-    """Simulate a single AI-AI story conversation.
-    
-    Matches the actual PENPAL human-AI experiment context management:
-    - Each agent maintains its own conversation history as alternating
-      user/assistant turns (matching the experiment's frontend messages state)
-    - For threaded providers (OpenAI): only current turn text sent as input,
-      system prompt sent as instructions. Provider manages history internally.
-    - For stateless providers (Claude, HuggingFace): full alternating history
-      + current user input sent each call.
-    - System prompt updated each turn with pacing metadata
-    - Temperature: 1.0, Max tokens: 35
-    
-    Each agent sees the conversation from its own perspective:
-    - "user" role = partner's text (what the other agent wrote)
-    - "assistant" role = own previous responses
-    
-    This matches the experiment where:
-    - The human's text arrives as "user" messages
-    - The AI's responses are "assistant" messages
-    - The frontend builds currentMessages = [...messages, newMessage]
-      and sends it as the rolling history
-    
+    """Simulate a single AI-AI story conversation with symmetric word-truncation.
+
+    Mirrors the human-human experiment's symmetric structure: BOTH agents'
+    outputs are word-truncated each turn (random 2..5 words dropped from
+    the end), just as both humans' typed inputs were truncated by
+    truncateUserInput in src/utils/submissionHelpers.js before being
+    saved and sent to the partner.
+
+    The truncated text is permanent — what's stored, what's added to each
+    agent's history, and what's sent to the other agent as user input on
+    the next turn. Both agents are computationally identical, so symmetric
+    treatment avoids any within-condition role confound and matches HH.
+
+    Per-agent context management:
+    - Each agent maintains its own alternating user/assistant history.
+    - OpenAI uses native conversation threading; Claude / HF receive the
+      full rolling history + the current user input each call.
+    - System prompt updated each turn with pacing metadata.
+
     Args:
-        provider_agent1: Provider for first agent
-        provider_agent2: Provider for second agent
-        n_turns: Number of turns (each turn = agent1 + agent2 response)
-        story_id: Unique story identifier
-        model_id: Model identifier for tracking
-        temperature: Sampling temperature (default 1.0 to match experiment)
-        max_tokens: Max output tokens (default 35 to match experiment)
-        
+        provider_agent1: Provider for first agent.
+        provider_agent2: Provider for second agent.
+        n_turns: Number of turns (each turn = agent1 + agent2 response).
+        story_id: Unique story identifier.
+        model_id: Model identifier for tracking.
+        temperature: Sampling temperature (default 1.0 to match experiment).
+        max_tokens: Max output tokens for both agents (default 40, roughly
+            matches the experiment's USER_INPUT_LIMITS char range).
+        truncate_words_min, truncate_words_max: Inclusive range for the
+            random number of words trimmed from each agent's output each
+            turn. Mirrors truncateUserInput; deployed JS uses
+            Math.floor(Math.random()*5)+1 (1..5), set once per session.
+
     Returns:
-        DataFrame with conversation turns
+        DataFrame with one row per turn (columns: turn, agent_1, agent_2,
+        story_id, model_id, timestamp).
     """
     # Reset both providers for fresh conversation
     provider_agent1.reset_conversation()
@@ -486,6 +529,15 @@ def simulate_single_story(
         # (src/services/aiService.jsx generateAIResponse), applied to all providers.
         agent1_text = strip_input_echo(agent1_text, agent1_input)
 
+        # Symmetric word-truncation: drop 2..5 words from end (mirrors
+        # truncateUserInput from src/utils/submissionHelpers.js, applied
+        # to both agents per the symmetric HH design). Permanent — flows
+        # into history, partner's next input, and the saved DataFrame.
+        agent1_text = truncate_user_input(
+            agent1_text,
+            random.randint(truncate_words_min, truncate_words_max),
+        )
+
         # Update agent 1's history (user = partner input, assistant = own response)
         agent1_history.append({"role": "user", "content": agent1_input})
         agent1_history.append({"role": "assistant", "content": agent1_text})
@@ -517,6 +569,13 @@ def simulate_single_story(
         # Strip echo of partner input — matches experiment frontend
         # (src/services/aiService.jsx generateAIResponse), applied to all providers.
         agent2_text = strip_input_echo(agent2_text, agent2_input)
+
+        # Symmetric word-truncation: drop 2..5 words from end (mirrors
+        # truncateUserInput from src/utils/submissionHelpers.js).
+        agent2_text = truncate_user_input(
+            agent2_text,
+            random.randint(truncate_words_min, truncate_words_max),
+        )
 
         # Update agent 2's history
         agent2_history.append({"role": "user", "content": agent2_input})
@@ -590,18 +649,23 @@ def simulate_ai_ai_dataset(
     n_stories_per_model: int = 10,
     n_turns_per_story: int = 10,
     temperature: float = 1.0,
-    max_tokens: int = 35,
+    max_tokens: int = 40,
     delay_between_stories: float = 2.0,
     delay_between_models: float = 5.0
 ) -> pd.DataFrame:
     """Generate full AI-AI simulation dataset with rate limit handling.
-    
+
     Uses round-robin model rotation to distribute requests across providers,
     reducing rate limit issues. Includes retry logic with exponential backoff.
-    
-    Matches the actual PENPAL human-AI experiment:
+
+    Matches the symmetric structure of the PENPAL human-human condition:
+    BOTH agents' outputs are word-truncated 2..5 words each turn before
+    being saved AND sent to the other agent as its next user input.
+    Mirrors truncateUserInput from src/utils/submissionHelpers.js, applied
+    bilaterally because both AI-AI partners are computationally identical.
+
     - Temperature: 1.0
-    - Max tokens: 35
+    - Max tokens: 40 (both agents)
     - 10 turns per story
     
     Args:

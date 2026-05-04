@@ -42,25 +42,6 @@ theme_set(theme_comparison())
 ```
 
 
-```{r}
-folder_path <- "~/Documents/PENPAL_analysis/data"
-file_names <- list.files(folder_path, pattern = "*stories_full_text_filtered.csv", full.names = TRUE, recursive = TRUE)
-data_list <- lapply(file_names, read.csv)
-selected_data_list <- lapply(data_list, function(df) {
-    df %>% select("conversation_id", "full_story")
-})
-
-excluded_story_ids <- c(
-  "conv_ed575a06c11d42358e3eeb7826d2f959",
-  "conv_a79338efb1384551affc0d7597822b0f"
-)
-
-combined_data <- bind_rows(selected_data_list) %>%
-  filter(!conversation_id %in% excluded_story_ids)
-
-write.csv(combined_data, "combined_data_2.csv", row.names = FALSE)
-```
-
 This notebook compares **valence alignment** across the three experimental conditions using the new exchange-aligned structure.
 
 - **Human-AI**: Human co-writing with an LLM
@@ -78,6 +59,8 @@ The analysis window is restricted to **complete exchanges** and the default alig
 **Primary cross-condition object.** Each story contributes one unsigned, label-invariant dyad asymmetry magnitude:
 $$A_{\text{valence}}(i) \;=\; \bigl|\, \operatorname{atanh}(r_{1\to 2,i}) - \operatorname{atanh}(r_{2\to 1,i}) \,\bigr|$$
 where $r_{1\to 2,i}$ is the per-story Pearson correlation between same-turn slot 1 and slot 2 valence, and $r_{2\to 1,i}$ is the correlation between slot 2's previous-turn valence and slot 1's current-turn valence. The main question is whether $A_{\text{valence}}$ differs across conditions. The directional-slope LMMs are retained as supplemental views. Starter-mechanism and Human-AI speaker-type decompositions are deferred to a follow-up pass.
+
+**Article-use note.** The primary cross-condition claim should use the unsigned per-story $A_{\text{valence}}$ test below. Signed directional slot models are diagnostic only: in Human-Human and AI-AI, Slot 1 / Slot 2 are positional labels rather than theoretically meaningful agent identities.
 
 # Load Data
 
@@ -302,206 +285,96 @@ ggplot(df_asym, aes(x = condition, y = A_valence, fill = condition)) +
   theme(legend.position = "none")
 ```
 
-# Supplemental: Within-Condition Directional Asymmetry
+# Bootstrap CIs and Effect Sizes on `A_valence`
 
-```{r within-condition-models}
-within_condition_results <- list()
-
-for (cond in unique(df_std$condition)) {
-  df_cond <- filter(df_std, condition == cond)
-
-  if (nrow(df_cond) < 100 || n_distinct(df_cond$conversation_id) < 5) {
-    next
-  }
-
-  df_cond$alignment_direction <- factor(
-    df_cond$alignment_direction,
-    levels = levels(df_std$alignment_direction)
-  )
-  contrasts(df_cond$alignment_direction) <- contr.sum(2)
-
-  model <- tryCatch({
-    lmer(
-      response_z ~ predictor_z * alignment_direction + (1 + predictor_z | conversation_id),
-      data = df_cond,
-      control = lmerControl(optimizer = "bobyqa")
-    )
-  }, error = function(e) {
-    lmer(
-      response_z ~ predictor_z * alignment_direction + (1 | conversation_id),
-      data = df_cond
-    )
-  })
-
-  slopes <- emtrends(model, specs = "alignment_direction", var = "predictor_z")
-  slope_contrast <- contrast(slopes, method = "revpairwise")
-
-  within_condition_results[[as.character(cond)]] <- list(
-    model = model,
-    slopes = as.data.frame(slopes),
-    contrast = as.data.frame(slope_contrast)
-  )
-}
-
-within_summary <- purrr::imap_dfr(within_condition_results, function(res, cond) {
-  tibble(
-    condition = cond,
-    slope_slot1_to_slot2 = res$slopes$predictor_z.trend[res$slopes$alignment_direction == "Slot 1 → Slot 2"],
-    slope_slot2_to_slot1 = res$slopes$predictor_z.trend[res$slopes$alignment_direction == "Slot 2(t-1) → Slot 1"],
-    difference = res$contrast$estimate[1],
-    se = res$contrast$SE[1],
-    t = res$contrast$t.ratio[1],
-    p = res$contrast$p.value[1]
-  )
-})
-
-within_summary %>%
-  mutate(
-    sig = case_when(
-      p < 0.001 ~ "***",
-      p < 0.01 ~ "**",
-      p < 0.05 ~ "*",
-      p < 0.1 ~ ".",
-      TRUE ~ ""
-    )
-  ) %>%
+```{r boot-effects-valence}
+boot_A <- bootstrap_condition_means(df_asym, "A_valence", R = 10000)
+boot_A %>%
   knitr::kable(
     digits = 3,
-    caption = "Within-condition alignment asymmetry by slot direction"
+    caption = "Bootstrap 95% CI on per-condition mean of A_valence (R = 10,000)"
+  )
+
+effect_sizes_pairwise(df_asym, "A_valence") %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Pairwise Cliff's delta on A_valence"
   )
 ```
 
-```{r asymmetry-plot, fig.width=10, fig.height=5}
-if (nrow(within_summary) > 0) {
-  within_summary %>%
-    ggplot(aes(x = condition, y = difference, fill = condition)) +
-    geom_col(width = 0.6, alpha = 0.8) +
-    geom_errorbar(
-      aes(ymin = difference - 1.96 * se, ymax = difference + 1.96 * se),
-      width = 0.2
-    ) +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-    scale_fill_manual(values = condition_colors) +
-    labs(
-      title = "Directional Asymmetry by Condition",
-      subtitle = "Difference: (Slot 1 → Slot 2) - (Slot 2(t-1) → Slot 1). Positive = Slot 1 → Slot 2 stronger",
-      y = "Asymmetry (Δβ)",
-      x = "Condition"
-    ) +
-    theme(legend.position = "none")
-}
+# Planned Contrast: HA vs (HH + AA)/2
+
+```{r planned-contrast-valence}
+planned_contrast_HA_vs_same(df_asym, "A_valence") %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Planned contrast: A_valence in HA vs the average of HH and AA"
+  )
 ```
 
-# Supplemental: Cross-Condition Directional Model
+# Directional Stability of Signed Valence Asymmetry
 
-```{r cross-condition-model}
-df_std$condition <- factor(df_std$condition)
-contrasts(df_std$condition) <- contr.sum(length(levels(df_std$condition)))
+Tests whether the *direction* of the slot-1 vs slot-2 alignment difference is
+consistent across stories within each condition. The signed quantity is
+$\text{signed}_i = \operatorname{atanh}(r_{1\to 2,i}) - \operatorname{atanh}(r_{2\to 1,i})$.
+HA-specific identity-tied directionality predicts high `stability` and
+`sign_consistency` in HA, low in HH and AA, even when unsigned `A_valence`
+is similar.
 
-model_full <- tryCatch({
-  lmer(
-    response_z ~ predictor_z * alignment_direction * condition + (1 + predictor_z | conversation_id),
-    data = df_std,
-    control = lmerControl(optimizer = "bobyqa")
+```{r directional-stability-valence}
+ds_val <- directional_stability(df_asym, "signed_z_diff")
+ds_val$by_condition %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-condition directional stability of signed valence asymmetry"
   )
-}, error = function(e) {
-  lmer(
-    response_z ~ predictor_z * alignment_direction * condition + (1 | conversation_id),
-    data = df_std
-  )
-})
 
-cat("Full model summary:\n")
-print(summary(model_full))
-
-slopes_by_condition <- emtrends(
-  model_full,
-  specs = c("condition", "alignment_direction"),
-  var = "predictor_z"
-)
-
-cat("\nAlignment slopes by condition and direction:\n")
-print(slopes_by_condition)
-
-cat("\nWithin-condition direction contrasts:\n")
-print(contrast(slopes_by_condition, method = "revpairwise", by = "condition"))
+cat(sprintf(
+  "Brown-Forsythe variance-equality p = %.4f\n", ds_val$variance_equality_p
+))
 ```
 
-# Supplemental: Directional Scatter Visualizations
-
-```{r scatterplots, fig.width=13, fig.height=5}
-p_cross_turn <- df_alignment_long %>%
-  filter(alignment_direction == "Slot 2(t-1) → Slot 1") %>%
-  ggplot(aes(x = predictor_valence, y = response_valence, color = condition)) +
-  geom_point(alpha = 0.05, size = 0.5) +
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1.1) +
-  scale_color_manual(values = condition_colors) +
+```{r directional-stability-valence-plot, fig.width=9, fig.height=5}
+ggplot(df_asym, aes(x = condition, y = signed_z_diff, fill = condition)) +
+  geom_violin(alpha = 0.4, colour = NA) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
+  geom_jitter(width = 0.08, alpha = 0.35, size = 0.9) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
   labs(
-    title = "Cross-Turn Alignment",
-    subtitle = "Does Slot 1 follow Slot 2's previous valence?",
-    x = "Slot 2 Valence (t-1)",
-    y = "Slot 1 Valence (t)"
+    title = "Signed valence-asymmetry direction by condition",
+    subtitle = "atanh(r_{1→2}) - atanh(r_{2→1}); positive = slot 1 leads",
+    x = "Condition",
+    y = expression(Delta * z)
   ) +
   theme(legend.position = "none")
-
-p_same_turn <- df_alignment_long %>%
-  filter(alignment_direction == "Slot 1 → Slot 2") %>%
-  ggplot(aes(x = predictor_valence, y = response_valence, color = condition)) +
-  geom_point(alpha = 0.05, size = 0.5) +
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1.1) +
-  scale_color_manual(values = condition_colors) +
-  labs(
-    title = "Same-Turn Alignment",
-    subtitle = "Does Slot 2 match Slot 1 within the same exchange?",
-    x = "Slot 1 Valence (t)",
-    y = "Slot 2 Valence (t)"
-  )
-
-p_cross_turn + p_same_turn + plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
 ```
 
-```{r coefficient-plot, fig.width=12, fig.height=5}
-slopes_df <- as.data.frame(slopes_by_condition) %>%
-  mutate(
-    ci_lower = predictor_z.trend - 1.96 * SE,
-    ci_upper = predictor_z.trend + 1.96 * SE
-  )
+# Permutation Test on `A_valence ~ condition`
 
-ggplot(slopes_df, aes(x = condition, y = predictor_z.trend, fill = alignment_direction)) +
-  geom_col(position = position_dodge(width = 0.8), width = 0.7, alpha = 0.85) +
-  geom_errorbar(
-    aes(ymin = ci_lower, ymax = ci_upper),
-    position = position_dodge(width = 0.8),
-    width = 0.25
-  ) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-  scale_fill_manual(
-    values = c("Slot 1 → Slot 2" = "#377EB8", "Slot 2(t-1) → Slot 1" = "#FF7F00")
-  ) +
-  labs(
-    title = "Alignment Coefficients by Condition and Direction",
-    subtitle = "Standardized slopes with 95% confidence intervals",
-    x = "Condition",
-    y = "Alignment Coefficient (β)",
-    fill = "Direction"
-  ) +
-  theme(legend.position = "bottom")
+```{r permutation-valence}
+permutation_test_A(df_asym, "A_valence", R = 10000) %>%
+  knitr::kable(
+    digits = 4,
+    caption = "Permutation test on A_valence ~ condition (R = 10,000 story-label permutations)"
+  )
 ```
 
 # Summary
 
 Primary cross-condition result: per-story $A_{\text{valence}} = |\operatorname{atanh}(r_{1\to2,i}) - \operatorname{atanh}(r_{2\to1,i})|$, tested with ANOVA + Kruskal and pairwise BH-adjusted Wilcoxon.
 
-Supplemental views retained:
+Robustness layers added:
 
-- within-condition directional slope LMMs (two pairing rules)
-- full cross-condition LMM with direction \u00d7 condition interactions
-- directional scatterplots
+- bootstrap 95% CIs on per-condition mean of $A_{\text{valence}}$
+- pairwise Cliff's $\delta$ effect sizes
+- planned single-df contrast HA vs (HH+AA)/2
+- 10k story-label permutation test on $A_{\text{valence}} \sim \text{condition}$
+
+The Human-AI signed Human/AI directional decomposition lives in [analysis/human-ai/valence_alignment_analysis.Rmd](../human-ai/valence_alignment_analysis.Rmd) and is not duplicated here.
 
 Deferred to a follow-up pass:
 
 - starter-mechanism analysis (signed, starter-normalized asymmetry across all conditions)
-- Human-AI decomposition (`speaker_type \u00d7 speaker_is_starter` within Human-AI only)
 
 *Analysis completed: `r Sys.time()`*

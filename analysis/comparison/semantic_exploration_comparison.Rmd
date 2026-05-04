@@ -63,10 +63,13 @@ Important comparison note:
 $$A_{\text{semexp}}(i) \;=\; \bigl|\, \mathrm{AUC}_{\text{slot}=1,\,i} - \mathrm{AUC}_{\text{slot}=2,\,i} \,\bigr|.$$
 This is label-invariant and comparable across conditions. The lag-binned LMM slot contrast and the log-distance slope view are retained as supplemental. Starter-mechanism and Human-AI speaker-type decompositions are deferred.
 
+**Article-use note.** The primary claim should come from the per-story AUC asymmetry test. The interleaved-distance model answers a different question: whether the whole story sequence explores semantic space differently by condition, not whether the two contributors are more asymmetric.
+
 # Load Data
 
 ```{r load-data}
 df_combined <- load_exploration_data(c("human-ai", "human-human", "ai-ai")) %>%
+  filter(k > 1) %>%
   prepare_condition_factor(reference = "human-ai") %>%
   filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959", conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225")
 
@@ -235,56 +238,68 @@ if (nrow(df_logk_slopes) > 0) {
 }
 ```
 
-# Supplemental: Lag-Binned Slot Contrast
+# Bootstrap CIs and Effect Sizes on `A_semexp`
 
-```{r speaker-asymmetry}
-speaker_asymmetry_model <- lmer(
-  distance ~ k + slot * condition + (1 | conversation_id),
-  data = df_speaker
-)
-
-cat("Speaker-slot asymmetry model:\n")
-print(summary(speaker_asymmetry_model))
-
-speaker_asymmetry_emm <- emmeans(
-  speaker_asymmetry_model,
-  specs = c("condition", "slot")
-)
-
-speaker_asymmetry <- as.data.frame(pairs(speaker_asymmetry_emm, by = "condition")) %>%
-  transmute(
-    condition,
-    difference = estimate,
-    se = SE,
-    t = t.ratio,
-    p = p.value
-  )
-
-speaker_asymmetry %>%
+```{r boot-effects-semexp}
+bootstrap_condition_means(df_auc_stories, "A_semexp", R = 10000) %>%
   knitr::kable(
     digits = 3,
-    caption = "Speaker-slot asymmetry in semantic exploration by condition"
+    caption = "Bootstrap 95% CI on per-condition mean of A_semexp (R = 10,000)"
+  )
+
+effect_sizes_pairwise(df_auc_stories, "A_semexp") %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Pairwise Cliff's delta on A_semexp"
   )
 ```
 
-```{r speaker-asymmetry-plot, fig.width=10, fig.height=5}
-speaker_asymmetry %>%
-  ggplot(aes(x = condition, y = difference, fill = condition)) +
-  geom_col(width = 0.6, alpha = 0.8) +
-  geom_errorbar(
-    aes(ymin = difference - 1.96 * se, ymax = difference + 1.96 * se),
-    width = 0.2
-  ) +
+# Planned Contrast: HA vs (HH + AA)/2
+
+```{r planned-contrast-semexp}
+planned_contrast_HA_vs_same(df_auc_stories, "A_semexp") %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Planned contrast: A_semexp in HA vs the average of HH and AA"
+  )
+```
+
+# Directional Stability of Signed Semantic-Exploration AUC Asymmetry
+
+Tests whether the *direction* of the slot-1 vs slot-2 AUC difference is
+consistent across stories within each condition. The signed quantity is
+$\text{signed}_i = \mathrm{AUC}_{\text{slot 1},i} - \mathrm{AUC}_{\text{slot 2},i}$.
+
+```{r directional-stability-semexp}
+ds_sem <- directional_stability(df_auc_stories, "signed_diff")
+ds_sem$by_condition %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-condition directional stability of signed AUC asymmetry"
+  )
+
+cat(sprintf(
+  "Brown-Forsythe variance-equality p = %.4f\n", ds_sem$variance_equality_p
+))
+```
+
+```{r directional-stability-semexp-plot, fig.width=9, fig.height=5}
+ggplot(df_auc_stories, aes(x = condition, y = signed_diff, fill = condition)) +
+  geom_violin(alpha = 0.4, colour = NA) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
+  geom_jitter(width = 0.08, alpha = 0.35, size = 0.9) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
   scale_fill_manual(values = condition_colors) +
   labs(
-    title = "Speaker-Slot Asymmetry by Condition",
-    subtitle = "Difference: Slot 1 - Slot 2 (supplemental lag-controlled LMM view).",
+    title = "Signed AUC asymmetry by condition",
+    subtitle = "AUC(slot 1) - AUC(slot 2) per story",
     x = "Condition",
-    y = "Asymmetry in Semantic Distance"
+    y = expression(Delta * AUC)
   ) +
   theme(legend.position = "none")
 ```
+
+# Supplemental: Speaker-Level Slot Trajectories
 
 ```{r speaker-plot, fig.width=12, fig.height=6}
 speaker_summary <- df_speaker %>%
@@ -461,16 +476,21 @@ ggplot(view_summary, aes(x = k, y = mean_distance, color = condition)) +
 
 Primary cross-condition result: per-story $A_{\text{semexp}} = |\mathrm{AUC}_{\text{slot 1}} - \mathrm{AUC}_{\text{slot 2}}|$ from trapezoidal integration of the distance(k) curve over the intersected k range. Tested with ANOVA + Kruskal and pairwise BH-adjusted Wilcoxon. A secondary log-distance-slope asymmetry is reported for dynamic-shape continuity with the paper.
 
+Robustness layers added:
+
+- bootstrap 95% CIs on per-condition mean of $A_{\text{semexp}}$
+- pairwise Cliff's $\delta$ effect sizes
+- planned single-df contrast HA vs (HH+AA)/2
+
 Supplemental views retained:
 
-- lag-controlled slot-contrast LMM (`distance ~ k + slot * condition`)
+- speaker-level slot trajectories (descriptive, both slots side-by-side without signed contrast)
 - interleaved sequence model and condition descriptives
-- within-condition role curves (Human / AI in Human-AI; Starter-side / Non-starter-side in same-type)
+- within-condition role curves (descriptive only; HA Human/AI inferential view lives in [analysis/human-ai/exploration.Rmd](../human-ai/exploration.Rmd))
 - interleaved vs speaker-specific side-by-side view
 
 Deferred to a follow-up pass:
 
 - starter-mechanism analysis (signed, starter-normalized AUC asymmetry across all conditions)
-- Human-AI decomposition (`speaker_type \u00d7 speaker_is_starter` within Human-AI only)
 
 *Analysis completed: `r Sys.time()`*

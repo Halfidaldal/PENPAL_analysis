@@ -1397,56 +1397,56 @@ df_field %>%
 ### 7.1.1 Same-Turn Alignment by Starter (Removed for now)
 ```{r starter-same-turn}
 
-#lmer_valence_time <- lmer(valence ~ turn + (1 | conversation_id), data = df_field_long)
-#print(round(summary(lmer_valence_time)$coefficients, 4))
+lmer_valence_time <- lmer(valence ~ turn + (1 | conversation_id), data = df_field_long)
+print(round(summary(lmer_valence_time)$coefficients, 4))
 
 #Mixed model with starter interaction
-#model_starter_same <- lmer(valence ~ starter + (1 | conversation_id), 
-#                           data = df_field_long)
+model_starter_same <- lmer(valence ~ starter + (1 | conversation_id), 
+                           data = df_field_long)
 
-#cat("=== Same-Turn Alignment: Starter Interaction ===\n")
-#print(round(summary(model_starter_same)$coefficients, 4))
+cat("=== Same-Turn Alignment: Starter Interaction ===\n")
+print(round(summary(model_starter_same)$coefficients, 4))
 ```
 
 ### 7.1.2 Previous-Turn Alignment by Starter (Removed for now)
 ```{r starter-prev-turn}
-# Mixed model with starter interaction
-#df_field_lag <- df_field %>% filter(!is.na(author_2_valence_lag1))
+ #Mixed model with starter interaction
+df_field_lag <- df_field %>% filter(!is.na(author_2_valence_lag1))
 
-#model_starter_prev <- lmer(author_1_valence ~ author_2_valence_lag1 * starter + (1 | conversation_id), 
-#                           data = df_field_lag)
+model_starter_prev <- lmer(author_1_valence ~ author_2_valence_lag1 * starter + (1 | conversation_id), 
+                           data = df_field_lag)
 
-#cat("=== Previous-Turn Alignment: Starter Interaction ===\n")
-#print(round(summary(model_starter_prev)$coefficients, 4))
+cat("=== Previous-Turn Alignment: Starter Interaction ===\n")
+print(round(summary(model_starter_prev)$coefficients, 4))
 ```
 
 ### 7.1.3 Per-Story Correlations by Starter (Removed for now)
 ```{r starter-per-story}
 # Same-turn correlations stratified by starter
-#cor_starter_same <- df_field %>%
-#  filter(!is.na(starter)) %>%
-#  group_by(conversation_id, starter) %>%
-#  filter(n() >= 3) %>%
-#  summarise(
-#    rho = cor(author_1_valence, author_2_valence, use = "complete.obs"),
-#    n_turns = n(),
-#    .groups = "drop"
-#  )
+cor_starter_same <- df_field %>%
+  filter(!is.na(starter)) %>%
+  group_by(conversation_id, starter) %>%
+  filter(n() >= 3) %>%
+  summarise(
+    rho = cor(author_1_valence, author_2_valence, use = "complete.obs"),
+    n_turns = n(),
+    .groups = "drop"
+  )
 
-#cat("=== Same-Turn Correlations by Starter ===\n")
-#cor_starter_same %>%
-#  group_by(starter) %>%
-#  summarise(
-#    mean_rho = mean(rho, na.rm = TRUE),
-#    sd_rho = sd(rho, na.rm = TRUE),
-#    n_stories = n()
-#  ) %>%
-#  print()
+cat("=== Same-Turn Correlations by Starter ===\n")
+cor_starter_same %>%
+  group_by(starter) %>%
+  summarise(
+    mean_rho = mean(rho, na.rm = TRUE),
+    sd_rho = sd(rho, na.rm = TRUE),
+    n_stories = n()
+  ) %>%
+  print()
 
 # Test difference
-#t_test_starter <- t.test(rho ~ starter, data = cor_starter_same)
-#cat("\nT-test (starter effect on same-turn rho):\n")
-#print(t_test_starter)
+t_test_starter <- t.test(rho ~ starter, data = cor_starter_same)
+cat("\nT-test (starter effect on same-turn rho):\n")
+print(t_test_starter)
 ```
 
 
@@ -1456,17 +1456,17 @@ df_field %>%
 
 ### 7.3.1 Valence by Starter
 ```{r valence-starter}
-#df_field %>%
-#  filter(!is.na(starter)) %>%
-#  pivot_longer(cols = c(author_1_valence, author_2_valence),
-#               names_to = "agent", values_to = "valence") %>%
-#  group_by(starter, agent) %>%
-#  summarise(
-#    mean_valence = mean(valence, na.rm = TRUE),
-#    sd_valence = sd(valence, na.rm = TRUE),
-#    .groups = "drop"
-#  ) %>%
-#  print()
+df_field %>%
+  filter(!is.na(starter)) %>%
+  pivot_longer(cols = c(author_1_valence, author_2_valence),
+               names_to = "agent", values_to = "valence") %>%
+  group_by(starter, agent) %>%
+  summarise(
+    mean_valence = mean(valence, na.rm = TRUE),
+    sd_valence = sd(valence, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  print()
 ```
 
 ## 8. Session Information

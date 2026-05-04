@@ -757,7 +757,7 @@ load_novelty_data <- function(conditions = c("human-ai", "human-human", "ai-ai")
   filenames <- c(
     "novelty_scores.csv",
     "novelty_scores_simulated.csv",
-    "novelty_scores_40.csv"
+    "novelty_scores.csv"
   )
 
   all_data <- list()
@@ -888,6 +888,313 @@ get_condition_contrasts <- function(model, spec = "condition") {
   
   emmeans::emmeans(model, specs = spec) %>%
     emmeans::pairs(adjust = "bonferroni")
+}
+
+# =============================================================================
+# Cross-Condition Inference Helpers
+# =============================================================================
+# Helpers for the per-story unsigned dyad-asymmetry magnitude A_m(i).
+# All operate on a long data frame with columns `condition` and a numeric
+# `value_col` (one row per story per metric).
+
+#' Bootstrap CIs on per-condition mean of a per-story asymmetry magnitude
+#'
+#' @param df Data frame with `condition` and the value column.
+#' @param value_col Character name of the value column.
+#' @param R Bootstrap replicates (default 10000).
+#' @param ci Confidence level (default 0.95).
+#' @param seed RNG seed.
+bootstrap_condition_means <- function(df, value_col, R = 10000, ci = 0.95, seed = 42) {
+  set.seed(seed)
+  alpha <- (1 - ci) / 2
+
+  df %>%
+    dplyr::filter(!is.na(.data[[value_col]])) %>%
+    dplyr::group_by(condition) %>%
+    dplyr::group_modify(function(g, key) {
+      x <- g[[value_col]]
+      n <- length(x)
+      if (n < 2) {
+        return(tibble::tibble(
+          n = n, mean = mean(x, na.rm = TRUE),
+          ci_lower = NA_real_, ci_upper = NA_real_
+        ))
+      }
+      boots <- replicate(R, mean(sample(x, n, replace = TRUE)))
+      tibble::tibble(
+        n = n,
+        mean = mean(x),
+        ci_lower = unname(quantile(boots, alpha)),
+        ci_upper = unname(quantile(boots, 1 - alpha))
+      )
+    }) %>%
+    dplyr::ungroup()
+}
+
+#' Pairwise effect sizes (Cliff's delta) between conditions
+#'
+#' Cliff's delta is a non-parametric effect size for two ordinal samples,
+#' bounded in [-1, 1]. Reported alongside KW / Wilcoxon tests.
+#'
+#' @param df Data frame with `condition` and the value column.
+#' @param value_col Character.
+effect_sizes_pairwise <- function(df, value_col) {
+  conds <- levels(df$condition)
+  if (is.null(conds)) conds <- sort(unique(as.character(df$condition)))
+  pairs_df <- utils::combn(conds, 2, simplify = FALSE)
+
+  cliff_delta <- function(x, y) {
+    x <- x[!is.na(x)]; y <- y[!is.na(y)]
+    if (length(x) == 0 || length(y) == 0) return(NA_real_)
+    n_more <- sum(outer(x, y, ">"))
+    n_less <- sum(outer(x, y, "<"))
+    (n_more - n_less) / (length(x) * length(y))
+  }
+
+  purrr::map_dfr(pairs_df, function(p) {
+    a <- df[[value_col]][as.character(df$condition) == p[[1]]]
+    b <- df[[value_col]][as.character(df$condition) == p[[2]]]
+    tibble::tibble(
+      contrast = paste(p[[1]], "vs", p[[2]]),
+      n_a = sum(!is.na(a)),
+      n_b = sum(!is.na(b)),
+      cliff_delta = cliff_delta(a, b),
+      magnitude = dplyr::case_when(
+        is.na(cliff_delta)        ~ NA_character_,
+        abs(cliff_delta) < 0.147  ~ "negligible",
+        abs(cliff_delta) < 0.330  ~ "small",
+        abs(cliff_delta) < 0.474  ~ "medium",
+        TRUE                      ~ "large"
+      )
+    )
+  })
+}
+
+#' Single-df planned contrast: HA vs (HH + AA) / 2
+#'
+#' Tests the article-headline claim that mixed dyads are more asymmetric than
+#' the average of the two same-type conditions. Uses a Welch-style approximation
+#' on the contrast variance.
+#'
+#' @param df Data frame with `condition` and the value column.
+#' @param value_col Character.
+#' @param ha_label Character label for the HA condition (default detects).
+planned_contrast_HA_vs_same <- function(df, value_col,
+                                        ha_label = NULL,
+                                        hh_label = NULL,
+                                        aa_label = NULL) {
+  level_set <- if (is.factor(df$condition)) levels(df$condition) else unique(df$condition)
+  pick <- function(provided, patterns) {
+    if (!is.null(provided)) return(provided)
+    for (p in patterns) {
+      hit <- level_set[grepl(p, level_set, ignore.case = TRUE)]
+      if (length(hit) >= 1) return(hit[[1]])
+    }
+    NA_character_
+  }
+  ha <- pick(ha_label, c("^Human-AI$", "human-ai", "human.?ai"))
+  hh <- pick(hh_label, c("^Human-Human$", "human-human", "human.?human"))
+  aa <- pick(aa_label, c("^AI-AI$", "ai-ai", "ai.?ai"))
+
+  vals <- function(lab) df[[value_col]][as.character(df$condition) == lab]
+  ha_v <- vals(ha); hh_v <- vals(hh); aa_v <- vals(aa)
+
+  m <- function(x) mean(x, na.rm = TRUE)
+  v <- function(x) var(x, na.rm = TRUE)
+  n <- function(x) sum(!is.na(x))
+
+  est <- m(ha_v) - 0.5 * (m(hh_v) + m(aa_v))
+  se <- sqrt(v(ha_v) / n(ha_v) +
+             0.25 * v(hh_v) / n(hh_v) +
+             0.25 * v(aa_v) / n(aa_v))
+  t_stat <- est / se
+  df_welch <- (v(ha_v) / n(ha_v) +
+               0.25 * v(hh_v) / n(hh_v) +
+               0.25 * v(aa_v) / n(aa_v))^2 /
+    ( (v(ha_v) / n(ha_v))^2 / (n(ha_v) - 1) +
+      (0.25 * v(hh_v) / n(hh_v))^2 / (n(hh_v) - 1) +
+      (0.25 * v(aa_v) / n(aa_v))^2 / (n(aa_v) - 1) )
+  p <- 2 * pt(-abs(t_stat), df = df_welch)
+
+  tibble::tibble(
+    contrast = sprintf("%s vs (%s + %s)/2", ha, hh, aa),
+    estimate = est,
+    se = se,
+    t = t_stat,
+    df = df_welch,
+    p = p,
+    ci_lower = est - qt(0.975, df_welch) * se,
+    ci_upper = est + qt(0.975, df_welch) * se
+  )
+}
+
+#' Permutation test for A_m ~ condition
+#'
+#' Permutes `condition` labels at the unit-of-row level (one row per story).
+#' Reports a two-sided p-value based on the F-statistic from a one-way ANOVA
+#' on the per-row asymmetry value.
+#'
+#' @param df Data frame with `condition` and the value column.
+#' @param value_col Character.
+#' @param R Permutation replicates.
+#' @param seed RNG seed.
+permutation_test_A <- function(df, value_col, R = 10000, seed = 42) {
+  set.seed(seed)
+  d <- df[!is.na(df[[value_col]]), c("condition", value_col)]
+  d$condition <- as.factor(d$condition)
+  if (nlevels(d$condition) < 2 || nrow(d) < 4) {
+    return(tibble::tibble(F_obs = NA_real_, p_perm = NA_real_, R = R))
+  }
+
+  f_stat <- function(values, groups) {
+    fit <- aov(values ~ groups)
+    summary(fit)[[1]][["F value"]][1]
+  }
+
+  obs <- f_stat(d[[value_col]], d$condition)
+  null_F <- replicate(R, f_stat(d[[value_col]], sample(d$condition)))
+  p_perm <- (sum(null_F >= obs, na.rm = TRUE) + 1) / (sum(!is.na(null_F)) + 1)
+  tibble::tibble(F_obs = obs, p_perm = p_perm, R = R)
+}
+
+#' Directional stability of a SIGNED per-story asymmetry
+#'
+#' Given a per-story signed slot-difference (e.g., signed Fisher-z difference
+#' for valence; signed slope difference for novelty/semexp), this helper
+#' summarizes whether the signed asymmetry is *consistently in the same
+#' direction* across stories within each condition.
+#'
+#' Reported per condition:
+#'   - n, mean, sd, abs(mean) / sd  (Cohen's-d-style stability index)
+#'   - sign_consistency = max(P(signed > 0), P(signed < 0))
+#'   - one-sample t-test of mean(signed) against 0
+#' Reported across conditions:
+#'   - Brown-Forsythe variance-equality p-value (homogeneity of variances)
+#'
+#' Interpretation: HA-specific identity-tied directionality predicts
+#'   * within-HA: high |mean|/sd, sign_consistency near 1, t-test rejects 0
+#'   * within-HH/AA: |mean|/sd near 0, sign_consistency near 0.5, t-test fails to reject
+#'   * variance-equality test: variances may be similar OR HH/AA larger
+#'
+#' @param df Data frame with `condition` and a numeric signed-difference column.
+#' @param value_col Character.
+directional_stability <- function(df, value_col) {
+  d <- df[!is.na(df[[value_col]]), c("condition", value_col)]
+  if (!nrow(d)) {
+    return(list(by_condition = tibble::tibble(), variance_equality_p = NA_real_))
+  }
+  d$condition <- as.factor(d$condition)
+
+  by_cond <- d %>%
+    dplyr::group_by(condition) %>%
+    dplyr::summarise(
+      n = dplyr::n(),
+      mean = mean(.data[[value_col]]),
+      sd = sd(.data[[value_col]]),
+      stability = abs(mean(.data[[value_col]])) / sd(.data[[value_col]]),
+      sign_consistency = max(
+        mean(.data[[value_col]] > 0, na.rm = TRUE),
+        mean(.data[[value_col]] < 0, na.rm = TRUE)
+      ),
+      one_sample_t_p = tryCatch(
+        t.test(.data[[value_col]])$p.value,
+        error = function(e) NA_real_
+      ),
+      .groups = "drop"
+    )
+
+  bf_p <- if (nlevels(d$condition) >= 2 && nrow(d) >= 6) {
+    tryCatch({
+      med <- ave(d[[value_col]], d$condition, FUN = function(x) median(x, na.rm = TRUE))
+      z <- abs(d[[value_col]] - med)
+      summary(aov(z ~ d$condition))[[1]][["Pr(>F)"]][1]
+    }, error = function(e) NA_real_)
+  } else NA_real_
+
+  list(by_condition = by_cond, variance_equality_p = bf_p)
+}
+
+#' Winsorize a numeric column to upper/lower percentile bounds
+#'
+#' Use on per-turn or per-story metric values before computing per-story A_m
+#' to dampen single-outlier effects. By default clips to the 1st/99th
+#' percentile within each level of `group_col` (typically condition).
+#'
+#' @param df Data frame.
+#' @param value_col Character, numeric column to winsorize.
+#' @param lower Lower percentile in [0,1] (default 0.01).
+#' @param upper Upper percentile in [0,1] (default 0.99).
+#' @param group_col Optional grouping column; if NULL, winsorize globally.
+winsorize_metric <- function(df, value_col, lower = 0.01, upper = 0.99,
+                             group_col = NULL) {
+  clip_one <- function(x) {
+    if (all(is.na(x))) return(x)
+    qs <- stats::quantile(x, probs = c(lower, upper), na.rm = TRUE)
+    pmin(pmax(x, qs[[1]]), qs[[2]])
+  }
+  if (is.null(group_col) || !(group_col %in% names(df))) {
+    df[[value_col]] <- clip_one(df[[value_col]])
+    return(df)
+  }
+  df %>%
+    dplyr::group_by(.data[[group_col]]) %>%
+    dplyr::mutate(!!value_col := clip_one(.data[[value_col]])) %>%
+    dplyr::ungroup()
+}
+
+#' Structural-null permutation test for the rubber-band effect
+#'
+#' Pools all turn-level (slot1, slot2) valence pairs across stories and
+#' conditions, randomly repartitions into pseudo-stories of `story_size`
+#' turns, computes per-pseudo-story R = -beta from gap_change ~ gap_lag1,
+#' and aggregates to a null distribution of mean R. If observed R is inside
+#' this distribution, the rubber-band slope is a structural artifact.
+#'
+#' @param df Long data frame with `author_1_valence` and `author_2_valence`.
+#' @param B Number of permutation replicates (default 1000).
+#' @param story_size Number of turns per pseudo-story (default 10).
+#' @param seed RNG seed.
+#' @return List with `null_means` (length B), `pool_size`, `n_pseudo_stories`.
+null_rubber_band <- function(df, B = 1000, story_size = 10, seed = 42) {
+  set.seed(seed)
+  pool <- df %>%
+    dplyr::select(author_1_valence, author_2_valence) %>%
+    tidyr::drop_na()
+  n_pool <- nrow(pool)
+  n_pseudo_stories <- floor(n_pool / story_size)
+  if (n_pseudo_stories < 5) {
+    stop("Pool too small to construct pseudo-stories of size ", story_size)
+  }
+
+  story_R <- function(slot1, slot2) {
+    gap <- slot1 - slot2
+    gap_lag <- c(NA_real_, gap[-length(gap)])
+    gap_change <- gap - gap_lag
+    ok <- !is.na(gap_lag) & !is.na(gap_change)
+    if (sum(ok) < 4) return(NA_real_)
+    coefs <- tryCatch(coef(lm(gap_change[ok] ~ gap_lag[ok]))[2], error = function(e) NA_real_)
+    -unname(coefs)
+  }
+
+  null_means <- numeric(B)
+  for (b in seq_len(B)) {
+    idx <- sample.int(n_pool)
+    block <- idx[seq_len(n_pseudo_stories * story_size)]
+    story_id <- rep(seq_len(n_pseudo_stories), each = story_size)
+    s1 <- pool$author_1_valence[block]
+    s2 <- pool$author_2_valence[block]
+    R_vals <- vapply(split(seq_along(block), story_id), function(rows) {
+      story_R(s1[rows], s2[rows])
+    }, numeric(1))
+    null_means[b] <- mean(R_vals, na.rm = TRUE)
+  }
+
+  list(
+    null_means = null_means,
+    pool_size = n_pool,
+    n_pseudo_stories = n_pseudo_stories,
+    B = B
+  )
 }
 
 # =============================================================================

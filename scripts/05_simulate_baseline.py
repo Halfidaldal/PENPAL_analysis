@@ -112,7 +112,7 @@ def main():
     n_stories = args.n_stories or sim_config.get('n_stories_per_model', 10)
     n_turns = args.n_turns or sim_config.get('n_turns_per_story', 10)
     temperature = args.temperature or sim_config.get('temperature', 1.0)
-    max_tokens = args.max_tokens or sim_config.get('max_tokens', 35)
+    max_tokens = args.max_tokens or sim_config.get('max_tokens', 40)
     model_configs = sim_config.get('models', [])
     
     if not model_configs:
