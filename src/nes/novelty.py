@@ -145,10 +145,13 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     bos_token_id = tokenizer.bos_token_id
     if bos_token_id is None:
         bos_token_id = tokenizer.eos_token_id
+    bos_ids = [bos_token_id] if bos_token_id is not None else []
     anchor_text = "Speaker:"
     anchor_ids = tokenizer(anchor_text, add_special_tokens=False)["input_ids"]
-    context_buffer = ([bos_token_id] if bos_token_id is not None else []) + anchor_ids    
-    # Initialize context buffer with BOS token to ensure first turn works correctly
+    # base_context = unconditional baseline (BOS + anchor); reused across all turns
+    base_context = bos_ids + anchor_ids
+    # context_buffer grows with story tokens and resets per conversation
+    context_buffer = bos_ids + anchor_ids
 
     
     last_client = None
@@ -160,7 +163,7 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
         
         # Reset context at new session
         if last_client is None or (client is not None and client != last_client):
-            context_buffer = [bos_token_id] if bos_token_id is not None else []
+            context_buffer = bos_ids + anchor_ids
             last_client = client
         
         # Author 1 novelty
