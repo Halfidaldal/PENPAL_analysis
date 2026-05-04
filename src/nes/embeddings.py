@@ -7,6 +7,7 @@ This module handles text embedding using various models:
 """
 
 from typing import List, Optional, Tuple
+import os
 import pandas as pd
 import numpy as np
 import torch
@@ -89,11 +90,69 @@ def _encode_batch_with_fallback(
         return sentence_embeddings.detach().cpu().numpy()
 
 
-def get_device() -> torch.device:
+def get_device(device_name: Optional[str] = None) -> torch.device:
     """Get the appropriate device (CUDA if available, else CPU)."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    requested = device_name or os.environ.get("NES_EMBEDDING_DEVICE")
+    if requested and requested != "auto":
+        device = torch.device(requested)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     return device
+
+
+def _print_cuda_diagnostics() -> None:
+    """Print lightweight CUDA diagnostics for cluster/MIG debugging."""
+    if not torch.cuda.is_available():
+        print("CUDA available: false")
+        return
+
+    print(f"CUDA available: true; torch={torch.__version__}; cuda={torch.version.cuda}")
+    print(f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}")
+    print(f"PYTORCH_NO_CUDA_MEMORY_CACHING={os.environ.get('PYTORCH_NO_CUDA_MEMORY_CACHING', '<unset>')}")
+    try:
+        for idx in range(torch.cuda.device_count()):
+            props = torch.cuda.get_device_properties(idx)
+            total_gib = props.total_memory / 1024**3
+            print(f"cuda:{idx}: {props.name}, capability={props.major}.{props.minor}, memory={total_gib:.2f} GiB")
+    except Exception as e:
+        print(f"[WARNING] Could not read CUDA device properties: {e}")
+
+
+def load_sentence_transformer(
+    model_name: str,
+    *,
+    device: torch.device,
+    tokenizer_kwargs: Optional[dict] = None,
+    allow_cpu_fallback: bool = True,
+) -> Tuple[SentenceTransformer, torch.device]:
+    """Load a SentenceTransformer with a clear CPU fallback for CUDA init failures."""
+    tokenizer_kwargs = tokenizer_kwargs or {}
+    try:
+        return (
+            SentenceTransformer(
+                model_name,
+                trust_remote_code=True,
+                device=str(device),
+                tokenizer_kwargs=tokenizer_kwargs,
+            ),
+            device,
+        )
+    except RuntimeError as e:
+        if device.type != "cuda" or not allow_cpu_fallback:
+            raise
+
+        print(f"[WARNING] Failed to load embedding model on CUDA: {e}")
+        print("[WARNING] Retrying on CPU. To fail instead, set NES_EMBEDDING_CPU_FALLBACK=0.")
+        return (
+            SentenceTransformer(
+                model_name,
+                trust_remote_code=True,
+                device="cpu",
+                tokenizer_kwargs=tokenizer_kwargs,
+            ),
+            torch.device("cpu"),
+        )
 
 
 def compute_embeddings_batch(
@@ -121,7 +180,15 @@ def compute_embeddings_batch(
         device = get_device()
     
     print(f"Loading model: {model_name}")
-    model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device), tokenizer_kwargs={"padding_side": "left", "trust_remote_code": True} if active_dataset=="TEXT" else {})
+    _print_cuda_diagnostics()
+    tokenizer_kwargs = {"padding_side": "left", "trust_remote_code": True} if active_dataset == "TEXT" else {}
+    allow_cpu_fallback = os.environ.get("NES_EMBEDDING_CPU_FALLBACK", "1") != "0"
+    model, device = load_sentence_transformer(
+        model_name,
+        device=device,
+        tokenizer_kwargs=tokenizer_kwargs,
+        allow_cpu_fallback=allow_cpu_fallback,
+    )
     
     texts = _sanitize_text_batch(texts)
     print(f"Computing embeddings for {len(texts)} texts (batch_size={batch_size})...")
@@ -182,8 +249,15 @@ def embed_story_columns(
     # Load model once and reuse for all columns
     device = get_device()
     print(f"Loading model: {model_name}")
+    _print_cuda_diagnostics()
     tokenizer_kwargs = {"padding_side": "left", "trust_remote_code": True} if active_dataset == "TEXT" else {}
-    model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device), tokenizer_kwargs=tokenizer_kwargs)
+    allow_cpu_fallback = os.environ.get("NES_EMBEDDING_CPU_FALLBACK", "1") != "0"
+    model, device = load_sentence_transformer(
+        model_name,
+        device=device,
+        tokenizer_kwargs=tokenizer_kwargs,
+        allow_cpu_fallback=allow_cpu_fallback,
+    )
     
     for col in text_columns:
         if col not in df.columns:

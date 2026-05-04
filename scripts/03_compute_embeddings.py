@@ -16,6 +16,12 @@ Usage:
 import sys
 from pathlib import Path
 import argparse
+import os
+
+# On some MIG-backed CUDA devices, PyTorch's caching allocator can fail while
+# querying NVML before the first batch is encoded. Set this before importing
+# torch via nes.embeddings. Override with PYTORCH_NO_CUDA_MEMORY_CACHING=0.
+os.environ.setdefault("PYTORCH_NO_CUDA_MEMORY_CACHING", "1")
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -25,6 +31,25 @@ from nes.io import load_csv, save_parquet, save_npy, get_project_root, load_conf
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Compute PENPAL story embeddings.")
+    parser.add_argument(
+        "--device",
+        choices=["auto", "cuda", "cpu"],
+        default=os.environ.get("NES_EMBEDDING_DEVICE", "auto"),
+        help="Embedding device. Defaults to CUDA when available unless set to cpu.",
+    )
+    parser.add_argument(
+        "--no-cpu-fallback",
+        action="store_true",
+        help="Fail if CUDA model loading fails instead of retrying on CPU.",
+    )
+    args = parser.parse_args()
+
+    if args.device != "auto":
+        os.environ["NES_EMBEDDING_DEVICE"] = args.device
+    if args.no_cpu_fallback:
+        os.environ["NES_EMBEDDING_CPU_FALLBACK"] = "0"
+
     # Load config
     experiment = get_active_experiment()
     exp_config = get_experiment_config()
