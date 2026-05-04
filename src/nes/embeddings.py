@@ -43,6 +43,74 @@ def _is_float_indices_runtime_error(error: RuntimeError) -> bool:
     )
 
 
+def _is_device_init_runtime_error(error: RuntimeError) -> bool:
+    """Detect common runtime failures while moving models/tensors to an accelerator."""
+    message = str(error).lower()
+    return any(
+        token in message
+        for token in [
+            "nvml_success",
+            "internal assert failed",
+            "cuda error",
+            "cuda driver",
+            "device-side assert",
+            "mps",
+        ]
+    )
+
+
+def _can_use_cuda() -> bool:
+    """Return True only if CUDA reports available and can allocate a small tensor."""
+    if not torch.cuda.is_available():
+        return False
+
+    try:
+        _ = torch.tensor([0.0], device="cuda")
+        torch.cuda.synchronize()
+        return True
+    except RuntimeError as e:
+        print(f"[WARNING] CUDA reported available but failed to initialize: {e}")
+        return False
+
+
+def _load_sentence_transformer_with_fallback(
+    model_name: str,
+    tokenizer_kwargs: Optional[dict] = None,
+    preferred_device: Optional[torch.device] = None,
+) -> Tuple[SentenceTransformer, torch.device]:
+    """Load SentenceTransformer and fall back to CPU if accelerator init fails."""
+    tokenizer_kwargs = tokenizer_kwargs or {}
+
+    if preferred_device is None:
+        preferred_device = get_device()
+
+    candidate_devices = [preferred_device]
+    if preferred_device.type != "cpu":
+        candidate_devices.append(torch.device("cpu"))
+
+    last_error: Optional[RuntimeError] = None
+    for device in candidate_devices:
+        try:
+            model = SentenceTransformer(
+                model_name,
+                trust_remote_code=True,
+                device=str(device),
+                tokenizer_kwargs=tokenizer_kwargs,
+            )
+            if device.type != preferred_device.type:
+                print(f"[WARNING] Falling back to {device} for model inference.")
+            return model, device
+        except RuntimeError as e:
+            last_error = e
+            if _is_device_init_runtime_error(e) and device.type != "cpu":
+                print(f"[WARNING] Failed to load model on {device}: {e}")
+                continue
+            raise
+
+    assert last_error is not None
+    raise last_error
+
+
 def _encode_batch_with_fallback(
     model: SentenceTransformer,
     batch: List[str],
@@ -91,7 +159,12 @@ def _encode_batch_with_fallback(
 
 def get_device() -> torch.device:
     """Get the appropriate device (CUDA if available, else CPU)."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if _can_use_cuda():
+        device = torch.device("cuda")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
     print(f"Using device: {device}")
     return device
 
@@ -121,7 +194,11 @@ def compute_embeddings_batch(
         device = get_device()
     
     print(f"Loading model: {model_name}")
-    model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device), tokenizer_kwargs={"padding_side": "left", "trust_remote_code": True} if active_dataset=="TEXT" else {})
+    model, device = _load_sentence_transformer_with_fallback(
+        model_name=model_name,
+        tokenizer_kwargs={"padding_side": "left", "trust_remote_code": True} if active_dataset == "TEXT" else {},
+        preferred_device=device,
+    )
     
     texts = _sanitize_text_batch(texts)
     print(f"Computing embeddings for {len(texts)} texts (batch_size={batch_size})...")
@@ -183,7 +260,11 @@ def embed_story_columns(
     device = get_device()
     print(f"Loading model: {model_name}")
     tokenizer_kwargs = {"padding_side": "left", "trust_remote_code": True} if active_dataset == "TEXT" else {}
-    model = SentenceTransformer(model_name, trust_remote_code=True, device=str(device), tokenizer_kwargs=tokenizer_kwargs)
+    model, device = _load_sentence_transformer_with_fallback(
+        model_name=model_name,
+        tokenizer_kwargs=tokenizer_kwargs,
+        preferred_device=device,
+    )
     
     for col in text_columns:
         if col not in df.columns:
