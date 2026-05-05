@@ -1,7 +1,7 @@
 # PENPAL Analysis Configuration
 
 # Active experiment: "human-ai", "human-human", or "ai-ai"
-active_experiment: "human-human"
+active_experiment: "ai-ai"
 
 # Experiment-specific configuration
 experiments:
@@ -132,7 +132,7 @@ shared:
   
   # Novelty computation
   novelty:
-    model_name: "meta-llama/Llama-4-Maverick-17B-128E"
+    model_name: "Qwen/Qwen2.5-72B"
     window_size: 40
     task: null
     hf_token: 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
