@@ -91,7 +91,7 @@ df_res_field <- read_csv(here("data/human-ai/processed/novelty_scores.csv")) %>%
     datatype = "Field"
   ) %>%
   drop_na(user, ai) %>%
-  filter(ai_surprise < 0, conversation_id != "conv_0bb56093-3033-4615-bb70-ebfa4135589a", turn > 1)
+  filter(conversation_id != "conv_0bb56093-3033-4615-bb70-ebfa4135589a", turn > 1)
 
 
 ```

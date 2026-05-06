@@ -132,7 +132,7 @@ shared:
   
   # Novelty computation
   novelty:
-    model_name: "Qwen/Qwen2.5-72B"
+    model_name: "google/gemma-4-31B"
     window_size: 40
     task: null
     hf_token: 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

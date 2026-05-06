@@ -1,6 +1,5 @@
 ---
 title: "LLM-Identity Decomposition: Per-Model Asymmetry within HA and AA"
-subtitle: "Does dyad asymmetry depend on which LLM is in the conversation?"
 author: "PENPAL Project"
 date: "`r Sys.Date()`"
 output:
@@ -15,6 +14,10 @@ output:
     toc_depth: 3
     code_folding: hide
     theme: united
+  word_document:
+    toc: true
+    toc_depth: '3'
+subtitle: Does dyad asymmetry depend on which LLM is in the conversation?
 ---
 
 ```{r setup, include=FALSE}
