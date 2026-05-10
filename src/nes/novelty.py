@@ -308,7 +308,7 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
             avg_without, _ = calc_sentence_surprisal(past, future_a1, model, window_size)
 
             # S(F | Past) - S(F | Past + s_t): positive = s_t helped.
-            a1_trans.append(avg_without - avg_with)
+            a1_trans.append(avg_with - avg_without)
             a1_with.append(avg_with)
             a1_without.append(avg_without)
         else:
