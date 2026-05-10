@@ -70,7 +70,7 @@ extracted via `emtrends`. Per-story OLS slope differences provide a label-invari
 df_raw <- load_novelty_data(c("human-ai", "human-human", "ai-ai")) %>%
   filter_complete_exchange_window() %>%
   filter(turn_index > 1) %>%
-  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959", conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225")
+  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959", conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225", conversation_id != "conv_0bb56093-3033-4615-bb70-ebfa4135589a", conversation_id != "conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256", conversation_id != "conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80", conversation_id != "conv_7c23347e-6172-4c84-9fd0-45ef34290bd5")
 
 df_raw %>%
   group_by(condition) %>%
