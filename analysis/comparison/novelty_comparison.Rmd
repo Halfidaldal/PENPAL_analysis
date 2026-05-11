@@ -69,7 +69,6 @@ extracted via `emtrends`. Per-story OLS slope differences provide a label-invari
 ```{r load-data}
 df_raw <- load_novelty_data(c("human-ai", "human-human", "ai-ai")) %>%
   filter_complete_exchange_window() %>%
-  filter(turn_index > 1) %>%
   filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959", conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225", conversation_id != "conv_0bb56093-3033-4615-bb70-ebfa4135589a", conversation_id != "conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256", conversation_id != "conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80", conversation_id != "conv_7c23347e-6172-4c84-9fd0-45ef34290bd5")
 
 df_raw %>%
@@ -205,27 +204,6 @@ slope_results %>%
 stopifnot(all(slope_results$A_influence >= 0))
 ```
 
-```{r primary-slope-interaction-plot, fig.width=9, fig.height=5}
-if (nrow(slope_results) > 0) {
-  slope_results %>%
-    mutate(
-      ci_lower = A_influence - 1.96 * se,
-      ci_upper = A_influence + 1.96 * se
-    ) %>%
-    ggplot(aes(x = condition, y = A_influence, fill = condition)) +
-    geom_col(width = 0.6, alpha = 0.85) +
-    geom_errorbar(aes(ymin = pmax(ci_lower, 0), ymax = ci_upper), width = 0.18) +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-    scale_fill_manual(values = condition_colors) +
-    labs(
-      title = "A_influence by condition",
-      subtitle = "|slope(resonance~surprise) diff between slot 1 and slot 2| (LMM, story random intercept)",
-      x = "Condition",
-      y = expression("|" * Delta * beta * "|")
-    ) +
-    theme(legend.position = "none")
-}
-```
 
 ```{r primary-cross-condition-slope-test}
 # Pooled LMM in the same shape as the per-condition fits, used here only to
