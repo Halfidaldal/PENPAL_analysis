@@ -1,0 +1,17 @@
+# Fdb version 4
+["pdflatex"] 1778486861.62253 "Paper/NLP4DH.tex" "NLP4DH.pdf" "NLP4DH" 1778486861.82767 2
+  "/usr/local/texlive/2024/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
+  "/usr/local/texlive/2024/texmf-dist/fonts/tfm/public/cm/cmr10.tfm" 1136768653 1296 45809c5a464d5f32c8f98ba97c1bb47f ""
+  "/usr/local/texlive/2024/texmf-dist/tex/latex/base/article.cls" 1705352648 20144 147463a6a579f4597269ef9565205cfe ""
+  "/usr/local/texlive/2024/texmf-dist/tex/latex/base/size11.clo" 1705352648 8464 59874a3b0776c73e2a138b025d8473dd ""
+  "/usr/local/texlive/2024/texmf-dist/web2c/texmf.cnf" 1708706663 41649 5d6ae549fbbcb850a863f69aa41f3d10 ""
+  "/usr/local/texlive/2024/texmf-var/web2c/pdftex/pdflatex.fmt" 1734306301 8221428 6622c8c205a4ea610d615e87be95112f ""
+  "/usr/local/texlive/2024/texmf.cnf" 1710266656 577 e590dabc9e28c5b61546e15f63eebcdf ""
+  "NLP4DH.aux" 1778486861.62212 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
+  "Paper/NLP4DH.tex" 1778486839.36558 48128 bf1676012687c79361d9957139bbe4b9 ""
+  "acl.sty" 0 -1 0 ""
+  (generated)
+  "NLP4DH.aux"
+  "NLP4DH.log"
+  "NLP4DH.pdf"
+  (rewritten before read)

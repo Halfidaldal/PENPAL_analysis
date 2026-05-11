@@ -809,13 +809,13 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
     
     Args:
         df: DataFrame with author_1, author_2, conversation_id columns
-        experiment: Experiment type (unused after standardization, kept for API compatibility)
+        experiment: Experiment type, used as a fallback when no condition column is present
         
     Returns:
         DataFrame grouped by conversation_id with concatenated text columns
     """
     group_col = 'conversation_id'
-    
+
     # Validate columns
     if 'author_1' not in df.columns:
         raise ValueError("Expected 'author_1' column in DataFrame")
@@ -840,62 +840,70 @@ def build_full_story_text(df: pd.DataFrame, experiment: str = "human-ai") -> pd.
             f"{text}." for text in series.map(_normalize_story_text).tolist() if text
         )
 
-    # Group by conversation and concatenate
-    agg_dict = {
-        'author_1': _concat_series,
-        'author_2': _concat_series,
-    }
-    # Add metadata columns if present
-    for col in ['condition', 'language', 'client_id', 'workshop_id', 'timestamp', 
-                'respondent_id', 'respondent_id_u1', 'respondent_id_u2',
-                'source_conversation_id',
-                'interaction_count', 'starter', 'starter_side', 'starter_type',
-                'author_1_type', 'author_2_type', 'llm_type', 'model_id', 'turn']:
-        if col in df.columns:
-            agg_dict[col] = 'first'
-    
-    story_df = df.groupby(group_col).agg(agg_dict).reset_index()
-    
-    # Padded versions for parsing textdescriptives
-    story_df['full_author_1_dot'] = df.groupby(group_col)['author_1'].apply(
-        _concat_series_with_period
-    ).values
-    story_df['full_author_2_dot'] = df.groupby(group_col)['author_2'].apply(
-        _concat_series_with_period
-    ).values
+    sort_columns = [group_col]
+    if 'turn' in df.columns:
+        sort_columns.append('turn')
+    elif 'interaction_count' in df.columns:
+        sort_columns.append('interaction_count')
+    if 'timestamp' in df.columns:
+        sort_columns.append('timestamp')
 
-    # Rename columns to full_ prefix
-    story_df = story_df.rename(columns={
-        'author_1': 'full_author_1',
-        'author_2': 'full_author_2',
-    })
-    
-    # Build full_story by interleaving
-    def build_story(row):
-        group_val = row['conversation_id']
-        mask = df['conversation_id'] == group_val
-        starter = row.get('starter', 'author_1')
+    ordered_df = df.sort_values(sort_columns, kind='stable').copy()
 
-        author1s = df[mask]['author_1'].map(_normalize_story_text).tolist()
-        author2s = df[mask]['author_2'].map(_normalize_story_text).tolist()
-        parts = []
+    metadata_columns = [
+        'condition', 'language', 'client_id', 'workshop_id', 'timestamp',
+        'respondent_id', 'respondent_id_u1', 'respondent_id_u2',
+        'source_conversation_id',
+        'interaction_count', 'starter', 'starter_side', 'starter_type',
+        'author_1_type', 'author_2_type', 'llm_type', 'model_id', 'turn'
+    ]
+
+    def _row_slot_order(row: pd.Series) -> List[str]:
+        condition = row.get('condition', experiment)
+        condition = str(condition) if not pd.isna(condition) else experiment
+        starter = row.get('starter_side', row.get('starter', 'author_1'))
+
+        # Human-AI rows are stored as human input -> AI response for every
+        # complete exchange. If the AI starts, the primer is an incomplete row
+        # with only author_2 populated; appending non-empty slots in this order
+        # still preserves chronology.
+        if condition == 'human-ai':
+            return ['author_1', 'author_2']
 
         if starter == 'author_2':
-            ordered_pairs = zip(author2s, author1s)
-        else:
-            ordered_pairs = zip(author1s, author2s)
+            return ['author_2', 'author_1']
+        return ['author_1', 'author_2']
 
-        for first, second in ordered_pairs:
-            if first:
-                parts.append(first)
-            if second:
-                parts.append(second)
+    def _build_chronological_story(grp: pd.DataFrame) -> str:
+        parts = []
+        for _, row in grp.iterrows():
+            for slot in _row_slot_order(row):
+                text = _normalize_story_text(row[slot])
+                if text:
+                    parts.append(text)
         return ' '.join(parts)
-    
-    story_df['full_story'] = story_df.apply(build_story, axis=1)
-    
+
+    records = []
+    for conversation_id, grp in ordered_df.groupby(group_col, sort=False):
+        record = {
+            group_col: conversation_id,
+            'full_author_1': _concat_series(grp['author_1']),
+            'full_author_2': _concat_series(grp['author_2']),
+        }
+
+        for col in metadata_columns:
+            if col in grp.columns:
+                record[col] = grp[col].iloc[0]
+
+        record['full_author_1_dot'] = _concat_series_with_period(grp['author_1'])
+        record['full_author_2_dot'] = _concat_series_with_period(grp['author_2'])
+        record['full_story'] = _build_chronological_story(grp)
+        records.append(record)
+
+    story_df = pd.DataFrame.from_records(records)
+
     print(f"Built full story text for {len(story_df)} stories")
-    
+
     return story_df
 
 
@@ -1122,30 +1130,33 @@ def add_exchange_aligned_metadata(
     author_2_substantive = _is_substantive_text(df['author_2'], min_substantive_chars=min_substantive_chars)
     df['complete_exchange'] = author_1_substantive & author_2_substantive
 
-    # Option A: symmetrize starter handling.
+    # Symmetric opener handling across conditions.
     #
-    # When the AI starts a story (starter_side == 'author_2'), the AI primer is
-    # encoded as an incomplete row (author_1 is empty), so it is already excluded
-    # from analysis_turn by virtue of complete_exchange == False.
+    # The opener of a story (its first chronological turn) has no prior dialog
+    # context, so any context-dependent metric is structurally degenerate on
+    # that turn. To remove this confound:
     #
-    # When the user starts a story (starter_side == 'author_1'), the first row
-    # is encoded as a complete exchange that pairs the user's opening with the
-    # AI's first response. The user's opening, however, has no prior context
-    # within the dialog, so any context-dependent metric (e.g., surprisal-based
-    # novelty) is structurally zero on that slot. To match the treatment of the
-    # AI primer in AI-starter stories, the first complete row of every
-    # user-starter story is marked as pre-exchange (analysis_turn = NA). The
-    # row itself is preserved (complete_exchange remains True), but it falls
-    # outside the analysis window the same way the AI primer does.
+    #   - In HA when the AI starts, the AI primer is already isolated in an
+    #     incomplete row (author_1 is empty), so it is excluded via
+    #     complete_exchange == False.
+    #   - In HA human-starter, HH, and AA, the opener is part of the first
+    #     complete row (turn == 1). That whole row is marked pre-exchange
+    #     (analysis_turn = NA). The row is preserved; it just falls outside
+    #     the analysis window.
+    #
+    # The previous implementation restricted this to starter_side == 'author_1',
+    # which silently left the first complete row included for HH/AA stories
+    # randomized to starter_side == 'author_2'. That created an asymmetry across
+    # the randomization arm: starter='author_2' stories carried one extra early
+    # row through the analysis_turn window relative to starter='author_1'
+    # stories, on top of the chronology mis-handling those rows received in
+    # novelty/transience scoring.
     ordered = df.sort_values([group_col, 'turn'], kind='stable').copy()
-    ordered['_complete_idx'] = ordered.groupby(group_col)['complete_exchange'].cumsum()
-    pre_exchange_user_starter = (
-        ordered['starter_side'].eq('author_1')
-        & ordered['complete_exchange']
-        & ordered['_complete_idx'].eq(1)
+    pre_exchange_opener_row = (
+        ordered['turn'].eq(1) & ordered['complete_exchange']
     )
     ordered['_contextualized_exchange'] = (
-        ordered['complete_exchange'] & ~pre_exchange_user_starter
+        ordered['complete_exchange'] & ~pre_exchange_opener_row
     )
 
     ordered['analysis_turn'] = (
@@ -1155,14 +1166,13 @@ def add_exchange_aligned_metadata(
     )
     df['analysis_turn'] = ordered.sort_index()['analysis_turn']
 
-    n_user_starter_first = int(pre_exchange_user_starter.sum())
+    n_opener_rows = int(pre_exchange_opener_row.sum())
     complete_count = int(df['complete_exchange'].sum())
     incomplete_count = int((~df['complete_exchange']).sum())
     print(
         "Exchange alignment metadata added: "
         f"{complete_count} complete exchanges, {incomplete_count} incomplete rows, "
-        f"{n_user_starter_first} user-starter first turns marked as pre-exchange "
-        "(analysis_turn=NA)"
+        f"{n_opener_rows} opener rows marked as pre-exchange (analysis_turn=NA)"
     )
 
     return df

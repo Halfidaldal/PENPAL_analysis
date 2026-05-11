@@ -245,6 +245,15 @@ attach_interaction_metadata <- function(df, condition = NULL) {
     left_join(metadata_join, by = join_keys, suffix = c("", ".meta"))
 
   meta_suffix_cols <- names(df_joined)[str_detect(names(df_joined), "\\.meta$")]
+  prefer_current_metadata <- c(
+    "analysis_turn",
+    "complete_exchange",
+    "starter",
+    "starter_side",
+    "starter_type",
+    "author_1_type",
+    "author_2_type"
+  )
 
   for (meta_col in meta_suffix_cols) {
     base_col <- str_remove(meta_col, "\\.meta$")
@@ -255,7 +264,11 @@ attach_interaction_metadata <- function(df, condition = NULL) {
       )
 
       if (!is.null(cast_meta)) {
-        df_joined[[base_col]] <- dplyr::coalesce(df_joined[[base_col]], cast_meta)
+        if (base_col %in% prefer_current_metadata) {
+          df_joined[[base_col]] <- dplyr::coalesce(cast_meta, df_joined[[base_col]])
+        } else {
+          df_joined[[base_col]] <- dplyr::coalesce(df_joined[[base_col]], cast_meta)
+        }
       }
     } else {
       df_joined[[base_col]] <- df_joined[[meta_col]]
@@ -388,6 +401,36 @@ add_turn_index <- function(df) {
     return(df %>% mutate(turn_index = suppressWarnings(as.numeric(interaction_count))))
   }
   df
+}
+
+add_chronological_valence <- function(df) {
+  required <- c("condition", "starter_side", "author_1_valence", "author_2_valence")
+  missing <- setdiff(required, names(df))
+  if (length(missing) > 0) {
+    stop("Missing required columns for chronological valence alignment: ",
+         paste(missing, collapse = ", "))
+  }
+
+  df %>%
+    mutate(
+      condition_id = normalize_condition_id(as.character(condition)),
+      chronological_first_slot = case_when(
+        condition_id == "human-ai" ~ "author_1",
+        starter_side == "author_2" ~ "author_2",
+        TRUE ~ "author_1"
+      ),
+      first_valence = if_else(
+        chronological_first_slot == "author_1",
+        author_1_valence,
+        author_2_valence
+      ),
+      second_valence = if_else(
+        chronological_first_slot == "author_1",
+        author_2_valence,
+        author_1_valence
+      )
+    ) %>%
+    select(-condition_id)
 }
 
 filter_complete_exchange_window <- function(df, min_analysis_turn = 1, max_analysis_turn = 9) {

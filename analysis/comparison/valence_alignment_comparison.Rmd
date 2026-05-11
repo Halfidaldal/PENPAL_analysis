@@ -57,10 +57,10 @@ Important structural note:
 The analysis window is restricted to **complete exchanges** and the default aligned turn range (`analysis_turn` 1 to 9).
 
 **Primary cross-condition object.** Each story contributes one unsigned, label-invariant dyad asymmetry magnitude:
-$$A_{\text{valence}}(i) \;=\; \bigl|\, \operatorname{atanh}(r_{1\to 2,i}) - \operatorname{atanh}(r_{2\to 1,i}) \,\bigr|$$
-where $r_{1\to 2,i}$ is the per-story Pearson correlation between same-turn slot 1 and slot 2 valence, and $r_{2\to 1,i}$ is the correlation between slot 2's previous-turn valence and slot 1's current-turn valence. The main question is whether $A_{\text{valence}}$ differs across conditions. The directional-slope LMMs are retained as supplemental views. Starter-mechanism and Human-AI speaker-type decompositions are deferred to a follow-up pass.
+$$A_{\text{valence}}(i) \;=\; \bigl|\, \operatorname{atanh}(r_{\text{first}\to \text{second},i}) - \operatorname{atanh}(r_{\text{second}\to \text{first},i}) \,\bigr|$$
+where $r_{\text{first}\to \text{second},i}$ is the per-story Pearson correlation between same-row chronological first and second turns, and $r_{\text{second}\to \text{first},i}$ is the correlation between the previous row's chronological second turn and the current row's chronological first turn. The main question is whether $A_{\text{valence}}$ differs across conditions. The directional-slope LMMs are retained as supplemental views. Starter-mechanism and Human-AI speaker-type decompositions are deferred to a follow-up pass.
 
-**Article-use note.** The primary cross-condition claim should use the unsigned per-story $A_{\text{valence}}$ test below. Signed directional slot models are diagnostic only: in Human-Human and AI-AI, Slot 1 / Slot 2 are positional labels rather than theoretically meaningful agent identities.
+**Article-use note.** The primary cross-condition claim should use the unsigned per-story $A_{\text{valence}}$ test below. Signed directional models are diagnostic only: in Human-Human and AI-AI, chronological first / second tracks starter-side ordering rather than theoretically meaningful agent identities.
 
 # Load Data
 
@@ -71,6 +71,7 @@ print(check_data_availability())
 df_combined <- load_valence_data(c("human-ai", "human-human", "ai-ai")) %>%
   filter_complete_exchange_window() %>%
   prepare_condition_factor(reference = "human-ai") %>%
+  add_chronological_valence() %>%
   filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959", conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225", conversation_id != "conv_0bb56093-3033-4615-bb70-ebfa4135589a", conversation_id != "conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256", conversation_id != "conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80", conversation_id != "conv_7c23347e-6172-4c84-9fd0-45ef34290bd5")
 
 df_combined %>%
@@ -94,14 +95,12 @@ df_analysis <- df_combined %>%
   group_by(conversation_id, condition) %>%
   arrange(turn_index, .by_group = TRUE) %>%
   mutate(
-    author_1_valence_lag1 = lag(author_1_valence),
-    author_2_valence_lag1 = lag(author_2_valence)
+    second_valence_lag1 = lag(second_valence)
   ) %>%
   ungroup() %>%
   filter(turn_index > 1) %>%
   drop_na(
-    author_1_valence, author_2_valence,
-    author_1_valence_lag1, author_2_valence_lag1
+    first_valence, second_valence, second_valence_lag1
   )
 
 df_alignment_long <- bind_rows(
@@ -110,25 +109,25 @@ df_alignment_long <- bind_rows(
       conversation_id,
       condition,
       turn_index,
-      alignment_direction = "slot1_to_slot2",
-      predictor_valence = author_1_valence,
-      response_valence = author_2_valence
+      alignment_direction = "first_to_second",
+      predictor_valence = first_valence,
+      response_valence = second_valence
     ),
   df_analysis %>%
     transmute(
       conversation_id,
       condition,
       turn_index,
-      alignment_direction = "slot2_to_slot1",
-      predictor_valence = author_2_valence_lag1,
-      response_valence = author_1_valence
+      alignment_direction = "second_to_first",
+      predictor_valence = second_valence_lag1,
+      response_valence = first_valence
     )
 ) %>%
   mutate(
     alignment_direction = factor(
       alignment_direction,
-      levels = c("slot1_to_slot2", "slot2_to_slot1"),
-      labels = c("Slot 1 → Slot 2", "Slot 2(t-1) → Slot 1")
+      levels = c("first_to_second", "second_to_first"),
+      labels = c("First → Second", "Second(t-1) → First")
     )
   )
 
@@ -190,7 +189,7 @@ p_slot1 + p_slot2 + plot_layout(guides = "collect")
 min_pairs <- 3
 
 df_r12 <- df_alignment_long %>%
-  filter(alignment_direction == "Slot 1 \u2192 Slot 2") %>%
+  filter(alignment_direction == "First \u2192 Second") %>%
   group_by(conversation_id, condition) %>%
   summarise(
     n_pairs = sum(!is.na(predictor_valence) & !is.na(response_valence)),
@@ -204,7 +203,7 @@ df_r12 <- df_alignment_long %>%
   transmute(conversation_id, condition, n_pairs_12 = n_pairs, r_12 = r)
 
 df_r21 <- df_alignment_long %>%
-  filter(alignment_direction == "Slot 2(t-1) \u2192 Slot 1") %>%
+  filter(alignment_direction == "Second(t-1) \u2192 First") %>%
   group_by(conversation_id, condition) %>%
   summarise(
     n_pairs = sum(!is.na(predictor_valence) & !is.na(response_valence)),
@@ -278,7 +277,7 @@ ggplot(df_asym, aes(x = condition, y = A_valence, fill = condition)) +
   scale_fill_manual(values = condition_colors) +
   labs(
     title = "Per-story valence alignment asymmetry by condition",
-    subtitle = "A_valence(i) = |atanh(r_{1\u21922,i}) - atanh(r_{2\u21921,i})|",
+    subtitle = "A_valence(i) = |atanh(r_first_to_second) - atanh(r_second_to_first)|",
     x = "Condition",
     y = expression("|" * Delta * z * "|")
   ) +
@@ -314,9 +313,9 @@ planned_contrast_HA_vs_same(df_asym, "A_valence") %>%
 
 # Directional Stability of Signed Valence Asymmetry
 
-Tests whether the *direction* of the slot-1 vs slot-2 alignment difference is
+Tests whether the *direction* of the chronological first vs second alignment difference is
 consistent across stories within each condition. The signed quantity is
-$\text{signed}_i = \operatorname{atanh}(r_{1\to 2,i}) - \operatorname{atanh}(r_{2\to 1,i})$.
+$\text{signed}_i = \operatorname{atanh}(r_{\text{first}\to \text{second},i}) - \operatorname{atanh}(r_{\text{second}\to \text{first},i})$.
 HA-specific identity-tied directionality predicts high `stability` and
 `sign_consistency` in HA, low in HH and AA, even when unsigned `A_valence`
 is similar.
@@ -343,7 +342,7 @@ ggplot(df_asym, aes(x = condition, y = signed_z_diff, fill = condition)) +
   scale_fill_manual(values = condition_colors) +
   labs(
     title = "Signed valence-asymmetry direction by condition",
-    subtitle = "atanh(r_{1→2}) - atanh(r_{2→1}); positive = slot 1 leads",
+    subtitle = "atanh(r_first_to_second) - atanh(r_second_to_first)",
     x = "Condition",
     y = expression(Delta * z)
   ) +
@@ -362,7 +361,7 @@ permutation_test_A(df_asym, "A_valence", R = 10000) %>%
 
 # Summary
 
-Primary cross-condition result: per-story $A_{\text{valence}} = |\operatorname{atanh}(r_{1\to2,i}) - \operatorname{atanh}(r_{2\to1,i})|$, tested with ANOVA + Kruskal and pairwise BH-adjusted Wilcoxon.
+Primary cross-condition result: per-story $A_{\text{valence}} = |\operatorname{atanh}(r_{\text{first}\to\text{second},i}) - \operatorname{atanh}(r_{\text{second}\to\text{first},i})|$, tested with ANOVA + Kruskal and pairwise BH-adjusted Wilcoxon.
 
 Robustness layers added:
 

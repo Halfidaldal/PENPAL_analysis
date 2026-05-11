@@ -104,25 +104,64 @@ def calc_sentence_surprisal(context_ids, target_ids, model, window_size=None):
     return avg_nll, total_nll
 
 
+def _row_chronological_slot_order(row, has_condition, has_starter):
+    """
+    Chronological order of the two slots within a single row.
+
+    The dataframe stores each interaction as a (author_1, author_2) pair, but
+    the chronological order of those two slots within a row is not always
+    author_1 -> author_2:
+
+    - In `human-ai`, every complete row pairs (human input, AI reply) with
+      the human in slot author_1, so chronological order is always
+      author_1 -> author_2. (AI primers in AI-starter stories live in
+      incomplete rows that are excluded via complete_exchange == False.)
+    - In `human-human` and `ai-ai`, `randomize_author_assignment` swaps the
+      column labels for ~50% of stories; for those stories starter_side
+      becomes 'author_2' and every row is chronologically author_2 -> author_1.
+      Stories left unswapped keep starter_side == 'author_1' and chronology
+      author_1 -> author_2.
+
+    Returns the tuple of slot names in chronological order.
+    """
+    condition = row.get("condition") if has_condition else None
+    starter = row.get("starter_side") if has_starter else None
+    if condition == "human-ai":
+        return ("author_1", "author_2")
+    if starter == "author_2":
+        return ("author_2", "author_1")
+    return ("author_1", "author_2")
+
+
 def compute_novelty_scores(df, tokenizer, model, window_size=128):
     """
     Compute novelty (surprise) scores for author_1 and author_2 utterances.
-    
+
     Uses standardized column names: author_1, author_2.
-    
+
     Novelty = how surprising this utterance is given prior context.
-    
+
+    Within each row the two slots are scored in chronological order, derived
+    from `condition` and `starter_side` (see
+    `_row_chronological_slot_order`). Treating slot order as chronological
+    order silently mis-aligned the context buffer against the actual prior
+    dialog for HH/AA stories randomized to starter_side == 'author_2', so
+    half of HH and half of AA were scored against the wrong past. Scoring
+    in chronological order is required for the per-slot surprise values to
+    be comparable across conditions.
+
     Parameters
     ----------
     df : pd.DataFrame
-        Input dataframe with author_1 and author_2 text columns
+        Input dataframe with author_1 and author_2 text columns (and ideally
+        `condition` and `starter_side` so chronology can be derived).
     tokenizer : transformers.PreTrainedTokenizer
         Tokenizer
     model : transformers.PreTrainedModel
         Causal language model
     window_size : int
         Context window size
-        
+
     Returns
     -------
     pd.DataFrame
@@ -140,7 +179,7 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
 
     df["author_1_ids"] = author_1_text.apply(lambda txt: _tokenize_metric_text(txt, tokenizer))
     df["author_2_ids"] = author_2_text.apply(lambda txt: _tokenize_metric_text(txt, tokenizer))
-    
+
     # Identify a safe start token for unconditional probability
     bos_token_id = tokenizer.bos_token_id
     if bos_token_id is None:
@@ -153,56 +192,58 @@ def compute_novelty_scores(df, tokenizer, model, window_size=128):
     # context_buffer grows with story tokens and resets per conversation
     context_buffer = bos_ids + anchor_ids
 
-    
+    has_condition = "condition" in df.columns
+    has_starter = "starter_side" in df.columns
+
     last_client = None
     author_1_novelty, author_1_raw, author_1_entropy = [], [], []
     author_2_novelty, author_2_raw, author_2_entropy = [], [], []
-    
+
     for pos, (_, row) in enumerate(tqdm(df.iterrows(), total=len(df), desc="Computing novelty")):
         client = row.get("conversation_id", None)
-        
+
         # Reset context at new session
         if last_client is None or (client is not None and client != last_client):
             context_buffer = bos_ids + anchor_ids
             last_client = client
-        
-        # Author 1 novelty
-        a1_ids = row["author_1_ids"]
-        if author_1_has_text.iloc[pos] and a1_ids:
-            avg_s, total_s = calc_sentence_surprisal(context_buffer, a1_ids, model, window_size)
-            avg_base, _ = calc_sentence_surprisal(base_context, a1_ids, model, window_size)
-            author_1_raw.append(avg_s)
-            author_1_novelty.append(avg_s - avg_base)
-            author_1_entropy.append(total_s)
-            context_buffer.extend(a1_ids)
-        else:
-            author_1_raw.append(np.nan)
-            author_1_novelty.append(np.nan)
-            author_1_entropy.append(np.nan)
-        
-        # Author 2 novelty
-        a2_ids = row["author_2_ids"]
-        if author_2_has_text.iloc[pos] and a2_ids:
-            avg_a, total_a = calc_sentence_surprisal(context_buffer, a2_ids, model, window_size)
-            avg_base_a, _ = calc_sentence_surprisal(base_context, a2_ids, model, window_size)
-            author_2_raw.append(avg_a)
-            author_2_novelty.append(avg_a - avg_base_a)
-            author_2_entropy.append(total_a)
-            context_buffer.extend(a2_ids)
-        else:
-            author_2_raw.append(np.nan)
-            author_2_novelty.append(np.nan)
-            author_2_entropy.append(np.nan)
-    
-    # Use standardized column names
+
+        slot_order = _row_chronological_slot_order(row, has_condition, has_starter)
+
+        row_results = {
+            "author_1": (np.nan, np.nan, np.nan),
+            "author_2": (np.nan, np.nan, np.nan),
+        }
+
+        for slot in slot_order:
+            slot_ids = row[f"{slot}_ids"]
+            slot_has_text = (
+                author_1_has_text.iloc[pos]
+                if slot == "author_1"
+                else author_2_has_text.iloc[pos]
+            )
+            if slot_has_text and slot_ids:
+                avg_s, total_s = calc_sentence_surprisal(context_buffer, slot_ids, model, window_size)
+                avg_base, _ = calc_sentence_surprisal(base_context, slot_ids, model, window_size)
+                row_results[slot] = (avg_s - avg_base, avg_s, total_s)
+                context_buffer.extend(slot_ids)
+
+        a1_novelty, a1_raw, a1_total = row_results["author_1"]
+        a2_novelty, a2_raw, a2_total = row_results["author_2"]
+        author_1_novelty.append(a1_novelty)
+        author_1_raw.append(a1_raw)
+        author_1_entropy.append(a1_total)
+        author_2_novelty.append(a2_novelty)
+        author_2_raw.append(a2_raw)
+        author_2_entropy.append(a2_total)
+
     df["author_1_surprise"] = author_1_novelty
     df["author_2_surprise"] = author_2_novelty
     df["author_1_surprise_raw"] = author_1_raw
     df["author_2_surprise_raw"] = author_2_raw
-    
+
     df["author_1_entropy"] = author_1_entropy
     df["author_2_entropy"] = author_2_entropy
-    
+
     return df
 
 
@@ -211,16 +252,17 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
     Compute transience scores for author_1 and author_2 utterances using a
     counterfactual / ablation formulation:
 
-        Transience_t = S(Future | Past) - S(Future | Past + s_t)
+        Transience_t = S(Future | Past + s_t) - S(Future | Past)
 
-    Interpretation: how much does s_t help predict the immediate next turn,
-    *over and above* the past context already shared. Positive values mean
-    s_t added predictive value beyond the past; values near zero mean the
-    past alone was already as informative as past + s_t.
+    This preserves the existing sign convention used downstream. Negative
+    values mean s_t made the immediate next turn less surprising than the past
+    alone; values near zero mean the past alone was already as informative as
+    past + s_t.
 
-    For author_1 turns, the future is the paired author_2 response (same row).
-    For author_2 turns, the future is the next row's author_1 response in the
-    same conversation.
+    The future is the immediate next chronological turn, not necessarily the
+    other slot in author_1 -> author_2 order. In HH/AA stories randomized to
+    starter_side == 'author_2', each row is chronological author_2 -> author_1;
+    in HA complete exchanges remain author_1 -> author_2.
 
     Parameters
     ----------
@@ -271,14 +313,25 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
     context_buffer = list(base_context)
     last_client = None
 
-    def _gather_next_author_1_ids(pos, frame, current_conversation_id):
+    has_condition = "condition" in df.columns
+    has_starter = "starter_side" in df.columns
+
+    def _slot_has_text(slot, pos):
+        return author_1_has_text.iloc[pos] if slot == "author_1" else author_2_has_text.iloc[pos]
+
+    def _gather_immediate_future_ids(pos, frame, current_conversation_id, slot, slot_order):
+        slot_index = slot_order.index(slot)
+        if slot_index + 1 < len(slot_order):
+            return frame.iloc[pos][f"{slot_order[slot_index + 1]}_ids"]
+
         next_pos = pos + 1
         if next_pos >= len(frame):
             return []
         next_row = frame.iloc[next_pos]
         if next_row.get("conversation_id", None) != current_conversation_id:
             return []
-        return next_row["author_1_ids"]
+        next_slot = _row_chronological_slot_order(next_row, has_condition, has_starter)[0]
+        return next_row[f"{next_slot}_ids"]
 
     a1_trans, a1_with, a1_without = [], [], []
     a2_trans, a2_with, a2_without = [], [], []
@@ -292,58 +345,37 @@ def compute_transience_scores(df, tokenizer, model, window_size=40):
             context_buffer = list(base_context)
             last_client = client
 
-        a1_ids = row["author_1_ids"]
-        a2_ids = row["author_2_ids"]
+        slot_order = _row_chronological_slot_order(row, has_condition, has_starter)
+        row_results = {
+            "author_1": (np.nan, np.nan, np.nan),
+            "author_2": (np.nan, np.nan, np.nan),
+        }
 
-        # ---- Author 1 transience ----
-        # Past = everything before this row (already in context_buffer).
-        # s_t  = author_1 turn (a1_ids).
-        # Future = author_2 turn this row (a2_ids).
-        future_a1 = a2_ids
-        if author_1_has_text.iloc[pos] and a1_ids and future_a1:
-            past = list(context_buffer)
-            past_plus_st = past + a1_ids
+        for slot in slot_order:
+            slot_ids = row[f"{slot}_ids"]
+            future_ids = _gather_immediate_future_ids(pos, df, client, slot, slot_order)
 
-            avg_with, _ = calc_sentence_surprisal(past_plus_st, future_a1, model, window_size)
-            avg_without, _ = calc_sentence_surprisal(past, future_a1, model, window_size)
+            if _slot_has_text(slot, pos) and slot_ids and future_ids:
+                past = list(context_buffer)
+                past_plus_st = past + slot_ids
 
-            # S(F | Past) - S(F | Past + s_t): positive = s_t helped.
-            a1_trans.append(avg_with - avg_without)
-            a1_with.append(avg_with)
-            a1_without.append(avg_without)
-        else:
-            a1_trans.append(np.nan)
-            a1_with.append(np.nan)
-            a1_without.append(np.nan)
+                avg_with, _ = calc_sentence_surprisal(past_plus_st, future_ids, model, window_size)
+                avg_without, _ = calc_sentence_surprisal(past, future_ids, model, window_size)
 
-        # Append author_1 to the past buffer BEFORE author_2 transience,
-        # so that for the author_2 measure, Past correctly contains a1_ids.
-        if author_1_has_text.iloc[pos] and a1_ids:
-            context_buffer.extend(a1_ids)
+                # Preserve the existing sign convention used by downstream Rmds:
+                # S(F | Past + s_t) - S(F | Past).
+                row_results[slot] = (avg_with - avg_without, avg_with, avg_without)
 
-        # ---- Author 2 transience ----
-        # Past = everything up to and including author_1 this row.
-        # s_t  = author_2 turn (a2_ids).
-        # Future = next row's author_1 turn, same conversation.
-        future_a2 = _gather_next_author_1_ids(pos, df, client)
-        if author_2_has_text.iloc[pos] and a2_ids and future_a2:
-            past = list(context_buffer)
-            past_plus_st = past + a2_ids
+            if _slot_has_text(slot, pos) and slot_ids:
+                context_buffer.extend(slot_ids)
 
-            avg_with, _ = calc_sentence_surprisal(past_plus_st, future_a2, model, window_size)
-            avg_without, _ = calc_sentence_surprisal(past, future_a2, model, window_size)
-
-            a2_trans.append(avg_with - avg_without)
-            a2_with.append(avg_with)
-            a2_without.append(avg_without)
-        else:
-            a2_trans.append(np.nan)
-            a2_with.append(np.nan)
-            a2_without.append(np.nan)
-
-        # Append author_2 to past buffer for subsequent turns.
-        if author_2_has_text.iloc[pos] and a2_ids:
-            context_buffer.extend(a2_ids)
+        a1_result, a2_result = row_results["author_1"], row_results["author_2"]
+        a1_trans.append(a1_result[0])
+        a1_with.append(a1_result[1])
+        a1_without.append(a1_result[2])
+        a2_trans.append(a2_result[0])
+        a2_with.append(a2_result[1])
+        a2_without.append(a2_result[2])
 
     df["author_1_transience"] = a1_trans
     df["author_2_transience"] = a2_trans

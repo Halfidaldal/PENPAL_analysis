@@ -63,6 +63,26 @@ def interleave_and_align(user_embs, ai_embs):
     return E
 
 
+def _chronological_slot_order(metadata: dict) -> tuple[str, str]:
+    condition = metadata.get("condition")
+    starter = metadata.get("starter_side")
+    if condition == "human-ai":
+        return ("author_1", "author_2")
+    if starter == "author_2":
+        return ("author_2", "author_1")
+    return ("author_1", "author_2")
+
+
+def interleave_embeddings_by_chronology(author_1_embs, author_2_embs, metadata: dict):
+    """Interleave row-paired embeddings in true within-row chronological order."""
+    slot_arrays = {
+        "author_1": author_1_embs,
+        "author_2": author_2_embs,
+    }
+    first_slot, second_slot = _chronological_slot_order(metadata)
+    return interleave_and_align(slot_arrays[first_slot], slot_arrays[second_slot])
+
+
 def _sort_story_group(grp: pd.DataFrame) -> pd.DataFrame:
     sort_columns = []
     if "analysis_turn" in grp.columns and grp["analysis_turn"].notna().any():
@@ -233,8 +253,8 @@ def compute_semantic_exploration_metrics(
         if author_1_embs.shape != author_2_embs.shape:
             continue
         
-        # Interleave and align
-        E = interleave_and_align(author_1_embs, author_2_embs)
+        # Interleave and align in true chronological order.
+        E = interleave_embeddings_by_chronology(author_1_embs, author_2_embs, metadata)
         
         # Compute distances at different window sizes
         for k in range(1, max_k + 1):
@@ -312,6 +332,7 @@ def compute_ai_ai_semantic_exploration(
         grp = _sort_story_group(grp)
         user_list = grp['user_emb'].tolist()
         ai_list = grp['ai_emb'].tolist()
+        metadata = _conversation_metadata(grp)
         
         try:
             user_embs = np.vstack(user_list)
@@ -322,8 +343,8 @@ def compute_ai_ai_semantic_exploration(
         if user_embs.shape != ai_embs.shape:
             continue
         
-        # Interleave and align
-        E = interleave_and_align(user_embs, ai_embs)
+        # Interleave and align in true chronological order when metadata is available.
+        E = interleave_embeddings_by_chronology(user_embs, ai_embs, metadata)
         
         # Compute distances at different window sizes
         for k in range(1, max_k + 1):
@@ -445,7 +466,7 @@ def compute_lag_exploration_metrics(
             
         # Interleaved
         if author_1_embs.shape == author_2_embs.shape:
-            E = interleave_and_align(author_1_embs, author_2_embs)
+            E = interleave_embeddings_by_chronology(author_1_embs, author_2_embs, metadata)
             lag_results = compute_lag_distances(E, max_lag)
             for res in lag_results:
                 res.update(_agent_record_metadata(conversation_id, "interleaved", metadata))

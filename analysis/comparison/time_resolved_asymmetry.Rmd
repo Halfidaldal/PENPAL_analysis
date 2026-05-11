@@ -75,6 +75,7 @@ df_val <- load_valence_data(c("human-ai", "human-human", "ai-ai")) %>%
   filter_complete_exchange_window() %>%
   filter(turn_index > 1) %>%
   prepare_condition_factor(reference = "human-ai") %>%
+  add_chronological_valence() %>%
   filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959",
          conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225") %>%
   assign_phase()
@@ -83,16 +84,16 @@ df_val <- load_valence_data(c("human-ai", "human-human", "ai-ai")) %>%
 df_val_pairs <- df_val %>%
   group_by(conversation_id, condition) %>%
   arrange(turn_index, .by_group = TRUE) %>%
-  mutate(author_2_valence_lag1 = lag(author_2_valence)) %>%
+  mutate(second_valence_lag1 = lag(second_valence)) %>%
   ungroup() %>%
-  drop_na(author_1_valence, author_2_valence, author_2_valence_lag1)
+  drop_na(first_valence, second_valence, second_valence_lag1)
 
 valence_phase_A <- df_val_pairs %>%
   group_by(conversation_id, condition, phase) %>%
   summarise(
-    n_pairs = sum(!is.na(author_1_valence) & !is.na(author_2_valence)),
-    r_12 = if (n_pairs >= 3) suppressWarnings(cor(author_1_valence, author_2_valence)) else NA_real_,
-    r_21 = if (n_pairs >= 3) suppressWarnings(cor(author_2_valence_lag1, author_1_valence)) else NA_real_,
+    n_pairs = sum(!is.na(first_valence) & !is.na(second_valence)),
+    r_12 = if (n_pairs >= 3) suppressWarnings(cor(first_valence, second_valence)) else NA_real_,
+    r_21 = if (n_pairs >= 3) suppressWarnings(cor(second_valence_lag1, first_valence)) else NA_real_,
     .groups = "drop"
   ) %>%
   mutate(

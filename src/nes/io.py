@@ -236,7 +236,19 @@ def backfill_interaction_metadata(
         if meta_col not in merged.columns:
             continue
         if col in merged.columns:
-            merged[col] = merged[col].where(merged[col].notna(), merged[meta_col])
+            prefer_current_metadata = col in {
+                "analysis_turn",
+                "complete_exchange",
+                "starter",
+                "starter_side",
+                "starter_type",
+                "author_1_type",
+                "author_2_type",
+            }
+            if prefer_current_metadata:
+                merged[col] = merged[meta_col].where(merged[meta_col].notna(), merged[col])
+            else:
+                merged[col] = merged[col].where(merged[col].notna(), merged[meta_col])
         else:
             merged[col] = merged[meta_col]
         merged.drop(columns=[meta_col], inplace=True)
