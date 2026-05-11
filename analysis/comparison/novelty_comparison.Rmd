@@ -204,39 +204,6 @@ slope_results %>%
 stopifnot(all(slope_results$A_influence >= 0))
 ```
 
-
-```{r primary-cross-condition-slope-test}
-# Pooled LMM in the same shape as the per-condition fits, used here only to
-# extract the unsigned magnitude |slope_slot1 - slope_slot2| per condition.
-# Signed slot direction is not article-primary because Slot 1 / Slot 2 are
-# positional in HH and AA.
-pooled_slope_model <- lmer(
-  resonance ~ surprise * slot * condition + (1 | conversation_id),
-  data = df_slots
-)
-
-pooled_slope_trends <- emtrends(
-  pooled_slope_model,
-  specs = ~ condition * slot,
-  var = "surprise"
-)
-
-pooled_unsigned_slot_gaps <- as.data.frame(
-  contrast(pooled_slope_trends, method = "revpairwise", by = "condition")
-) %>%
-  transmute(
-    condition,
-    A_influence = abs(estimate),
-    se = SE
-  )
-
-pooled_unsigned_slot_gaps %>%
-  knitr::kable(
-    digits = 3,
-    caption = "Pooled model: |slope_slot1 - slope_slot2| (unsigned) by condition"
-  )
-```
-
 ```{r primary-per-story-robustness}
 # Robustness: per-story OLS slope difference. Each story needs >= 4 points per slot.
 per_story_slope_diff <- df_slots %>%
@@ -244,7 +211,7 @@ per_story_slope_diff <- df_slots %>%
   summarise(
     n_points = sum(!is.na(surprise) & !is.na(resonance)),
     slope = if (n_points >= 4) {
-      coef(lm(resonance ~ surprise))[2]
+      coef(lm(resonance ~ surprise)
     } else {
       NA_real_
     },
