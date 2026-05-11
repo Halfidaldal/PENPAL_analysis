@@ -1,7 +1,7 @@
 # PENPAL Analysis Configuration
 
 # Active experiment: "human-ai", "human-human", or "ai-ai"
-active_experiment: "ai-ai"
+active_experiment: "human-human"
 
 # Experiment-specific configuration
 experiments:
@@ -132,7 +132,7 @@ shared:
   
   # Novelty computation
   novelty:
-    model_name: "google/gemma-4-26B-A4B"
+    model_name: "google/gemma-4-31b"
     window_size: 40
     task: null
     hf_token: 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
