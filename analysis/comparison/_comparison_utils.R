@@ -587,17 +587,62 @@ normalize_schema <- function(df, condition = NULL) {
     )
   )
   
-  # Also rename new standardized names to the analysis-friendly names
-  # author_1_sentiment_projection -> author_1_valence (for consistency in R analysis)
-  standard_mappings <- c(
-    "author_1_sentiment_projection" = "author_1_valence",
-    "author_2_sentiment_projection" = "author_2_valence"
+  # Standardized sentiment columns -> analysis-friendly names.
+  #
+  # Layout written by scripts/04_compute_sentiment.py (current pipeline):
+  #   author_*_sentiment_projection            : legacy mpnet, turn embedded alone (sanity-check baseline)
+  #   author_*_sentiment_marginal_window       : mpnet, windowed marginal
+  #                                              proj(E(last_K + turn)) - proj(E(last_K))
+  #   author_*_sentiment_marginal_window_z     : within-conversation z-score of marginal_window
+  #                                              (pooled across both author slots, so within-story
+  #                                              slot mean asymmetry is preserved)
+  #
+  # Older parquets may also carry these deprecated columns from a prior
+  # iteration of the pipeline; they get surfaced if present so old artifacts
+  # keep rendering, but the windowed pair above is the current preferred path:
+  #   author_*_sentiment_raw        : turn embedded alone (alt encoder)
+  #   author_*_sentiment_cumulative : projection of unbounded conversation prefix
+  #   author_*_sentiment_marginal   : delta from unbounded cumulative prefix
+  #                                   (compresses to near-zero as conversation grows)
+  #
+  # Primary `author_*_valence` is the windowed z-score when available, then
+  # the raw windowed marginal, then any of the deprecated marginals, then
+  # the legacy turn-alone projection.
+  standard_mappings <- list(
+    list(old = "author_1_sentiment_projection",         new = "author_1_valence_legacy_mpnet"),
+    list(old = "author_2_sentiment_projection",         new = "author_2_valence_legacy_mpnet"),
+    list(old = "author_1_sentiment_marginal_window",    new = "author_1_valence_marginal_window"),
+    list(old = "author_2_sentiment_marginal_window",    new = "author_2_valence_marginal_window"),
+    list(old = "author_1_sentiment_marginal_window_z",  new = "author_1_valence_marginal_window_z"),
+    list(old = "author_2_sentiment_marginal_window_z",  new = "author_2_valence_marginal_window_z"),
+    # Deprecated full-prefix variants -- only present in older parquets.
+    list(old = "author_1_sentiment_raw",                new = "author_1_valence_raw"),
+    list(old = "author_2_sentiment_raw",                new = "author_2_valence_raw"),
+    list(old = "author_1_sentiment_cumulative",         new = "author_1_valence_cumulative"),
+    list(old = "author_2_sentiment_cumulative",         new = "author_2_valence_cumulative"),
+    list(old = "author_1_sentiment_marginal",           new = "author_1_valence_marginal"),
+    list(old = "author_2_sentiment_marginal",           new = "author_2_valence_marginal")
   )
-  
-  # Apply standard mappings first
-  for (old_name in names(standard_mappings)) {
-    if (old_name %in% names(df)) {
-      df <- df %>% rename(!!standard_mappings[[old_name]] := !!sym(old_name))
+  for (m in standard_mappings) {
+    if (m$old %in% names(df)) {
+      df <- df %>% rename(!!m$new := !!sym(m$old))
+    }
+  }
+
+  # Promote the chosen primary signal to author_*_valence.
+  for (slot in c("author_1", "author_2")) {
+    target <- paste0(slot, "_valence")
+    if (target %in% names(df)) next  # already present from condition-specific map
+    candidates <- c(
+      paste0(slot, "_valence_marginal_window_z"),
+      paste0(slot, "_valence_marginal_window"),
+      paste0(slot, "_valence_marginal"),
+      paste0(slot, "_valence_raw"),
+      paste0(slot, "_valence_legacy_mpnet")
+    )
+    chosen <- candidates[candidates %in% names(df)][1]
+    if (!is.na(chosen)) {
+      df[[target]] <- df[[chosen]]
     }
   }
   

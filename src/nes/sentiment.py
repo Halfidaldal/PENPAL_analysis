@@ -539,61 +539,84 @@ def _load_concept_unit_vector(vector_path: str) -> np.ndarray:
     return v / n
 
 
-def _build_conversation_prefixes(
-    a1_turns: List[str],
-    a2_turns: List[str],
+def _build_windowed_prefixes(
+    flat_turns: List[str],
+    context_window: int,
     separator: str = "\n",
-) -> List[str]:
-    """Return [empty, +a1_t1, +a2_t1, +a1_t2, +a2_t2, ...] as cumulative strings.
+) -> Tuple[List[str], List[str]]:
+    """For each turn position, build (before, after) windowed context strings.
 
-    Length is 2*N + 1 for N turn-pairs. The empty string anchors the trajectory
-    so the first turn's marginal is well-defined (cumulative_a1_t1 - baseline).
+    `flat_turns` is the chronological interleaving of both authors' turns within
+    one conversation: [a1_t1, a2_t1, a1_t2, a2_t2, ...]. For position i:
+
+      before_i = join(last K *non-empty* turns from flat_turns[:i])
+      after_i  = join(those K turns + flat_turns[i] if non-empty)
+
+    Marginal at position i is then proj(E(after_i)) - proj(E(before_i)).
+    With K=1, before_i is just the immediately preceding speaker's turn, so
+    the marginal answers: "given the partner's last utterance, how much did
+    this turn shift the sentiment axis?" -- bounded context, so the magnitude
+    does not collapse as the conversation grows.
+
+    If turn i is empty, before == after by construction and the marginal is 0;
+    callers should mask such positions to NaN to distinguish "no contribution"
+    from "missing data".
     """
-    prefixes: List[str] = [""]
-    running_parts: List[str] = []
-    for a1, a2 in zip(a1_turns, a2_turns):
-        a1_text = "" if a1 is None else str(a1)
-        a2_text = "" if a2 is None else str(a2)
-        if a1_text:
-            running_parts.append(a1_text)
-        prefixes.append(separator.join(running_parts))
-        if a2_text:
-            running_parts.append(a2_text)
-        prefixes.append(separator.join(running_parts))
-    return prefixes
+    if context_window < 1:
+        raise ValueError("context_window must be >= 1")
+    befores: List[str] = []
+    afters: List[str] = []
+    for i, turn in enumerate(flat_turns):
+        ctx_start = max(0, i - context_window)
+        prior = [t for t in flat_turns[ctx_start:i] if t]
+        before = separator.join(prior)
+        if turn:
+            after_parts = prior + [turn]
+        else:
+            after_parts = prior
+        after = separator.join(after_parts)
+        befores.append(before)
+        afters.append(after)
+    return befores, afters
 
 
-def compute_dyadic_contextual_projection(
+def compute_dyadic_windowed_projection(
     df: pd.DataFrame,
     model_name: str,
     concept_vector_path: str,
     *,
+    context_window: int = 1,
     conversation_col: str = "conversation_id",
     turn_col: Optional[str] = None,
     author_1_col: str = "author_1",
     author_2_col: str = "author_2",
-    batch_size: int = 8,
+    batch_size: int = 32,
     task: Optional[str] = None,
     normalize_embeddings: bool = True,
     separator: str = "\n",
     device: Optional[torch.device] = None,
 ) -> pd.DataFrame:
-    """Compute raw, cumulative, and marginal sentiment projections per turn.
+    """Compute per-turn sentiment as a windowed contextual marginal.
 
-    For each conversation, builds the sequence of cumulative-prefix strings
-    (empty, +a1_t1, +a2_t1, +a1_t2, ...), embeds them with `model_name`,
-    projects onto the unit concept direction loaded from `concept_vector_path`,
-    and emits six new columns:
+    For each conversation we interleave both authors' turns chronologically
+    [a1_t1, a2_t1, a1_t2, a2_t2, ...], build a (before, after) prefix pair per
+    position using only the last `context_window` turns as context, embed
+    everything with `model_name`, project onto the unit concept direction
+    loaded from `concept_vector_path`, and emit four new columns:
 
-      author_1_sentiment_raw          : projection of author_1 text alone
-      author_2_sentiment_raw          : projection of author_2 text alone
-      author_1_sentiment_cumulative   : projection of full context up to and incl. author_1's turn
-      author_2_sentiment_cumulative   : projection of full context up to and incl. author_2's turn
-      author_1_sentiment_marginal     : cumulative_a1 - cumulative_just_before_a1
-      author_2_sentiment_marginal     : cumulative_a2 - cumulative_a1 (same turn)
+      author_*_sentiment_marginal_window    : proj(E(window+turn)) - proj(E(window))
+      author_*_sentiment_marginal_window_z  : within-conversation z-score of
+                                              the marginal_window column,
+                                              pooled across both author slots
+                                              (so cross-slot mean asymmetry
+                                              within a story is preserved).
 
-    Note: by linearity of dot products, the marginal column equals the
-    projection of (E(ctx+turn) - E(ctx)) onto the unit concept direction.
+    Positions whose author text is missing/empty are returned as NaN, not 0,
+    so downstream analyses can distinguish "no contribution" from "absent".
+
+    The bounded context prevents the magnitude collapse that occurs with an
+    unbounded cumulative prefix (where each new short turn becomes a vanishing
+    fraction of an L2-normalized prefix embedding).
     """
     if conversation_col not in df.columns:
         raise ValueError(f"Missing required column '{conversation_col}' in dataframe.")
@@ -617,82 +640,100 @@ def compute_dyadic_contextual_projection(
     df_sorted[turn_col] = pd.to_numeric(df_sorted[turn_col], errors="coerce")
     df_sorted = df_sorted.sort_values([conversation_col, turn_col], kind="mergesort")
 
-    # Build per-conversation prefix lists and remember slice spans.
-    all_prefixes: List[str] = []
-    all_raw_a1: List[str] = []
-    all_raw_a2: List[str] = []
-    conv_spans: List[Tuple[str, int, int, List[int]]] = []  # (conv_id, prefix_start, prefix_end, row_indices)
+    # Per-conversation flat turn sequence + position metadata.
+    all_befores: List[str] = []
+    all_afters: List[str] = []
+    # For each position we record (orig_row_idx, author_slot, turn_nonempty).
+    position_meta: List[Tuple[int, int, bool]] = []
+    # Also track which conversation each position belongs to, for grouped z-score.
+    position_conv: List[str] = []
 
     for conv_id, group in df_sorted.groupby(conversation_col, sort=False):
         a1_turns = [_sanitize_for_prefix(v) for v in group[author_1_col].tolist()]
         a2_turns = [_sanitize_for_prefix(v) for v in group[author_2_col].tolist()]
-        prefixes = _build_conversation_prefixes(a1_turns, a2_turns, separator=separator)
-        start = len(all_prefixes)
-        all_prefixes.extend(prefixes)
-        end = len(all_prefixes)
-        conv_spans.append((str(conv_id), start, end, group["_orig_index"].tolist()))
-        all_raw_a1.extend(a1_turns)
-        all_raw_a2.extend(a2_turns)
+        row_indices = group["_orig_index"].tolist()
+
+        flat_turns: List[str] = []
+        flat_meta: List[Tuple[int, int]] = []  # (orig_row_idx, author_slot)
+        for orig_idx, a1, a2 in zip(row_indices, a1_turns, a2_turns):
+            flat_turns.append(a1)
+            flat_meta.append((orig_idx, 1))
+            flat_turns.append(a2)
+            flat_meta.append((orig_idx, 2))
+
+        befores, afters = _build_windowed_prefixes(flat_turns, context_window, separator)
+        all_befores.extend(befores)
+        all_afters.extend(afters)
+        for (orig_idx, slot), turn_text in zip(flat_meta, flat_turns):
+            position_meta.append((orig_idx, slot, bool(turn_text)))
+            position_conv.append(str(conv_id))
 
     model = _load_sentence_encoder(model_name, device=device)
 
-    print(f"Encoding {len(all_prefixes)} conversation prefixes...")
-    prefix_emb = _encode_texts(
-        model, all_prefixes,
+    # Embed befores and afters separately so the progress bars are interpretable.
+    print(f"Encoding {len(all_befores)} pre-turn contexts (window={context_window})...")
+    before_emb = _encode_texts(
+        model, all_befores,
         batch_size=batch_size, task=task,
         normalize_embeddings=normalize_embeddings, front_truncate=True,
+        desc="Pre-turn ctx",
     )
-    prefix_scores = prefix_emb @ unit_v  # shape (n_prefixes,)
-
-    print(f"Encoding {len(all_raw_a1)} author_1 turns alone (raw)...")
-    raw_a1_emb = _encode_texts(
-        model, all_raw_a1,
+    print(f"Encoding {len(all_afters)} post-turn contexts (window+turn)...")
+    after_emb = _encode_texts(
+        model, all_afters,
         batch_size=batch_size, task=task,
         normalize_embeddings=normalize_embeddings, front_truncate=True,
+        desc="Post-turn ctx",
     )
-    raw_a1_scores = raw_a1_emb @ unit_v
 
-    print(f"Encoding {len(all_raw_a2)} author_2 turns alone (raw)...")
-    raw_a2_emb = _encode_texts(
-        model, all_raw_a2,
-        batch_size=batch_size, task=task,
-        normalize_embeddings=normalize_embeddings, front_truncate=True,
-    )
-    raw_a2_scores = raw_a2_emb @ unit_v
+    before_scores = before_emb @ unit_v
+    after_scores = after_emb @ unit_v
+    marginal = after_scores - before_scores
 
-    # Allocate output columns aligned with original df order.
+    # Map positions back to per-row, per-slot columns; NaN where the turn was empty.
     n_rows = len(df)
-    a1_cum = np.full(n_rows, np.nan, dtype=float)
-    a2_cum = np.full(n_rows, np.nan, dtype=float)
     a1_marg = np.full(n_rows, np.nan, dtype=float)
     a2_marg = np.full(n_rows, np.nan, dtype=float)
-    a1_raw = np.full(n_rows, np.nan, dtype=float)
-    a2_raw = np.full(n_rows, np.nan, dtype=float)
-
-    raw_cursor = 0
-    for _conv_id, start, end, row_indices in conv_spans:
-        scores = prefix_scores[start:end]
-        # scores[0] is baseline (empty prefix). For pair k (0-indexed):
-        #   cumulative_a1 = scores[2k + 1]; cumulative_a2 = scores[2k + 2]
-        for k, orig_idx in enumerate(row_indices):
-            before = scores[2 * k]
-            after_a1 = scores[2 * k + 1]
-            after_a2 = scores[2 * k + 2]
-            a1_cum[orig_idx] = after_a1
-            a2_cum[orig_idx] = after_a2
-            a1_marg[orig_idx] = after_a1 - before
-            a2_marg[orig_idx] = after_a2 - after_a1
-            a1_raw[orig_idx] = raw_a1_scores[raw_cursor]
-            a2_raw[orig_idx] = raw_a2_scores[raw_cursor]
-            raw_cursor += 1
+    for pos_idx, (orig_idx, slot, nonempty) in enumerate(position_meta):
+        if not nonempty:
+            continue
+        value = float(marginal[pos_idx])
+        if slot == 1:
+            a1_marg[orig_idx] = value
+        else:
+            a2_marg[orig_idx] = value
 
     df_out = df.copy()
-    df_out["author_1_sentiment_raw"] = a1_raw
-    df_out["author_2_sentiment_raw"] = a2_raw
-    df_out["author_1_sentiment_cumulative"] = a1_cum
-    df_out["author_2_sentiment_cumulative"] = a2_cum
-    df_out["author_1_sentiment_marginal"] = a1_marg
-    df_out["author_2_sentiment_marginal"] = a2_marg
+    df_out["author_1_sentiment_marginal_window"] = a1_marg
+    df_out["author_2_sentiment_marginal_window"] = a2_marg
+
+    # Within-conversation z-score, pooled across both author slots so that
+    # slot-mean asymmetry within a story (the quantity behind A_baseline) is
+    # preserved. Conversations with <2 finite values get NaN.
+    a1_z = np.full(n_rows, np.nan, dtype=float)
+    a2_z = np.full(n_rows, np.nan, dtype=float)
+    conv_groups: dict = {}
+    for orig_idx, conv_id in zip(df_out.index, df_out[conversation_col].astype(str)):
+        conv_groups.setdefault(conv_id, []).append(orig_idx)
+    for conv_id, row_idxs in conv_groups.items():
+        a1_vals = a1_marg[row_idxs]
+        a2_vals = a2_marg[row_idxs]
+        pooled = np.concatenate([a1_vals, a2_vals])
+        finite = pooled[np.isfinite(pooled)]
+        if finite.size < 2:
+            continue
+        mu = float(finite.mean())
+        sd = float(finite.std(ddof=1))
+        if not np.isfinite(sd) or sd == 0.0:
+            continue
+        for ri in row_idxs:
+            if np.isfinite(a1_marg[ri]):
+                a1_z[ri] = (a1_marg[ri] - mu) / sd
+            if np.isfinite(a2_marg[ri]):
+                a2_z[ri] = (a2_marg[ri] - mu) / sd
+
+    df_out["author_1_sentiment_marginal_window_z"] = a1_z
+    df_out["author_2_sentiment_marginal_window_z"] = a2_z
     return df_out
 
 

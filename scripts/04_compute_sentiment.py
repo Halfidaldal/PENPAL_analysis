@@ -2,30 +2,32 @@
 """
 Script 04: Compute sentiment scores via semantic projection.
 
-This script computes two parallel projection-based sentiment signals on the
-interaction-level story data:
+Two parallel projection-based sentiment signals are computed on the
+interaction-level story data, both using the same encoder + concept vector
+configured under shared.sentiment.projection_*:
 
-1. Legacy / sanity-check baseline (kept unchanged):
-   `compute_semantic_projection_batch` with
-   `paraphrase-multilingual-mpnet-base-v2` and the pre-shipped Sentiment.csv
-   concept vector. Each turn embedded independently.
+1. Legacy turn-alone baseline (sanity check):
+   compute_semantic_projection_batch on each author_1 / author_2 text in
+   isolation.
    -> author_1_sentiment_projection, author_2_sentiment_projection
 
-2. Context-aware projection (new):
-   Encoder configured under shared.sentiment.projection_model_name +
-   a Fiction4Sentiment concept vector rebuilt with that encoder
-   (see scripts/04b_build_concept_vector.py).
-   For each conversation we embed the cumulative-prefix sequence
-   (empty, +author_1_t1, +author_2_t1, +author_1_t2, ...) and project all
-   prefixes onto the unit concept direction. From those we derive:
-     * raw         : projection of each turn embedded alone
-     * cumulative  : running story-sentiment after that turn was added
-     * marginal    : that turn's contribution (first difference of cumulative)
+2. Windowed contextual marginal (primary):
+   For each conversation, interleave author_1 / author_2 turns
+   chronologically. For each position, project the last
+   `projection_context_window` turns of context with and without the current
+   turn appended, and take the difference. This bounded-context marginal
+   answers "given the partner's last utterance, how much did this turn shift
+   the sentiment axis?" without the magnitude collapse that an unbounded
+   cumulative prefix produces with L2-normalized embeddings. We also emit a
+   within-conversation z-scored variant (pooled across both author slots)
+   for fair cross-condition mean comparisons.
+   -> author_{1,2}_sentiment_marginal_window
+   -> author_{1,2}_sentiment_marginal_window_z
 
-   By linearity of dot products, marginal == proj(E(ctx+turn) - E(ctx)),
-   so it directly captures the turn's shift along the sentiment axis given
-   the prior context.
-   -> author_{1,2}_sentiment_{raw,cumulative,marginal}
+Because (1) and (2) share encoder + concept vector, the only methodological
+difference between the two outputs is the bounded contextual encoding -- so
+the legacy column functions as a tight non-contextual sanity check on the
+windowed result.
 
 Usage:
     python scripts/04_compute_sentiment.py
@@ -38,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.sentiment import (
     compute_semantic_projection_batch,
-    compute_dyadic_contextual_projection,
+    compute_dyadic_windowed_projection,
 )
 from nes.io import (
     backfill_interaction_metadata,
@@ -60,7 +62,6 @@ def main():
 
     print(f"Active experiment: {experiment}")
 
-    # Load story embeddings data
     print("Loading story data with embeddings...")
     df_interaction_level = load_parquet(
         "story_embeddings_interaction_level_simulated.parquet" if simulated
@@ -73,62 +74,67 @@ def main():
     print(f"Loaded {len(df_interaction_level)} interaction rows")
     df_dyadic = df_interaction_level.copy()
 
+    project_root = get_project_root()
+    projection_model = sentiment_config.get("projection_model_name")
+    projection_vector_rel = sentiment_config.get("projection_vector_path")
+    if not (projection_model and projection_vector_rel):
+        raise ValueError(
+            "Missing shared.sentiment.projection_model_name and/or "
+            "projection_vector_path in config.yaml."
+        )
+    projection_vector_path = project_root / projection_vector_rel
+    if not projection_vector_path.exists():
+        raise FileNotFoundError(
+            f"Concept vector not found at {projection_vector_path}. "
+            "Either ship the file or run scripts/04b_build_concept_vector.py."
+        )
+
+    legacy_batch_size = int(sentiment_config.get("batch_size", 32))
+    projection_batch_size = int(sentiment_config.get("projection_batch_size", 32))
+    projection_task = sentiment_config.get("projection_task")
+    context_window = int(sentiment_config.get("projection_context_window", 1))
+    separator = sentiment_config.get("projection_context_separator", "\n")
+
     # ------------------------------------------------------------------
-    # 1. Legacy projection (mpnet + shipped Sentiment.csv) -- sanity check.
+    # 1. Legacy turn-alone projection (sanity check).
     # ------------------------------------------------------------------
     print(
-        f"\n[Legacy] Computing per-turn projection with "
-        f"paraphrase-multilingual-mpnet-base-v2 (batch_size={sentiment_config['batch_size']})..."
+        f"\n[Legacy] Computing per-turn projection (turn embedded alone) with "
+        f"{projection_model} (batch_size={legacy_batch_size})..."
     )
     print("[Legacy] Projecting author_1 turns...")
     df_dyadic['author_1_sentiment_projection'] = compute_semantic_projection_batch(
         df_dyadic['author_1'].tolist(),
-        batch_size=sentiment_config['batch_size'],
+        model_name=projection_model,
+        vector_path=str(projection_vector_path),
+        batch_size=legacy_batch_size,
     )
     print("[Legacy] Projecting author_2 turns...")
     df_dyadic['author_2_sentiment_projection'] = compute_semantic_projection_batch(
         df_dyadic['author_2'].tolist(),
-        batch_size=sentiment_config['batch_size'],
+        model_name=projection_model,
+        vector_path=str(projection_vector_path),
+        batch_size=legacy_batch_size,
     )
 
     # ------------------------------------------------------------------
-    # 2. Context-aware projection (new encoder + rebuilt concept vector).
+    # 2. Windowed contextual marginal projection (primary).
     # ------------------------------------------------------------------
-    projection_model = sentiment_config.get("projection_model_name")
-    projection_vector_rel = sentiment_config.get("projection_vector_path")
+    print(
+        f"\n[Contextual] Computing windowed marginal projection "
+        f"(context_window={context_window}) with "
+        f"{projection_model} (batch_size={projection_batch_size})..."
+    )
+    df_dyadic = compute_dyadic_windowed_projection(
+        df_dyadic,
+        model_name=projection_model,
+        concept_vector_path=str(projection_vector_path),
+        context_window=context_window,
+        batch_size=projection_batch_size,
+        task=projection_task,
+        separator=separator,
+    )
 
-    if projection_model and projection_vector_rel:
-        project_root = get_project_root()
-        projection_vector_path = project_root / projection_vector_rel
-        if not projection_vector_path.exists():
-            raise FileNotFoundError(
-                f"Concept vector not found at {projection_vector_path}. "
-                "Run scripts/04b_build_concept_vector.py first."
-            )
-
-        projection_batch_size = int(sentiment_config.get("projection_batch_size", 4))
-        projection_task = sentiment_config.get("projection_task")
-        separator = sentiment_config.get("projection_context_separator", "\n")
-
-        print(
-            f"\n[Contextual] Computing raw/cumulative/marginal projection with "
-            f"{projection_model} (batch_size={projection_batch_size})..."
-        )
-        df_dyadic = compute_dyadic_contextual_projection(
-            df_dyadic,
-            model_name=projection_model,
-            concept_vector_path=str(projection_vector_path),
-            batch_size=projection_batch_size,
-            task=projection_task,
-            separator=separator,
-        )
-    else:
-        print(
-            "\n[Contextual] Skipped: set shared.sentiment.projection_model_name "
-            "and shared.sentiment.projection_vector_path in config.yaml to enable."
-        )
-
-    # Save results
     output_file = (
         "dyadic_sentiment_scores_simulated.parquet" if simulated
         else "dyadic_sentiment_scores.parquet"
