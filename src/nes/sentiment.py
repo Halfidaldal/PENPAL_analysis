@@ -421,19 +421,36 @@ def _encode_texts(
     task: Optional[str] = None,
     normalize_embeddings: bool = True,
     front_truncate: bool = True,
+    desc: str = "Encoding",
 ) -> np.ndarray:
+    """Batched encode that reuses the float-indices fallback from nes.embeddings.
+
+    Some HF models (e.g. QZhou-Embedding) have a tokenizer that returns float
+    input_ids; nes.embeddings._encode_batch_with_fallback catches the resulting
+    `Expected tensor ... Long, Int; but got FloatTensor` RuntimeError and
+    retries the batch with forced integer ids. We delegate to that helper so
+    the projection pipeline benefits from the same fix as script 03.
+    """
+    from nes.embeddings import _encode_batch_with_fallback
+
     if front_truncate:
         texts = _front_truncate_to_model_window(model, texts)
 
-    encode_kwargs = dict(
-        batch_size=batch_size,
-        show_progress_bar=True,
-        convert_to_numpy=True,
-        normalize_embeddings=normalize_embeddings,
-    )
-    if task is not None and "task" in model.encode.__code__.co_varnames:
-        encode_kwargs["task"] = task
-    return model.encode(texts, **encode_kwargs)
+    if not texts:
+        dim = model.get_sentence_embedding_dimension() or 0
+        return np.zeros((0, dim), dtype=np.float32)
+
+    all_emb: List[np.ndarray] = []
+    for i in tqdm(range(0, len(texts), batch_size), desc=desc):
+        batch = texts[i:i + batch_size]
+        emb = _encode_batch_with_fallback(
+            model,
+            batch,
+            task=task,
+            normalize_embeddings=normalize_embeddings,
+        )
+        all_emb.append(emb)
+    return np.vstack(all_emb)
 
 
 def build_concept_vector_fiction4(
