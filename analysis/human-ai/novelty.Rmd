@@ -180,6 +180,25 @@ ggsave(
   dpi = 300
 )
 
+p_resonance_agent <- ggplot(df_res_long, aes(x = resonance, fill = agent)) +
+  geom_density(alpha = 0.4, color = NA) +
+  scale_fill_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "") +
+  scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00")) +
+  labs(title = "Distributions of Transience", x = "Transience", y = NULL) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.text = element_text(size = 12)
+  )
+print(p_resonance_agent)
+ggsave(
+  file.path(GRAPHS_DIR, "Resonance_Distributions_Agent.png"),
+  p_transience_agent,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
 ```
 
 

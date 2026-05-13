@@ -11,6 +11,10 @@
 % For proper rendering and hyphenation of words containing Latin characters (including in bib files)
 \usepackage[T1]{fontenc}
 \usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{ragged2e}
 % For Vietnamese characters
 % \usepackage[T5]{fontenc}
 % See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
@@ -31,6 +35,8 @@
 %Including images in your LaTeX document requires adding
 %additional package(s)
 \usepackage{graphicx}
+
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
 
 % If the title and author information does not fit in the area allocated, uncomment the following
 %
@@ -115,25 +121,23 @@ Human--AI creative co-writing is increasingly popular for open ended text genera
 
 Human-AI creative co-writing is becoming a common mode of open-ended text generation \citep{noy2023experimental,clark-smith-2021-choose,cheng2025inspiration}, as human creative writers, professional or otherwise, integrate large language models (LLMs) into their workflows. Human writers tend to treat these systems, trained on vast textual corpora, as collaborators capable of contributing to narrative production \citep{lee2022coauthor, wan2024felt}. As such interactions become widespread, it becomes important to understand how these models participate in the unfolding, turn-by-turn dynamics of collaborative storytelling. 
 
-Turn-based co-writing produces a controlled setting for studying human-LLM interaction as a process. In this setting, writing unfolds as a sequence of interdependent contributions: each turn conditions the next turn and may shift the storyøs semantic direction, emotional trajectory and subsequent context. So turn-based narrative generation makes it possible to track how emotional tone, semantic novelty and narrative influence move between writers over time. However, most existing evaluations of LLMs focus on final outputs or aggregate quality mtrics, and overlook the fine-grained interactional dynamics that contruct a story.
+Turn-based co-writing produces a controlled setting for studying human-LLM interaction as a dynamic process. In this setting, writing unfolds as a sequence of interdependent contributions: each turn conditions the next turn and may shift the story's semantic direction, emotional trajectory and subsequent context. Consequently, turn-based narrative generation makes it possible to track how emotional tone, semantic novelty and narrative influence move between writers over time. While work on human-LLM turn-based dynamics is a growing field, such studies often focus on final outputs, isolated agent contributions, or aggregated metrics, leaving less attention to the fine-grained interactional dynamics that construct a story.
 
-In this work we move from single-condition analysis to a comparative framework of collaborative dynamics. We test whether narrative agency and emotional alignment differ across three co-writing settings: Human-AI (HA), HUman-Human (HH) and AI-AI (AA). Specifically, we examine how different pairings allocate two core functions of storytelling: the generation of novel narrative material and the adaptation to the evolving context of the story. 
+In this work, we move from single-condition analysis to a comparative framework of collaborative dynamics. We test whether narrative agency and emotional alignment differ across three co-writing settings: Human-AI (HA), Human-Human (HH) and LLM-LLM (AA). Specifically, we examine how different pairings allocate three core functions of storytelling: (1) The emotional alignment between agents; (2) The generation of novel narrative material; (3) The adaptation to the evolving context of the story.
 
-We use a turn-level analytical framework that models co-writing as a dynamic process of interaction. By modeling contributions at the level of individual turns, the framework measures semantic novelty, direction influence and affective alignment, allowing us to trace how human and artificial writers respond to prior context and shape subsequent narrative development. 
+We use a turn-level analytical framework that models co-writing as a dynamic process of interactions, designed for both agents to have theoretical equal autonomy in the writing process. By modeling contributions at the level of individual turns, the framework measures affective alignment, semantic novelty, and directional influence, allowing us to trace how (human and artificial) writers respond to prior context and shape subsequent narrative development. 
 
+This comparative perspective allows us to ask \textbf{whether the asymmetries observed in human-AI interaction reflect general features of collaborative writing}, or specific properties of human-LLM narrative coordination. 
 
-This comparative perspective allows us to ask \textbf{whether the asymmetries observed in human-AI interaction reflect properties specific to LLMs}, or more general features of collaborative writing. 
-
-
-We use this framework to investigate the following research questions:
+We use this framework to investigate the following nuances of asymmetries:
 
 \begin{enumerate}
-    \item \textbf{RQ1. Are alignment dynamics symmetric or asymmetric across conditions?}
-    \item \textbf{Which actor introduces novelty, and whose novelty persists?}
-    \item \textbf{Do human-AI stories resemble human-human collaboration, AI-AI collaboration, or a distinct regime?}
+    \item \textbf{RQ1: Are dynamics of immediate emotional alignment symmetric or asymmetric across conditions?}
+    \item \textbf{RQ2: Are agent-level differences in novel contribution and narrative influence coordination a general property of dyadic co-writing or intrinsic for human-LLM interactions?}
+    \item \textbf{RQ3: Do narrative coordination in human-AI stories resemble human-human collaboration, LLM-LLM collaboration, or a distinct regime?}
 \end{enumerate}
 
-Our contributions are twofold. First, building on an existing Human--AI co-writing corpus, we introduce Human--Human and AI--AI conditions under the same turn-based storytelling paradigm. Second, we use a turn-level framework for measuring affective alignment, semantic novelty, transience, and resonance across dyadic writing conditions to show that Human--AI co-writing forms a distinct asymmetric regime, unlike Human--Human or AI--AI.
+Our contributions are threefold. First, building on an existing Human--AI co-writing corpus, we introduce two new datasets of Human--Human and AI--AI co-written narratives under the same turn-based storytelling paradigm as the existing corpus. Second, we use a turn-level framework to expand methodologies for measuring affective alignment, measured as immediate valence adaptation of each agent, and discourse influence, measured as the relationship between novelty-transience-resonance. Finally, we use our novel to show that Human--AI co-writing forms a distinct asymmetric regime, unlike Human--Human or AI--AI.
 
 \section{Related Works}
 
@@ -157,22 +161,57 @@ However, we lack a framework for analyzing how creative roles and narrative infl
 % Also a Table: dataset statistics: number of stories, participants and models, turns, mean words per turn and models used. 
 \begin{table}[t]
 \centering
-\begin{tabular}{lccc}
-\hline
+\small
+\begin{tabular}{lrrr}
+\toprule
 Condition & Stories & Turns & Mean words/turn \\
-\hline
-HH & -- & -- & -- \\
-HA & -- & -- & -- \\
-AA & -- & -- & -- \\
-\hline
+\midrule
+HH & 38 & 342 & 26.13 \\
+HA & 87 & 783 & 26.96 \\
+AA & 40 & 360 & 28.24 \\
+\bottomrule
 \end{tabular}
 \caption{Dataset statistics across co-writing conditions.}
 \label{tab:dataset}
 \end{table}
 
-We use the same turn-based storytelling paradigm across three dyadic conditions, to compare collaborative dynamics holding a constant task structure.\footnote{We will release our dataset and analysis framework upon acceptance}
+We use the same turn-based storytelling paradigm across three dyadic conditions, to compare collaborative dynamics holding a constant task structure.\footnote{We will release our dataset and analysis framework upon acceptance} To the best of our knowledge, this is the first dataset that enables direct comparison of Human-Human, Human-AI and LLM-LLM turn-based co-writing under a shared experiment paradigm. 
 
-To the best of our knowledge, this is the first dataset that enables direct comparison of Human-Human, Human-Ai and AI-Ai turn-based co-writing under a shared experiment paradigm. 
+The following instruction was provided to all agents across conditions:
+\begin{quote}
+\textit{“You are an author taking part in a collaborative storytelling activity with another author. Together, you will create a story by taking turns adding to it. Your goal is to continue from where your partner has left off. If there is no story, please begin the story. You have 10 interactions to write the story. Your input may be slightly truncated by a random number of characters.”}
+\end{quote}
+
+The resulting datasets consists of the following four levels of analysis:
+
+\begin{enumerate}
+    \item \textbf{Token level (model level):} individual tokens $w$.
+    \item \textbf{Turn level:} a single agent contribution at turn $t$, denoted $I_t$, which can be further specified as either agent 1's turn ($A^1_t$) or agent 2's turn ($A^2_t$).
+    \item \textbf{Interaction level:} paired contributions at the same turn $t$, represented as either $(A^1_t, A^2_t)$ or the opposite direction $(A^2_{t-1}, A^1_t)$ .
+    \item \textbf{Story level:} a sequence of 10 interactions for session $i$, denoted $S_i$.
+\end{enumerate}
+
+
+\subsection{Human-AI}
+% cb: use either a citation from Arxiv or from ACL, depending on if F&B get's approved or not. For now I have used the Arxiv version.
+
+The Human-AI data was collected by Fundal and Bizzoni \citeyearpar{fundal2026directionalalignmentnarrativeagency}. The condition was designed to isolate the turn-taking between the human and the AI in a collaborative storytelling exercise. There were X participants (male = X, female = X, other = X) with an age distribution of \textit{M} = X years (\textit{SD} = X). A link for participation was distributed through several online channels. The LLMs used were gpt-4.1-2025-04-14, claude-sonnet-4-5-20250929, Llama-3.3-70B-Instruct, and Qwen-2.5-72B-Instruct.
+
+
+\subsection{Human-Human} 
+The condition consisted of 76 participants (male = X, female = X, other = X) with an age distribution of \textit{M} = X years (\textit{SD} = X). All participants were university or graduate students at Aarhus University in Denmark, and participation was voluntary and uncompensated. All students were enrolled in either Linguistics, English, English International Business Communication, Cultural Data Science, or Cognitive Science. All degree programs are taught in English. Participants who had participated in the human-AI condition were excluded from the human-human condition. 
+%ij: the number of participants is just the stories*2, but if you have a different number somehow, please change it! this might also be a great place to put more detailed demographics in (gender & age) but i don't have access to those.
+
+Data collection was facilitated by student assistants and took place during a class or immediately after. The Human-Human condition used the same platform as the Human-AI condition. By accessing the platform, the participants were paired with another participant who was also queued for the writing session. They were not informed who their partner was, only that it was another human writer. The interface would allow one participant to write by showing a text-box, while the other person had no text-box to write in. Once the first participant had submitted their writing, the participant that they were paired up with would see the writing on their interface and have a text-box to continue the writing. Each participant was tasked with writing 10 sections for a total of 20 turns.
+
+This condition resulted in 38 stories, with a total of 342 interactions after preprocessing and filtering. Each turn had an average of approximately 26 words.
+%ij: the number of turns seem very low? if its 20 turns per story, shouldn't it be 38*20=760? Or is the number actually the number of interactions, with some participants dropping out?
+%yes, it should be the number of interactions. For human-human data, some rows are filtered out for the computational analysis, as they contained nonsense or incomprehensive inputs. Have fixed now.
+
+\subsection{LLM-LLM}
+In the LLM-LLM, condition, we replicated the exact constraints and flow from the original platform into a simulation pipeline. For each LLM used in the Human-LLM experiment, the simulation replaced the human with an identical LLM counterpart (i.e. Claude wrote a story with Claude), effectively resulting in a structurally comparable LLM-LLM dataset. 
+
+The condition resulted in 80 stories, each consisting of 10 interactions and an average of approximately 28 words per turn.
 
 \section{Methods}
 %Yb: perhaps a table here, for the metrics: metric, unit, tool, and subsection. 
@@ -180,7 +219,7 @@ To the best of our knowledge, this is the first dataset that enables direct comp
 
 
 
-We operationalize co-writing dynamics through three dimensions: affective alignment, semantic novelty and surface narrative influence (captured via transience and resonance).
+We investigate co-writing dynamics through three dimensions: affective alignment, semantic novelty and surface narrative influence (captured via transience and resonance).
 
 We use a turn-level analytical framework that integrates embedding-based measures of semantic novelty and directional influence with sentiment-based measures of affective alignment.
 
@@ -190,18 +229,53 @@ We use a turn-level analytical framework that integrates embedding-based measure
 
 
 \subsection{Novelty, transience and resonance}
+For narrative influence, we use information-theoretic measures of discourse influence, namely Novelty, Transience and Resonance. Novelty measures the divergence of a turn from prior context, representing the introduction of novel/surprising material to the story. Transience measures the predictive effect of a turn on the immediately following story contribution. Resonance measures the relationship between the two, expressing whether that departure remains predictive of what follows.
 
 \textbf{Novelty}: which actor introduces new material?
-
 \textbf{Transience}: how much does new material fail to persist?
-
 \textbf{Resonance}: whose novelty matters for the future of the story?
+{Surprisal}
+%Single token surprisal 
+We build on the established theory of surprisal-based novelty, transience, and resonance from \cite{fundal2026directionalalignmentnarrativeagency}, and expand the methodological paradigm of transience specifically. The single surprisal score of a token $w_j$ is computed as the negative log-probability of $w_j$ given the preceding tokens in a defined context window $w_{<j}$. The scores were computed using the open-source base model google/gemma-4-31b.
+ \begin{equation}
+s(w_j) = -\log_2 p(w_j \mid w_{<j})
+\end{equation}
 
+%Turn-level surprisal:
+The surprisal score of turn-level inputs $\bar{s}(T_t \mid C_t)$ is then computed as the mean surprisal score of the tokens in a turn $T_t$ . Each token is conditioned on the preceding context $C_t$ and the preceding tokens within the turn $w_{t,<j}$.
+
+\begin{equation}
+\bar{s}(T_t \mid C_t)
+=
+\frac{1}{n}
+\sum_{j=1}^{n}
+-\log_2 p(w_{t,j} \mid C_t, w_{t,<j})
+\end{equation}
+%Novelty
+We then define Novelty and Transience by asking whether the prior context makes the current or future turns less surprising.
+
+Novelty is defined as the difference between contextual and baseline surprisal. This can be interpreted as the negative of a causal model-based PMI estimate between the preceding context and the current turn. The contextual score is computed using all preceding tokens in the story $w_{<t}$. The baseline score is calculated as the surprisal score of the turn from the model's beginning-of-sequence token. Formally: 
+\begin{equation}
+\mathrm{Novelty}_t = \bar{s}(T_t \mid C_t) - \bar{s}(T_t \mid \mathrm{BOS})
+\end{equation}
+%Transience
+We expand on the definition of transience from \cite{fundal2026directionalalignmentnarrativeagency}. Instead of regarding transience only as the isolated total predictive utility of a turn $s_t$, regardless of the prior context, we now measure the marginal contribution of $s_t$ on predicting the future. This is obtained by conditioning on the past and asking how much the current turn helps predicting the future turn \textbf{given} what has already been established. Formally, we transition from 
+
+$Transience_t=\bar{s}(F_{t+1}\mid T_t)-\bar{s}(F_{t+1}\mid BOS)$
+
+To
+
+$Transience_t=\bar{s}(F_t\mid C_t,T_t)-\bar{s}(F_t\mid C_t)$
+
+Where $F_t$ is the full subsequent counterpart's turn.
+This facilitates a measure of what the turn carries into the future narrative, besides what has already been established. 
+
+%Resoncance
+Finally, we define resonance as the net gain of novelty on future discourse (rephrase)
 \begin{equation}
 \mathrm{Resonance}_t = \mathrm{Novelty}_t - \mathrm{Transience}_t
 \end{equation}
 
-etc.
 
 \subsection{Surface textual measures? Word count, readability, diversity}
 
@@ -209,38 +283,73 @@ etc.
 
 \begin{table*}[t]
 \centering
-\begin{tabular}{lccc}
-\hline
-Question & Comparison & Finding & Significance \\
-\hline
-RQ1: Alignment & HA vs HH/AA & HA asymmetric & -- \\
-RQ2: Novelty & Human vs AI & Humans introduce more & -- \\
-RQ2: Resonance & Human vs AI & Human novelty persists more & -- \\
-RQ3: Regime & HA vs HH/AA & HA is distinct & -- \\
-\hline
-\end{tabular}
-\caption{Placeholder summary of main findings across research questions.}
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.12}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{0.18\textwidth}>{\RaggedRight\arraybackslash}p{0.24\textwidth}Y>{\RaggedRight\arraybackslash}p{0.16\textwidth}}
+\toprule
+Question & Measure & Finding & Evidence \\
+\midrule
+RQ1: Emotional alignment & Per-story valence alignment asymmetry, $A_{\mathrm{val}}$ & Human--AI showed the largest descriptive asymmetry, but the cross-condition effect was not reliable. Signed Human--AI directionality was suggestive. & $p=.101$; signed HA $p=.023$ \\
+\addlinespace
+RQ2: Novelty and resonance & Metric-level slot asymmetry, $A_m$ & Human--AI showed substantially larger side-level asymmetry in surprise, transience, and resonance than both baselines. & all planned contrasts $p_{\mathrm{BH}}<.001$ \\
+\addlinespace
+RQ2: Narrative influence & Novelty-to-resonance slope asymmetry, $A_{\mathrm{infl}}$ & Human--AI showed the largest descriptive slope asymmetry, but the contrast was marginal. & $p=.057$ \\
+\addlinespace
+RQ3: Interactional regime & Cross-condition comparison across valence and information-theoretic measures & Human--AI appears distinct primarily in metric-level asymmetry and novelty-to-resonance coupling, while valence asymmetry and slope-asymmetry evidence are weaker. & mixed evidence \\
+\bottomrule
+\end{tabularx}
+\caption{Summary of cross-condition findings across the main research questions.}
 \label{tab:results}
 \end{table*}
-
 \section{Results}
 \subsection{Emotional Alignment}
-Human-AI collaboration exhibits unique asymmetries: LLMs accommodate human emotional tone. Human-Human and AI-AI pairs show symmetric adaptation. 
+Human-AI collaboration exhibits unique asymmetries: LLMs accommodate human emotional tone. Human-Human and LLM-LLM pairs show symmetric adaptation. 
 % Yb: Picture: three panels, each show responder valence predicted by previous/current partner valence, with separate slopes for direction? 
-\begin{figure}[t]
-    \centering
-    \fbox{\parbox{0.45\textwidth}{
-        Placeholder for Figure 2: Directional emotional alignment slopes across HH, HA, and AA.
-    }}
-    \caption{Directional emotional alignment across co-writing conditions.}
-    \label{fig:alignment}
-\end{figure}
-
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\columnwidth}{Yrrrr}
+\toprule
+Condition & $n$ & Mean $A_{\mathrm{val}}$ & 95\% CI & Median \\
+\midrule
+Human--AI & 96 & 0.606 & [0.517, 0.703] & 0.538 \\
+Human--Human & 36 & 0.516 & [0.387, 0.647] & 0.439 \\
+AI--AI & 80 & 0.490 & [0.414, 0.570] & 0.425 \\
+\bottomrule
+\end{tabularx}
+\caption{Per-story valence alignment asymmetry across conditions. $A_{\mathrm{val}}$ is the absolute difference between Fisher-transformed directional valence correlations. Human--AI shows the highest descriptive asymmetry, but the omnibus and planned contrast tests are not statistically significant.}
+\label{tab:valence-asymmetry}
+\end{table}
 \subsection{Narrative Agency}
-Humans are the main source of narrative novelty and resonance in Human-Ai writing. AI-AI collaborations are, in a relative sense, predictable.
+Humans are the main source of narrative novelty and resonance in Human-Ai writing. LLM-LLM collaborations are, in a relative sense, predictable.
 % Yb: Image: regression lines? 
-
-
+The asymmetry in narrative influence is significantly higher for human-LLM stories, than human-human and LLM-LLM stories. 
+\begin{table*}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llrrcc}
+\toprule
+Metric & Condition & $n$ & Mean $A_m$ & 95\% CI & Cliff's $\delta$ vs. HA \\
+\midrule
+Surprise & Human--AI & 97 & 0.828 & [0.732, 0.926] & -- \\
+Surprise & Human--Human & 36 & 0.355 & [0.284, 0.428] & 0.591 \\
+Surprise & AI--AI & 80 & 0.209 & [0.175, 0.245] & 0.766 \\
+\addlinespace
+Transience & Human--AI & 97 & 0.484 & [0.432, 0.537] & -- \\
+Transience & Human--Human & 36 & 0.300 & [0.233, 0.370] & 0.397 \\
+Transience & AI--AI & 80 & 0.197 & [0.165, 0.231] & 0.670 \\
+\addlinespace
+Resonance & Human--AI & 97 & 1.290 & [1.149, 1.432] & -- \\
+Resonance & Human--Human & 36 & 0.605 & [0.482, 0.733] & 0.572 \\
+Resonance & AI--AI & 80 & 0.313 & [0.254, 0.382] & 0.806 \\
+\bottomrule
+\end{tabular}
+\caption{Metric-level slot asymmetry across conditions. $A_m$ denotes the per-story absolute difference between slot-level mean metric values. Human--AI shows substantially larger side-level asymmetry in surprise, transience, and resonance than both comparison conditions. Cliff's $\delta$ values compare Human--AI against each baseline condition.}
+\label{tab:metric-asymmetry}
+\end{table*}
 \subsection{Rubber-Band Effect}
 Across conditions emotional divergence tends to trigger subsequent convergence, suggesting a general corrective dynamic in collaborative storytelling. 
 
@@ -250,7 +359,7 @@ Human-Human stories are more readable than stories involving AI. LLM participati
 \section{Discussion}
 Treating co-writing as an unfolding interaction, our work has provided a finer grained account of creativity and coordination in open ended text generation. We have revealed systematic patterns in how narrative influence and alingment unfold across conditions. 
 
-Together these findings suggest that Human-AI co-writing is a distinct interactional regime characterized by asymmetric agency and adaptive alignment, with properties the differ from both Human-Human and AI-AI co-writing. 
+Together these findings suggest that Human-AI co-writing is a distinct interactional regime characterized by asymmetric agency and adaptive alignment, with properties the differ from both Human-Human and LLM-LLM co-writing. 
 
 Our approach improves over prior evaluations by enabling a fine-grained analysis of co-writing dynamics and capturing both narrative innovation and adaptive behavior. 
 

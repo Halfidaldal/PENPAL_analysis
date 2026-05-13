@@ -149,6 +149,18 @@ shared:
     engine: "projection"      # "bert" or "projection"
     language: "en"
     axis: "valence"           # Semantic Projection axis name
+
+    # Context-aware projection (script 04 + 04b).
+    # Concept vector is built by scripts/04b_build_concept_vector.py using the
+    # CHC Fiction4Sentiment anchor texts at projection_anchor_text_path, and
+    # encoded with projection_model_name. Re-run 04b if either changes.
+    projection_model_name: "Kingsoft-LLM/QZhou-Embedding"
+    projection_vector_path: "src/nes/data/Sentiment_QZhou.csv"
+    projection_anchor_text_path: "src/nes/data/Fiction4Sentiment_concept_text.csv"
+    projection_batch_size: 4
+    projection_build_batch_size: 8
+    projection_task: null
+    projection_context_separator: "\n"
   
   # Simulation parameters (AI-AI baseline)
   simulation:
