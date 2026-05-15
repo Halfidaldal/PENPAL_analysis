@@ -477,7 +477,15 @@ p_gap_box <- df_analysis %>%
   ) +
   theme(legend.position = "none")
 
-p_gap_density + p_gap_box
+together <- p_gap_density + p_gap_box
+
+ggsave(
+  file.path(GRAPHS_DIR, "valence_gap.png"),
+  together,
+  width = 12,
+  height = 8,
+  dpi = 300
+)
 ```
 
 ```{r temporal-dynamics, fig.width=12, fig.height=5}

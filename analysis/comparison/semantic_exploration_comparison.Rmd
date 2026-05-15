@@ -1,6 +1,6 @@
 ---
 title: "Semantic Exploration Comparison: Human-AI vs Human-Human vs AI-AI"
-subtitle: "Cross-Condition Analysis of Lag-Based Semantic Distance"
+subtitle: "Cross-Condition Analysis of Adjacent Semantic Distance"
 author: "PENPAL Project"
 date: "`r Sys.Date()`"
 output:
@@ -41,7 +41,7 @@ theme_set(theme_comparison())
 
 # Overview
 
-The semantic exploration outputs now use the **current lag-based structure**:
+The semantic exploration outputs contain the **current lag-based structure**:
 
 - `k`: lag
 - `distance`: mean semantic distance for that lag
@@ -49,29 +49,60 @@ The semantic exploration outputs now use the **current lag-based structure**:
 
 The processed filename is still `semantic_exploration_binned.parquet`, but the current generator computes **lag-based distances**, not the older non-overlapping window-centroid bins.
 
-This notebook therefore no longer assumes old turn-level exploration tables. Instead it analyses:
+This notebook uses the raw interaction embeddings to reconstruct the alternating dyadic sequence and analyse:
 
-1. **Interleaved sequence exploration** across conditions
-2. **Speaker-specific exploration** using recovered role metadata
+1. **Adjacent turn-to-turn semantic distance** across conditions as the primary analysis
+2. **Story-level mean adjacent distance** as the supporting aggregate
+3. **Turn-level adjacent semantic-distance networks** as descriptive 2D maps
+4. **Lag-based trajectories** as supplemental descriptive context
 
 Important comparison note:
 
-- **Slot 1 / Slot 2** is the directly comparable cross-condition axis.
-- **Human / AI** in Human-AI and **Starter-side / Non-starter-side** in same-type conditions are only used as within-condition descriptive views.
+- The adjacent sequence includes both within-exchange steps (e.g., slot 1$_t$ to slot 2$_t$) and between-exchange steps (e.g., slot 2$_t$ to slot 1$_{t+1}$).
+- For Human-AI, the sequence is kept in the standard human-to-AI row order. For same-type dyads, `starter_side` determines which slot speaks first within each exchange.
+- **Human / AI** in Human-AI and **Starter-side / Non-starter-side** in same-type conditions are only used as descriptive views.
 
-**Primary cross-condition object.** Per story, we compute the trapezoidal area under each slot's mean $\text{distance}(k)$ curve over the intersection of $k$ values present for both slots, and take the unsigned difference:
-$$A_{\text{semexp}}(i) \;=\; \bigl|\, \mathrm{AUC}_{\text{slot}=1,\,i} - \mathrm{AUC}_{\text{slot}=2,\,i} \,\bigr|.$$
-This is label-invariant and comparable across conditions. The lag-binned LMM slot contrast and the log-distance slope view are retained as supplemental. Starter-mechanism and Human-AI speaker-type decompositions are deferred.
+**Primary cross-condition object.** Each adjacent pair in the reconstructed alternating sequence contributes one semantic distance. The main model compares these adjacent distances by condition while nesting observations within story:
+$$d_{ij} = \beta_0 + \beta_1 \mathrm{condition}_{ij} + u_{\mathrm{story}(j)} + \epsilon_{ij}.$$
 
-**Article-use note.** The primary claim should come from the per-story AUC asymmetry test. The interleaved-distance model answers a different question: whether the whole story sequence explores semantic space differently by condition, not whether the two contributors are more asymmetric.
+**Article-use note.** This analysis answers whether adjacent turns move through semantic space differently by condition. It is not a directional slot-asymmetry test.
+
+**Network-map note.** The 2D semantic-network layouts are precomputed by `scripts/09_compute_semantic_network_layouts.py`; this notebook only reads and visualizes those files.
+By default, the network script samples the same number of stories and adjacent edges per condition for visualization only, so panels are not visually dominated by sample size.
 
 # Load Data
 
 ```{r load-data}
+excluded_conversations <- c(
+  "conv_ed575a06c11d42358e3eeb7826d2f959",
+  "conv_a63a08273d0a4704a7638e4cd6850225"
+)
+
 df_combined <- load_exploration_data(c("human-ai", "human-human", "ai-ai")) %>%
   filter(k > 1) %>%
   prepare_condition_factor(reference = "human-ai") %>%
-  filter(conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959", conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225")
+  filter(!conversation_id %in% excluded_conversations)
+
+load_embedding_data <- function(conditions = c("human-ai", "human-human", "ai-ai")) {
+  conditions %>%
+    map(function(cond) {
+      df <- load_condition_data(cond, "story_embeddings_interaction_level.parquet")
+      if (is.null(df)) return(NULL)
+
+      df %>%
+        normalize_schema(cond) %>%
+        attach_interaction_metadata(cond) %>%
+        ensure_role_metadata() %>%
+        filter_complete_exchange_window() %>%
+        drop_provider_error_stories()
+    }) %>%
+    compact() %>%
+    bind_rows() %>%
+    filter(!conversation_id %in% excluded_conversations) %>%
+    prepare_condition_factor(reference = "human-ai")
+}
+
+df_embeddings <- load_embedding_data()
 
 df_combined %>%
   group_by(condition, agent) %>%
@@ -102,201 +133,373 @@ df_speaker <- df_combined %>%
 
 cat("Interleaved rows:", nrow(df_interleaved), "\n")
 cat("Speaker rows:", nrow(df_speaker), "\n")
+cat("Embedding rows:", nrow(df_embeddings), "\n")
 ```
 
-# Primary: Per-Story AUC Asymmetry
+# Primary: Adjacent Turn-to-Turn Semantic Distance
 
-```{r primary-auc-asymmetry}
-# Aggregate to one distance value per (story, slot, k) first
-df_slot_k <- df_speaker %>%
-  group_by(condition, conversation_id, slot, k) %>%
-  summarise(distance = mean(distance, na.rm = TRUE), .groups = "drop") %>%
-  drop_na(distance)
-
-# Trapezoidal AUC over the k range that is populated for BOTH slots within each story
-trap_auc <- function(x, y) {
-  if (length(x) < 2) return(NA_real_)
-  ord <- order(x)
-  x <- x[ord]; y <- y[ord]
-  sum((y[-1] + y[-length(y)]) * diff(x) / 2)
+```{r adjacent-distance-functions}
+parse_embedding_r <- function(x) {
+  if (is.null(x) || length(x) == 0) return(NULL)
+  if (is.character(x)) {
+    x <- gsub("^\\[|\\]$", "", x)
+    out <- suppressWarnings(as.numeric(strsplit(x, ",")[[1]]))
+  } else {
+    out <- suppressWarnings(as.numeric(unlist(x, use.names = FALSE)))
+  }
+  if (length(out) == 0 || any(!is.finite(out))) return(NULL)
+  out
 }
 
-df_auc <- df_slot_k %>%
-  group_by(condition, conversation_id, slot) %>%
-  summarise(k_set = list(k), .groups = "drop") %>%
-  pivot_wider(names_from = slot, values_from = k_set) %>%
-  rowwise() %>%
-  mutate(
-    k_common = list(sort(intersect(`Slot 1`, `Slot 2`)))
-  ) %>%
-  ungroup() %>%
-  select(condition, conversation_id, k_common) %>%
-  # keep stories with enough shared k to integrate
-  filter(lengths(k_common) >= 2)
+cosine_distance <- function(a, b) {
+  if (is.null(a) || is.null(b) || length(a) != length(b)) return(NA_real_)
+  denom <- sqrt(sum(a * a)) * sqrt(sum(b * b))
+  if (!is.finite(denom) || denom == 0) return(NA_real_)
+  sim <- sum(a * b) / denom
+  1 - pmax(pmin(sim, 1), -1)
+}
 
-df_auc_stories <- df_slot_k %>%
-  inner_join(df_auc, by = c("condition", "conversation_id")) %>%
-  rowwise() %>%
-  filter(k %in% k_common) %>%
-  ungroup() %>%
-  group_by(condition, conversation_id, slot) %>%
-  summarise(
-    auc = trap_auc(k, distance),
-    .groups = "drop"
+story_slot_order <- function(story_df) {
+  condition_value <- as.character(story_df$condition[1])
+  starter_values <- na.omit(as.character(story_df$starter_side))
+  starter_side <- if (length(starter_values) > 0) starter_values[1] else NA_character_
+
+  if (condition_value == "Human-AI") {
+    c("author_1", "author_2")
+  } else if (!is.na(starter_side) && starter_side == "author_2") {
+    c("author_2", "author_1")
+  } else {
+    c("author_1", "author_2")
+  }
+}
+
+build_story_sequence <- function(story_df) {
+  story_df <- story_df %>%
+    arrange(turn_index)
+
+  slot_order <- story_slot_order(story_df)
+
+  map_dfr(seq_len(nrow(story_df)), function(i) {
+    row_i <- story_df[i, ]
+    first_slot <- slot_order[1]
+    second_slot <- slot_order[2]
+
+    tibble(
+      sequence_index = c(2 * i - 1, 2 * i),
+      turn_index = c(row_i$turn_index, row_i$turn_index),
+      slot = c(first_slot, second_slot),
+      embedding = list(
+        parse_embedding_r(row_i[[paste0(first_slot, "_embedding")]][[1]]),
+        parse_embedding_r(row_i[[paste0(second_slot, "_embedding")]][[1]])
+      )
+    )
+  }) %>%
+    filter(map_lgl(embedding, ~ !is.null(.x)))
+}
+
+build_story_adjacent_distances <- function(story_df) {
+  sequence_df <- build_story_sequence(story_df)
+
+  if (nrow(sequence_df) < 2) {
+    return(tibble())
+  }
+
+  n_seq <- nrow(sequence_df)
+
+  tibble(
+    pair_index = seq_len(n_seq - 1),
+    from_turn = sequence_df$turn_index[-n_seq],
+    to_turn = sequence_df$turn_index[-1],
+    from_slot = sequence_df$slot[-n_seq],
+    to_slot = sequence_df$slot[-1],
+    pair_type = if_else(from_turn == to_turn, "within_exchange", "between_exchange"),
+    adjacent_distance = map2_dbl(
+      sequence_df$embedding[-n_seq],
+      sequence_df$embedding[-1],
+      cosine_distance
+    )
   ) %>%
-  pivot_wider(names_from = slot, values_from = auc, names_prefix = "auc_") %>%
-  drop_na(`auc_Slot 1`, `auc_Slot 2`) %>%
+    filter(is.finite(adjacent_distance))
+}
+
+df_adjacent <- df_embeddings %>%
+  group_by(condition, conversation_id) %>%
+  group_modify(~ build_story_adjacent_distances(.x), .keep = TRUE) %>%
+  ungroup() %>%
   mutate(
-    signed_diff = `auc_Slot 1` - `auc_Slot 2`,
-    A_semexp = abs(signed_diff)
+    pair_type = factor(pair_type, levels = c("within_exchange", "between_exchange"))
   )
 
-stopifnot(all(df_auc_stories$A_semexp >= 0))
+df_adjacent %>%
+  group_by(condition) %>%
+  summarise(
+    n_adjacent_pairs = n(),
+    n_stories = n_distinct(conversation_id),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(caption = "Adjacent semantic-distance observations by condition")
 
-df_auc_stories %>%
-  count(condition, name = "n_stories") %>%
-  knitr::kable(caption = "Stories with per-story AUC computable in both slots")
-
-df_auc_stories %>%
+df_adjacent %>%
   group_by(condition) %>%
   summarise(
     n = n(),
-    mean_A = mean(A_semexp),
-    sd_A = sd(A_semexp),
-    median_A = median(A_semexp),
+    n_stories = n_distinct(conversation_id),
+    mean_distance = mean(adjacent_distance),
+    sd_distance = sd(adjacent_distance),
+    median_distance = median(adjacent_distance),
     .groups = "drop"
   ) %>%
   knitr::kable(
     digits = 3,
-    caption = "Per-story |AUC(slot 1) - AUC(slot 2)| by condition"
+    caption = "Adjacent turn-to-turn semantic distance by condition"
   )
 ```
 
-```{r primary-auc-test}
-if (n_distinct(df_auc_stories$condition) >= 2 && nrow(df_auc_stories) >= 10) {
-  cat("One-way ANOVA: A_semexp ~ condition\n")
-  print(summary(aov(A_semexp ~ condition, data = df_auc_stories)))
+```{r adjacent-distance-model}
+if (n_distinct(df_adjacent$condition) >= 2 && nrow(df_adjacent) >= 10) {
+  model_adjacent <- lmer(
+    adjacent_distance ~ condition + (1 | conversation_id),
+    data = df_adjacent
+  )
 
-  cat("\nKruskal-Wallis (robust): A_semexp ~ condition\n")
-  print(kruskal.test(A_semexp ~ condition, data = df_auc_stories))
+  cat("Main mixed model: adjacent_distance ~ condition + (1 | conversation_id)\n")
+  print(summary(model_adjacent))
+
+  emm_adjacent <- emmeans(model_adjacent, specs = "condition")
+
+  cat("\nEstimated marginal means by condition:\n")
+  print(emm_adjacent)
+
+  cat("\nPairwise condition contrasts (BH-adjusted):\n")
+  print(pairs(emm_adjacent, adjust = "BH"))
+
+  cat("\nPlanned contrast: Human-AI vs same-type average:\n")
+  print(contrast(
+    emm_adjacent,
+    method = list("Human-AI - mean(Human-Human, AI-AI)" = c(1, -0.5, -0.5))
+  ))
+}
+```
+
+```{r adjacent-distance-plot, fig.width=9, fig.height=5}
+ggplot(df_adjacent, aes(x = condition, y = adjacent_distance, fill = condition)) +
+  geom_violin(alpha = 0.4, colour = NA) +
+  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
+  geom_jitter(width = 0.08, alpha = 0.35, size = 0.9) +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Adjacent turn-to-turn semantic distance by condition",
+    subtitle = "Each point is one adjacent pair in the reconstructed alternating dyadic sequence",
+    x = "Condition",
+    y = "Adjacent semantic distance"
+  ) +
+  theme(legend.position = "none")
+```
+
+# Supporting: Story-Level Mean Adjacent Distance
+
+```{r story-mean-adjacent}
+df_adjacent_story <- df_adjacent %>%
+  group_by(condition, conversation_id) %>%
+  summarise(
+    n_pairs = n(),
+    mean_adjacent_distance = mean(adjacent_distance, na.rm = TRUE),
+    median_adjacent_distance = median(adjacent_distance, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+df_adjacent_story %>%
+  group_by(condition) %>%
+  summarise(
+    n = n(),
+    mean_story_distance = mean(mean_adjacent_distance),
+    sd_story_distance = sd(mean_adjacent_distance),
+    median_story_distance = median(mean_adjacent_distance),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Story-level mean adjacent semantic distance by condition"
+  )
+```
+
+```{r story-mean-adjacent-tests}
+if (n_distinct(df_adjacent_story$condition) >= 2 && nrow(df_adjacent_story) >= 10) {
+  cat("One-way ANOVA: mean_adjacent_distance ~ condition\n")
+  print(summary(aov(mean_adjacent_distance ~ condition, data = df_adjacent_story)))
+
+  cat("\nKruskal-Wallis (robust): mean_adjacent_distance ~ condition\n")
+  print(kruskal.test(mean_adjacent_distance ~ condition, data = df_adjacent_story))
 
   cat("\nPairwise Wilcoxon (BH-adjusted):\n")
   print(pairwise.wilcox.test(
-    df_auc_stories$A_semexp,
-    df_auc_stories$condition,
+    df_adjacent_story$mean_adjacent_distance,
+    df_adjacent_story$condition,
     p.adjust.method = "BH"
   ))
 }
 ```
 
-```{r primary-auc-plot, fig.width=9, fig.height=5}
-ggplot(df_auc_stories, aes(x = condition, y = A_semexp, fill = condition)) +
+```{r story-mean-adjacent-plot, fig.width=9, fig.height=5}
+ggplot(df_adjacent_story, aes(x = condition, y = mean_adjacent_distance, fill = condition)) +
   geom_violin(alpha = 0.4, colour = NA) +
   geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
-  geom_jitter(width = 0.08, alpha = 0.35, size = 0.9) +
+  geom_jitter(width = 0.08, alpha = 0.45, size = 1.2) +
   scale_fill_manual(values = condition_colors) +
   labs(
-    title = "Per-story semantic-exploration AUC asymmetry by condition",
-    subtitle = "A_semexp(i) = |AUC_{slot 1}(i) - AUC_{slot 2}(i)|",
+    title = "Story-level mean adjacent semantic distance by condition",
+    subtitle = "One mean adjacent distance per story",
     x = "Condition",
-    y = expression("|" * Delta * " AUC|")
+    y = "Mean adjacent semantic distance"
   ) +
   theme(legend.position = "none")
 ```
 
-```{r primary-logk-slope-supplement}
-# Secondary dynamic object: per-story |slope_log(k), slot 1 - slope_log(k), slot 2|
-df_logk <- df_slot_k %>%
-  filter(k > 0, distance > 0) %>%
-  mutate(log_k = log(k), log_distance = log(distance))
+# Bootstrap CIs and Effect Sizes on Story Means
 
-df_logk_slopes <- df_logk %>%
-  group_by(condition, conversation_id, slot) %>%
-  summarise(
-    n_points = n(),
-    slope = if (n_points >= 3) coef(lm(log_distance ~ log_k))[2] else NA_real_,
-    .groups = "drop"
-  ) %>%
-  select(condition, conversation_id, slot, slope) %>%
-  pivot_wider(names_from = slot, values_from = slope, names_prefix = "slope_") %>%
-  drop_na(`slope_Slot 1`, `slope_Slot 2`) %>%
-  mutate(A_logk_slope = abs(`slope_Slot 1` - `slope_Slot 2`))
-
-if (nrow(df_logk_slopes) > 0) {
-  df_logk_slopes %>%
-    group_by(condition) %>%
-    summarise(
-      n = n(),
-      mean_A = mean(A_logk_slope),
-      median_A = median(A_logk_slope),
-      .groups = "drop"
-    ) %>%
-    knitr::kable(
-      digits = 3,
-      caption = "Secondary: per-story |log(distance) ~ log(k) slope diff| by condition"
-    )
-}
-```
-
-# Bootstrap CIs and Effect Sizes on `A_semexp`
-
-```{r boot-effects-semexp}
-bootstrap_condition_means(df_auc_stories, "A_semexp", R = 10000) %>%
+```{r boot-effects-adjacent-story}
+bootstrap_condition_means(df_adjacent_story, "mean_adjacent_distance", R = 10000) %>%
   knitr::kable(
     digits = 3,
-    caption = "Bootstrap 95% CI on per-condition mean of A_semexp (R = 10,000)"
+    caption = "Bootstrap 95% CI on per-condition mean of story-level adjacent distance (R = 10,000)"
   )
 
-effect_sizes_pairwise(df_auc_stories, "A_semexp") %>%
+effect_sizes_pairwise(df_adjacent_story, "mean_adjacent_distance") %>%
   knitr::kable(
     digits = 3,
-    caption = "Pairwise Cliff's delta on A_semexp"
+    caption = "Pairwise Cliff's delta on story-level mean adjacent distance"
   )
 ```
 
 # Planned Contrast: HA vs (HH + AA)/2
 
-```{r planned-contrast-semexp}
-planned_contrast_HA_vs_same(df_auc_stories, "A_semexp") %>%
+```{r planned-contrast-adjacent-story}
+planned_contrast_HA_vs_same(df_adjacent_story, "mean_adjacent_distance") %>%
   knitr::kable(
     digits = 3,
-    caption = "Planned contrast: A_semexp in HA vs the average of HH and AA"
+    caption = "Planned contrast: story-level mean adjacent distance in HA vs the average of HH and AA"
   )
 ```
 
-# Directional Stability of Signed Semantic-Exploration AUC Asymmetry
+# Supplemental: Turn-Level Adjacent Semantic-Distance Network
 
-Tests whether the *direction* of the slot-1 vs slot-2 AUC difference is
-consistent across stories within each condition. The signed quantity is
-$\text{signed}_i = \mathrm{AUC}_{\text{slot 1},i} - \mathrm{AUC}_{\text{slot 2},i}$.
+```{r turn-adjacent-network-data}
+network_dir <- here::here("analysis", "comparison", "semantic_network_layouts")
+network_paths <- list(
+  turn_nodes = file.path(network_dir, "turn_nodes.csv"),
+  turn_edges = file.path(network_dir, "turn_edges.csv"),
+  metadata = file.path(network_dir, "metadata.json")
+)
 
-```{r directional-stability-semexp}
-ds_sem <- directional_stability(df_auc_stories, "signed_diff")
-ds_sem$by_condition %>%
-  knitr::kable(
-    digits = 3,
-    caption = "Per-condition directional stability of signed AUC asymmetry"
+network_available <- all(file.exists(unlist(network_paths)))
+
+if (network_available) {
+  df_turn_network <- read_csv(network_paths$turn_nodes, show_col_types = FALSE) %>%
+    mutate(condition = factor(condition, levels = names(condition_colors)))
+  turn_edges <- read_csv(network_paths$turn_edges, show_col_types = FALSE) %>%
+    mutate(
+      condition = factor(condition, levels = names(condition_colors)),
+      adjacent_distance = as.numeric(adjacent_distance),
+      closeness = 1 - scales::rescale(
+        adjacent_distance,
+        to = c(0, 1),
+        from = quantile(adjacent_distance, c(0.05, 0.95), na.rm = TRUE)
+      ),
+      closeness = pmax(pmin(closeness, 1), 0),
+      pair_type = factor(pair_type, levels = c("within_exchange", "between_exchange"))
+    )
+  network_metadata <- jsonlite::fromJSON(network_paths$metadata)
+
+  turn_edge_labels <- turn_edges %>%
+    group_by(condition) %>%
+    summarise(
+      mean_distance = mean(adjacent_distance, na.rm = TRUE),
+      x = quantile(c(x, xend), 0.03, na.rm = TRUE),
+      y = quantile(c(y, yend), 0.97, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(label = sprintf("Mean d = %.3f", mean_distance))
+} else {
+  df_turn_network <- tibble()
+  turn_edges <- tibble()
+  turn_edge_labels <- tibble()
+  network_metadata <- list(turn_layout_method = "not computed")
+  cat(
+    "Precomputed semantic network files not found. Run:\n",
+    "venv/bin/python scripts/09_compute_semantic_network_layouts.py\n"
   )
-
-cat(sprintf(
-  "Brown-Forsythe variance-equality p = %.4f\n", ds_sem$variance_equality_p
-))
+}
 ```
 
-```{r directional-stability-semexp-plot, fig.width=9, fig.height=5}
-ggplot(df_auc_stories, aes(x = condition, y = signed_diff, fill = condition)) +
-  geom_violin(alpha = 0.4, colour = NA) +
-  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
-  geom_jitter(width = 0.08, alpha = 0.35, size = 0.9) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-  scale_fill_manual(values = condition_colors) +
-  labs(
-    title = "Signed AUC asymmetry by condition",
-    subtitle = "AUC(slot 1) - AUC(slot 2) per story",
-    x = "Condition",
-    y = expression(Delta * AUC)
-  ) +
-  theme(legend.position = "none")
+```{r turn-adjacent-network-plot, fig.width=13, fig.height=6}
+if (network_available) {
+  ggplot() +
+    geom_segment(
+      data = turn_edges,
+      aes(
+        x = x,
+        y = y,
+        xend = xend,
+        yend = yend,
+        color = closeness,
+        linewidth = closeness,
+        group = conversation_id
+      ),
+      alpha = 0.68,
+      lineend = "round"
+    ) +
+    geom_point(
+      data = df_turn_network,
+      aes(x = x, y = y),
+      color = "grey15",
+      alpha = 0.28,
+      size = 0.55
+    ) +
+    geom_label(
+      data = turn_edge_labels,
+      aes(x = x, y = y, label = label),
+      hjust = 0,
+      vjust = 1,
+      label.size = 0,
+      fill = "white",
+      alpha = 0.85,
+      size = 3.2
+    ) +
+    facet_wrap(~condition, nrow = 1) +
+    scale_color_gradient(
+      low = "grey88",
+      high = "grey8",
+      name = "Semantic\ncloseness",
+      limits = c(0, 1),
+      breaks = c(0, 1),
+      labels = c("far", "close")
+    ) +
+    scale_linewidth_continuous(range = c(0.03, 1.35), guide = "none") +
+    labs(
+      title = "Adjacent turn-to-turn semantic distance networks",
+      subtitle = paste0(
+        "Nodes are turns from a balanced visual sample; edges connect only adjacent turns. Darker/thicker edges are semantically closer; faint grey edges are larger jumps; layout = ",
+        network_metadata$turn_layout_method
+      ),
+      x = NULL,
+      y = NULL
+    ) +
+    theme(
+      legend.position = "right",
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      panel.grid = element_blank()
+    )
+} else {
+  ggplot() +
+    annotate(
+      "text",
+      x = 0,
+      y = 0,
+      label = "Run venv/bin/python scripts/09_compute_semantic_network_layouts.py to generate this plot."
+    ) +
+    theme_void()
+}
 ```
 
 # Supplemental: Speaker-Level Slot Trajectories
@@ -323,7 +526,7 @@ ggplot(speaker_summary, aes(x = k, y = mean_distance, color = slot)) +
   facet_wrap(~condition) +
   labs(
     title = "Speaker-Level Semantic Exploration by Slot",
-    subtitle = "Underlying slot trajectories behind the primary AUC object",
+    subtitle = "Supplemental lag-based slot trajectories",
     x = "Lag Bin (k)",
     y = "Semantic Distance",
     color = "Slot",
@@ -474,23 +677,23 @@ ggplot(view_summary, aes(x = k, y = mean_distance, color = condition)) +
 
 # Summary
 
-Primary cross-condition result: per-story $A_{\text{semexp}} = |\mathrm{AUC}_{\text{slot 1}} - \mathrm{AUC}_{\text{slot 2}}|$ from trapezoidal integration of the distance(k) curve over the intersected k range. Tested with ANOVA + Kruskal and pairwise BH-adjusted Wilcoxon. A secondary log-distance-slope asymmetry is reported for dynamic-shape continuity with the paper.
+Primary cross-condition result: adjacent turn-to-turn semantic distance from the reconstructed alternating dyadic sequence, tested with a mixed model that nests adjacent observations within story. This includes both within-exchange distances and the cross-exchange step from the second turn of one exchange to the first turn of the next exchange.
 
 Robustness layers added:
 
-- bootstrap 95% CIs on per-condition mean of $A_{\text{semexp}}$
-- pairwise Cliff's $\delta$ effect sizes
-- planned single-df contrast HA vs (HH+AA)/2
+- story-level mean adjacent distance as an aggregate supporting analysis
+- bootstrap 95% CIs on per-condition story means
+- pairwise Cliff's $\delta$ effect sizes on story means
+- planned single-df contrast HA vs (HH+AA)/2 on story means
 
 Supplemental views retained:
 
-- speaker-level slot trajectories (descriptive, both slots side-by-side without signed contrast)
-- interleaved sequence model and condition descriptives
+- turn-level adjacent semantic-distance network, with edge color/width encoding original-space adjacent distance
+- lag-based speaker-level slot trajectories
+- lag-based interleaved sequence model and condition descriptives
 - within-condition role curves (descriptive only; HA Human/AI inferential view lives in [analysis/human-ai/exploration.Rmd](../human-ai/exploration.Rmd))
 - interleaved vs speaker-specific side-by-side view
 
-Deferred to a follow-up pass:
-
-- starter-mechanism analysis (signed, starter-normalized AUC asymmetry across all conditions)
+To refresh the semantic-network layouts, run `venv/bin/python scripts/09_compute_semantic_network_layouts.py` before rendering this notebook.
 
 *Analysis completed: `r Sys.time()`*

@@ -1,0 +1,493 @@
+---
+title: "Immediate Emotional Adaptation"
+subtitle: "Absolute Marginal Shifts and Three-Turn Response Dynamics"
+author: "PENPAL Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+source(here::here("analysis/comparison/_comparison_utils.R"))
+
+GRAPHS_DIR <- file.path(PROJECT_ROOT, "analysis", "figures")
+dir.create(GRAPHS_DIR, showWarnings = FALSE, recursive = TRUE)
+
+pacman::p_load(
+  lme4,
+  lmerTest,
+  emmeans,
+  patchwork,
+  stringr
+)
+
+theme_set(theme_comparison())
+```
+
+# Overview
+
+This short analysis treats the current windowed sentiment marginal as an immediate
+exchange-level adaptation signal. The raw signal emitted by
+`scripts/04_compute_sentiment.py` is signed:
+
+$$m_i = \operatorname{proj}(E(\text{previous context} + \text{current turn})) -
+\operatorname{proj}(E(\text{previous context}))$$
+
+Signed means cancel when averaged. The first analysis therefore uses the
+absolute point-level magnitude:
+
+$$A_{\text{shift}} = |m_i|$$
+
+This asks whether a condition has more immediate emotional movement, regardless
+of whether the move is positive or negative.
+
+The second analysis combines the two adjacent marginal segments around one
+exchange:
+
+$$\text{slot2}_{t-1} \rightarrow \text{slot1}_t \rightarrow \text{slot2}_t$$
+
+Because the first segment is already represented by the first turn's marginal
+shift, and the second segment is represented by the second turn's marginal
+shift, each complete exchange contributes:
+
+$$\text{incoming}_t = m(\text{slot1}_t \mid \text{slot2}_{t-1})$$
+
+$$\text{response}_t = m(\text{slot2}_t \mid \text{slot1}_t)$$
+
+The two three-turn metrics are:
+
+$$\text{adaptation closure}_t = |\text{incoming}_t| - |\text{response}_t|$$
+
+Positive closure means the response segment is smaller than the incoming
+segment, consistent with damping or convergence. Negative closure means the
+response segment is larger, consistent with amplification.
+
+$$\text{reversal score}_t = -\text{incoming}_t \cdot \text{response}_t$$
+
+Positive reversal means the response moves in the opposite signed direction from
+the incoming segment. Negative reversal means the response continues in the same
+signed direction.
+
+# Load Data
+
+```{r load-data}
+manual_excluded_story_ids <- c(
+  "conv_ed575a06c11d42358e3eeb7826d2f959",
+  "conv_a63a08273d0a4704a7638e4cd6850225",
+  "conv_0bb56093-3033-4615-bb70-ebfa4135589a",
+  "conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80"
+)
+
+df_combined <- load_valence_data(c("human-ai", "human-human", "ai-ai")) %>%
+  filter_complete_exchange_window() %>%
+  filter(!conversation_id %in% manual_excluded_story_ids) %>%
+  filter(author_2 != "Network error while generating a response.") %>%
+  prepare_condition_factor(reference = "human-ai")
+
+raw_shift_cols <- c(
+  "author_1_valence_marginal_window",
+  "author_2_valence_marginal_window"
+)
+
+if (all(raw_shift_cols %in% names(df_combined))) {
+  shift_signal_label <- "raw windowed marginal projection"
+  df_shift <- df_combined %>%
+    mutate(
+      author_1_shift = author_1_valence_marginal_window,
+      author_2_shift = author_2_valence_marginal_window
+    )
+} else {
+  shift_signal_label <- "promoted author_*_valence fallback"
+  df_shift <- df_combined %>%
+    mutate(
+      author_1_shift = author_1_valence,
+      author_2_shift = author_2_valence
+    )
+}
+
+df_shift <- df_shift %>%
+  mutate(
+    condition_id = normalize_condition_id(as.character(condition)),
+    chronological_first_slot = case_when(
+      condition_id == "human-ai" ~ "author_1",
+      starter_side == "author_2" ~ "author_2",
+      TRUE ~ "author_1"
+    ),
+    first_shift = if_else(
+      chronological_first_slot == "author_1",
+      author_1_shift,
+      author_2_shift
+    ),
+    second_shift = if_else(
+      chronological_first_slot == "author_1",
+      author_2_shift,
+      author_1_shift
+    ),
+    first_speaker_type = if_else(
+      chronological_first_slot == "author_1",
+      author_1_type,
+      author_2_type
+    ),
+    second_speaker_type = if_else(
+      chronological_first_slot == "author_1",
+      author_2_type,
+      author_1_type
+    )
+  )
+
+cat("Shift signal used:", shift_signal_label, "\n")
+
+df_shift %>%
+  group_by(condition) %>%
+  summarise(
+    n_stories = n_distinct(conversation_id),
+    n_exchanges = n(),
+    min_turn = min(turn_index, na.rm = TRUE),
+    max_turn = max(turn_index, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(caption = "Loaded complete exchange window by condition")
+```
+
+# Absolute Marginal Shift
+
+Each speaker contribution becomes one point. The metric is the absolute value of
+the signed windowed marginal shift.
+
+```{r absolute-shift-preprocess}
+df_abs_point <- bind_rows(
+  df_shift %>%
+    transmute(
+      condition,
+      conversation_id,
+      turn_index,
+      chronological_position = "First",
+      speaker_type = first_speaker_type,
+      signed_shift = first_shift
+    ),
+  df_shift %>%
+    transmute(
+      condition,
+      conversation_id,
+      turn_index,
+      chronological_position = "Second",
+      speaker_type = second_speaker_type,
+      signed_shift = second_shift
+    )
+) %>%
+  mutate(
+    chronological_position = factor(chronological_position, levels = c("First", "Second")),
+    abs_shift = abs(signed_shift)
+  ) %>%
+  drop_na(abs_shift, turn_index) %>%
+  mutate(turn_scaled = as.numeric(scale(turn_index)))
+
+df_abs_story <- df_abs_point %>%
+  group_by(condition, conversation_id) %>%
+  summarise(
+    n_points = n(),
+    mean_abs_shift = mean(abs_shift, na.rm = TRUE),
+    median_abs_shift = median(abs_shift, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+df_abs_point %>%
+  group_by(condition) %>%
+  summarise(
+    n_stories = n_distinct(conversation_id),
+    n_points = n(),
+    mean_abs_shift = mean(abs_shift),
+    sd_abs_shift = sd(abs_shift),
+    median_abs_shift = median(abs_shift),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Point-level absolute marginal shift by condition"
+  )
+
+df_abs_story %>%
+  group_by(condition) %>%
+  summarise(
+    n_stories = n(),
+    mean_story_abs_shift = mean(mean_abs_shift),
+    sd_story_abs_shift = sd(mean_abs_shift),
+    median_story_abs_shift = median(mean_abs_shift),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Per-story mean absolute marginal shift by condition"
+  )
+```
+
+```{r absolute-shift-plot, fig.width=12, fig.height=5}
+p_abs_density <- ggplot(df_abs_point, aes(x = abs_shift, fill = condition)) +
+  geom_density(alpha = 0.45) +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Absolute Immediate Sentiment Shift",
+    subtitle = "Point-level |windowed marginal shift|",
+    x = "Absolute marginal shift",
+    y = "Density"
+  ) +
+  theme(legend.position = "bottom")
+
+p_abs_story <- ggplot(df_abs_story, aes(x = condition, y = mean_abs_shift, fill = condition)) +
+  geom_violin(alpha = 0.55, trim = FALSE) +
+  geom_boxplot(width = 0.18, alpha = 0.85, outlier.alpha = 0.15) +
+  geom_jitter(width = 0.08, alpha = 0.35, size = 1.3) +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Story-Level Adaptation Intensity",
+    subtitle = "Mean |windowed marginal shift| per story",
+    x = "Condition",
+    y = "Mean absolute marginal shift"
+  ) +
+  theme(legend.position = "none")
+
+p_abs_combined <- p_abs_density + p_abs_story
+print(p_abs_combined)
+
+ggsave(
+  file.path(GRAPHS_DIR, "immediate_adaptation_absolute_shift.png"),
+  p_abs_combined,
+  width = 12,
+  height = 5,
+  dpi = 300
+)
+```
+
+```{r absolute-shift-tests}
+cat("Per-story ANOVA: mean_abs_shift ~ condition\n")
+print(summary(aov(mean_abs_shift ~ condition, data = df_abs_story)))
+
+cat("\nPer-story Kruskal-Wallis: mean_abs_shift ~ condition\n")
+print(kruskal.test(mean_abs_shift ~ condition, data = df_abs_story))
+
+cat("\nPairwise Wilcoxon on per-story means (BH-adjusted):\n")
+print(pairwise.wilcox.test(
+  df_abs_story$mean_abs_shift,
+  df_abs_story$condition,
+  p.adjust.method = "BH"
+))
+
+bootstrap_condition_means(df_abs_story, "mean_abs_shift", R = 10000) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Bootstrap 95% CI on condition mean of per-story absolute shift"
+  )
+
+effect_sizes_pairwise(df_abs_story, "mean_abs_shift") %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Pairwise Cliff's delta on per-story absolute shift"
+  )
+
+planned_contrast_HA_vs_same(df_abs_story, "mean_abs_shift") %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Planned contrast: Human-AI vs same-type average"
+  )
+```
+
+```{r absolute-shift-mixed-model}
+model_abs_shift <- lmer(
+  abs_shift ~ condition + chronological_position + turn_scaled + (1 | conversation_id),
+  data = df_abs_point
+)
+
+cat("Mixed model: abs_shift ~ condition + chronological_position + turn_scaled + (1 | story)\n")
+print(summary(model_abs_shift))
+
+cat("\nEstimated marginal means by condition:\n")
+print(emmeans(model_abs_shift, specs = "condition"))
+
+cat("\nPairwise condition contrasts:\n")
+print(pairs(emmeans(model_abs_shift, specs = "condition"), adjust = "bonferroni"))
+```
+
+# Three-Turn Response Dynamics
+
+Each complete exchange contributes one three-turn point:
+
+`previous second turn -> current first turn -> current second turn`
+
+Operationally, this uses the two adjacent windowed marginal shifts:
+
+- `incoming_shift = first_shift`
+- `response_shift = second_shift`
+
+```{r triplet-preprocess}
+df_triplet <- df_shift %>%
+  group_by(conversation_id, condition) %>%
+  arrange(turn_index, .by_group = TRUE) %>%
+  mutate(
+    incoming_shift = first_shift,
+    response_shift = second_shift,
+    incoming_abs = abs(incoming_shift),
+    response_abs = abs(response_shift),
+    adaptation_closure = incoming_abs - response_abs,
+    reversal_score = -incoming_shift * response_shift,
+    reversal_flag = case_when(
+      incoming_shift == 0 | response_shift == 0 ~ NA,
+      TRUE ~ sign(incoming_shift) != sign(response_shift)
+    ),
+    response_to_incoming_ratio = if_else(
+      incoming_abs > 1e-8,
+      response_abs / incoming_abs,
+      NA_real_
+    )
+  ) %>%
+  ungroup() %>%
+  drop_na(incoming_shift, response_shift, turn_index) %>%
+  mutate(turn_scaled = as.numeric(scale(turn_index)))
+
+df_triplet_story <- df_triplet %>%
+  group_by(condition, conversation_id) %>%
+  summarise(
+    n_triplets = n(),
+    mean_adaptation_closure = mean(adaptation_closure, na.rm = TRUE),
+    mean_reversal_score = mean(reversal_score, na.rm = TRUE),
+    reversal_rate = mean(reversal_flag, na.rm = TRUE),
+    median_response_ratio = median(response_to_incoming_ratio, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+df_triplet %>%
+  group_by(condition) %>%
+  summarise(
+    n_stories = n_distinct(conversation_id),
+    n_triplets = n(),
+    mean_incoming_abs = mean(incoming_abs),
+    mean_response_abs = mean(response_abs),
+    mean_adaptation_closure = mean(adaptation_closure),
+    mean_reversal_score = mean(reversal_score),
+    reversal_rate = mean(reversal_flag, na.rm = TRUE),
+    median_response_ratio = median(response_to_incoming_ratio, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Three-turn response metrics by condition"
+  )
+```
+
+```{r triplet-plots, fig.width=12, fig.height=5}
+p_closure <- ggplot(df_triplet, aes(x = condition, y = adaptation_closure, fill = condition)) +
+  geom_violin(alpha = 0.55, trim = FALSE) +
+  geom_boxplot(width = 0.18, alpha = 0.85, outlier.alpha = 0.12) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Adaptation Closure",
+    subtitle = "Positive means response shift is smaller than incoming shift",
+    x = "Condition",
+    y = "|incoming| - |response|"
+  ) +
+  theme(legend.position = "none")
+
+p_reversal <- ggplot(df_triplet, aes(x = condition, y = reversal_score, fill = condition)) +
+  geom_violin(alpha = 0.55, trim = FALSE) +
+  geom_boxplot(width = 0.18, alpha = 0.85, outlier.alpha = 0.12) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = condition_colors) +
+  labs(
+    title = "Response Reversal",
+    subtitle = "Positive means response reverses the incoming signed movement",
+    x = "Condition",
+    y = "-incoming * response"
+  ) +
+  theme(legend.position = "none")
+
+p_triplet_combined <- p_closure + p_reversal
+print(p_triplet_combined)
+
+ggsave(
+  file.path(GRAPHS_DIR, "immediate_adaptation_triplet_response.png"),
+  p_triplet_combined,
+  width = 12,
+  height = 5,
+  dpi = 300
+)
+```
+
+```{r triplet-story-tests}
+cat("Per-story ANOVA: mean_adaptation_closure ~ condition\n")
+print(summary(aov(mean_adaptation_closure ~ condition, data = df_triplet_story)))
+
+cat("\nPer-story Kruskal-Wallis: mean_adaptation_closure ~ condition\n")
+print(kruskal.test(mean_adaptation_closure ~ condition, data = df_triplet_story))
+
+cat("\nPairwise Wilcoxon on per-story adaptation closure (BH-adjusted):\n")
+print(pairwise.wilcox.test(
+  df_triplet_story$mean_adaptation_closure,
+  df_triplet_story$condition,
+  p.adjust.method = "BH"
+))
+
+cat("\nPer-story ANOVA: mean_reversal_score ~ condition\n")
+print(summary(aov(mean_reversal_score ~ condition, data = df_triplet_story)))
+
+cat("\nPer-story Kruskal-Wallis: mean_reversal_score ~ condition\n")
+print(kruskal.test(mean_reversal_score ~ condition, data = df_triplet_story))
+
+cat("\nPairwise Wilcoxon on per-story reversal score (BH-adjusted):\n")
+print(pairwise.wilcox.test(
+  df_triplet_story$mean_reversal_score,
+  df_triplet_story$condition,
+  p.adjust.method = "BH"
+))
+```
+
+```{r triplet-mixed-models}
+model_closure <- lmer(
+  adaptation_closure ~ condition + turn_scaled + (1 | conversation_id),
+  data = df_triplet
+)
+
+model_reversal <- lmer(
+  reversal_score ~ condition + turn_scaled + (1 | conversation_id),
+  data = df_triplet
+)
+
+cat("Mixed model: adaptation_closure ~ condition + turn_scaled + (1 | story)\n")
+print(summary(model_closure))
+
+cat("\nCondition contrasts for adaptation closure:\n")
+print(pairs(emmeans(model_closure, specs = "condition"), adjust = "bonferroni"))
+
+cat("\nMixed model: reversal_score ~ condition + turn_scaled + (1 | story)\n")
+print(summary(model_reversal))
+
+cat("\nCondition contrasts for reversal score:\n")
+print(pairs(emmeans(model_reversal, specs = "condition"), adjust = "bonferroni"))
+```
+
+# Notes
+
+Use `mean_abs_shift` as the primary condition-level adaptation intensity result:
+it is closest to the original concern that signed marginal shifts cancel. Use
+`adaptation_closure` and `reversal_score` as mechanism checks for whether the
+subsequent response dampens or reverses the immediately preceding emotional
+movement.
+
