@@ -91,7 +91,7 @@ df_res_field <- read_csv(here("data/human-ai/processed/novelty_scores.csv")) %>%
     datatype = "Field"
   ) %>%
   drop_na(user, ai) %>%
-  filter(conversation_id != "conv_0bb56093-3033-4615-bb70-ebfa4135589a", conversation_id != "conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256", conversation_id != "conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80", conversation_id != "conv_7c23347e-6172-4c84-9fd0-45ef34290bd5", turn > 1)
+  filter(conversation_id != "conv_0bb56093-3033-4615-bb70-ebfa4135589a", conversation_id != "conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256", conversation_id != "conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80", conversation_id != "conv_7c23347e-6172-4c84-9fd0-45ef34290bd5", conversation_id != "conv_ed575a06c11d42358e3eeb7826d2f959", conversation_id != "conv_a63a08273d0a4704a7638e4cd6850225", conversation_id != "conv_0bb56093-3033-4615-bb70-ebfa4135589a", conversation_id != "conv_0f18b30f-7d4b-4681-b98e-a0ff4f2b5256", conversation_id != "conv_72218cb5-e59c-4c93-a4b9-a057fe5dad80", turn > 1)
 
 
 ```
@@ -140,65 +140,89 @@ print(desc_stats)
 knitr::kable(desc_stats, caption = "Descriptive Statistics for Novelty Metrics by Agent", digits = 3)
 ```
 
-```{r}
-p_novelty_agent <- ggplot(df_res_long, aes(x = agent, y = surprise, fill = agent)) +
-  geom_violin(width = 0.6, alpha = 0.7) +
-  geom_boxplot(width = 0.2, alpha = 0.5) +
-  scale_fill_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "") +
-  scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00")) +
-  labs(title = "Distributions of Novelty", x = "Novelty", y = NULL) +
-  theme(
-    legend.position = "top",
-    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
-    axis.text = element_text(size = 12)
+```{r metric-distribution-stack, fig.width=10, fig.height=12}
+agent_colors <- c("User" = "#377EB8", "LLM" = "#FF7F00")
+
+df_metric_distributions <- df_res_long %>%
+  select(agent, surprise, transience, resonance) %>%
+  pivot_longer(
+    cols = c(surprise, transience, resonance),
+    names_to = "metric",
+    values_to = "value"
+  ) %>%
+  mutate(
+    metric = factor(
+      metric,
+      levels = c("surprise", "transience", "resonance"),
+      labels = c("Novelty", "Transience", "Resonance")
+    )
   )
-print(p_novelty_agent)
+
+metric_summary <- df_metric_distributions %>%
+  group_by(metric, agent) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+make_metric_distribution <- function(metric_label, show_legend = FALSE) {
+  metric_data <- df_metric_distributions %>%
+    filter(metric == metric_label)
+
+  metric_lines <- metric_summary %>%
+    filter(metric == metric_label)
+
+  density_plot <- ggplot(metric_data, aes(x = value, fill = agent, color = agent)) +
+    geom_density(alpha = 0.35, linewidth = 0.9, na.rm = TRUE) +
+    geom_vline(
+      data = metric_lines,
+      aes(xintercept = mean_value, color = agent),
+      linetype = "dashed",
+      linewidth = 0.8,
+      show.legend = FALSE
+    ) +
+    scale_fill_manual(values = agent_colors, name = "") +
+    scale_color_manual(values = agent_colors, name = "") +
+    labs(title = metric_label, x = NULL, y = "Density") +
+    theme(
+      legend.position = if (show_legend) "top" else "none",
+      plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      plot.margin = margin(8, 8, 0, 8)
+    )
+
+  box_plot <- ggplot(metric_data, aes(x = value, y = agent, fill = agent)) +
+    geom_boxplot(width = 0.45, alpha = 0.7, outlier.alpha = 0.25, na.rm = TRUE) +
+    scale_fill_manual(values = agent_colors, name = "") +
+    labs(x = metric_label, y = NULL) +
+    theme(
+      legend.position = "none",
+      axis.text.y = element_text(size = 11),
+      plot.margin = margin(0, 8, 10, 8)
+    )
+
+  wrap_plots(density_plot, box_plot, ncol = 1, heights = c(3, 1))
+}
+
+p_metric_distributions <- wrap_plots(
+  make_metric_distribution("Novelty", show_legend = TRUE),
+  make_metric_distribution("Transience"),
+  make_metric_distribution("Resonance"),
+  ncol = 1,
+  heights = c(1, 1, 1)
+) +
+  plot_annotation(
+    title = "Distributions of Novelty, Transience, and Resonance by Agent",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"))
+  )
+
+print(p_metric_distributions)
+
 ggsave(
-  file.path(GRAPHS_DIR, "Surprise_Distributions_Agent.png"),
-  p_novelty_agent,
+  file.path(GRAPHS_DIR, "Novelty_Transience_Resonance_Distributions_Agent.png"),
+  p_metric_distributions,
   width = 10,
-  height = 6,
+  height = 12,
   dpi = 300
 )
-
-p_transience_agent <- ggplot(df_res_long, aes(x = transience, fill = agent)) +
-  geom_density(alpha = 0.4, color = NA) +
-  scale_fill_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "") +
-  scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00")) +
-  labs(title = "Distributions of Transience", x = "Transience", y = NULL) +
-  theme(
-    legend.position = "top",
-    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
-    axis.text = element_text(size = 12)
-  )
-print(p_transience_agent)
-ggsave(
-  file.path(GRAPHS_DIR, "Transience_Distributions_Agent.png"),
-  p_transience_agent,
-  width = 10,
-  height = 6,
-  dpi = 300
-)
-
-p_resonance_agent <- ggplot(df_res_long, aes(x = resonance, fill = agent)) +
-  geom_density(alpha = 0.4, color = NA) +
-  scale_fill_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00"), name = "") +
-  scale_color_manual(values = c("User" = "#377EB8", "LLM" = "#FF7F00")) +
-  labs(title = "Distributions of Transience", x = "Transience", y = NULL) +
-  theme(
-    legend.position = "top",
-    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
-    axis.text = element_text(size = 12)
-  )
-print(p_resonance_agent)
-ggsave(
-  file.path(GRAPHS_DIR, "Resonance_Distributions_Agent.png"),
-  p_transience_agent,
-  width = 10,
-  height = 6,
-  dpi = 300
-)
-
 ```
 
 
@@ -221,7 +245,7 @@ p_resonance <- ggplot(df_res_long, aes(x = surprise, y = resonance, color = agen
     y = "Resonance (Novelty - Transience)"
   ) +
   theme_minimal(base_size = 14) +
-  theme(legend.position = "top")
+  theme(legend.position = "top") + xlim(-5, 1)
 
 print(p_resonance)
 
@@ -364,6 +388,4 @@ sessionInfo()
 ------------------------------------------------------------------------
 
 **Analysis complete.** All figures saved to `analysis/figures/` and tables to `analysis/tables/`.
-
-
 

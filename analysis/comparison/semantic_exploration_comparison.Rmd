@@ -35,6 +35,8 @@ pacman::p_load(
   patchwork,
   emmeans
 )
+GRAPHS_DIR <- file.path(PROJECT_ROOT, "analysis", "figures")
+
 
 theme_set(theme_comparison())
 ```
@@ -282,10 +284,10 @@ if (n_distinct(df_adjacent$condition) >= 2 && nrow(df_adjacent) >= 10) {
 ```
 
 ```{r adjacent-distance-plot, fig.width=9, fig.height=5}
-ggplot(df_adjacent, aes(x = condition, y = adjacent_distance, fill = condition)) +
+turn_level_semanticplots <- ggplot(df_adjacent, aes(x = condition, y = adjacent_distance, fill = condition)) +
   geom_violin(alpha = 0.4, colour = NA) +
   geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
-  geom_jitter(width = 0.08, alpha = 0.35, size = 0.9) +
+  geom_jitter(width = 0.08, alpha = 0.19, size = 0.3) +
   scale_fill_manual(values = condition_colors) +
   labs(
     title = "Adjacent turn-to-turn semantic distance by condition",
@@ -294,6 +296,15 @@ ggplot(df_adjacent, aes(x = condition, y = adjacent_distance, fill = condition))
     y = "Adjacent semantic distance"
   ) +
   theme(legend.position = "none")
+
+ggsave(
+  file.path(GRAPHS_DIR, "semantic_distance_interactionlevel.png"),
+  turn_level_semanticplots,
+  width = 12,
+  height = 8,
+  dpi = 300
+)
+
 ```
 
 # Supporting: Story-Level Mean Adjacent Distance
@@ -341,7 +352,7 @@ if (n_distinct(df_adjacent_story$condition) >= 2 && nrow(df_adjacent_story) >= 1
 ```
 
 ```{r story-mean-adjacent-plot, fig.width=9, fig.height=5}
-ggplot(df_adjacent_story, aes(x = condition, y = mean_adjacent_distance, fill = condition)) +
+semantic_distance_storylevel <- ggplot(df_adjacent_story, aes(x = condition, y = mean_adjacent_distance, fill = condition)) +
   geom_violin(alpha = 0.4, colour = NA) +
   geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
   geom_jitter(width = 0.08, alpha = 0.45, size = 1.2) +
@@ -353,6 +364,14 @@ ggplot(df_adjacent_story, aes(x = condition, y = mean_adjacent_distance, fill = 
     y = "Mean adjacent semantic distance"
   ) +
   theme(legend.position = "none")
+
+ggsave(
+  file.path(GRAPHS_DIR, "semantic_distance_storylevel.png"),
+  semantic_distance_storylevel,
+  width = 12,
+  height = 8,
+  dpi = 300
+)
 ```
 
 # Bootstrap CIs and Effect Sizes on Story Means
@@ -409,6 +428,9 @@ if (network_available) {
       pair_type = factor(pair_type, levels = c("within_exchange", "between_exchange"))
     )
   network_metadata <- jsonlite::fromJSON(network_paths$metadata)
+  close_distance_threshold <- quantile(turn_edges$adjacent_distance, 0.40, na.rm = TRUE)
+  close_edges <- turn_edges %>%
+    filter(adjacent_distance <= close_distance_threshold)
 
   turn_edge_labels <- turn_edges %>%
     group_by(condition) %>%
@@ -418,11 +440,21 @@ if (network_available) {
       y = quantile(c(y, yend), 0.97, na.rm = TRUE),
       .groups = "drop"
     ) %>%
-    mutate(label = sprintf("Mean d = %.3f", mean_distance))
+    left_join(
+      close_edges %>%
+        count(condition, name = "n_close"),
+      by = "condition"
+    ) %>%
+    mutate(
+      pct_close = 100 * n_close / as.numeric(table(turn_edges$condition)[as.character(condition)]),
+      label = sprintf("Mean d = %.3f\nClose edges: %.0f%%", mean_distance, pct_close)
+    )
 } else {
   df_turn_network <- tibble()
   turn_edges <- tibble()
+  close_edges <- tibble()
   turn_edge_labels <- tibble()
+  close_distance_threshold <- NA_real_
   network_metadata <- list(turn_layout_method = "not computed")
   cat(
     "Precomputed semantic network files not found. Run:\n",
@@ -433,27 +465,27 @@ if (network_available) {
 
 ```{r turn-adjacent-network-plot, fig.width=13, fig.height=6}
 if (network_available) {
-  ggplot() +
+  network_panel <- ggplot() +
+    geom_point(
+      data = df_turn_network,
+      aes(x = x, y = y),
+      color = "grey65",
+      alpha = 0.18,
+      size = 0.45
+    ) +
     geom_segment(
-      data = turn_edges,
+      data = close_edges,
       aes(
         x = x,
         y = y,
         xend = xend,
         yend = yend,
-        color = closeness,
         linewidth = closeness,
         group = conversation_id
       ),
-      alpha = 0.68,
+      color = "grey10",
+      alpha = 0.58,
       lineend = "round"
-    ) +
-    geom_point(
-      data = df_turn_network,
-      aes(x = x, y = y),
-      color = "grey15",
-      alpha = 0.28,
-      size = 0.55
     ) +
     geom_label(
       data = turn_edge_labels,
@@ -466,32 +498,52 @@ if (network_available) {
       size = 3.2
     ) +
     facet_wrap(~condition, nrow = 1) +
-    scale_color_gradient(
-      low = "grey88",
-      high = "grey8",
-      name = "Semantic\ncloseness",
-      limits = c(0, 1),
-      breaks = c(0, 1),
-      labels = c("far", "close")
-    ) +
-    scale_linewidth_continuous(range = c(0.03, 1.35), guide = "none") +
+    scale_linewidth_continuous(range = c(0.15, 1.55), guide = "none") +
     labs(
-      title = "Adjacent turn-to-turn semantic distance networks",
+      title = "Adjacent semantic continuity networks",
       subtitle = paste0(
-        "Nodes are turns from a balanced visual sample; edges connect only adjacent turns. Darker/thicker edges are semantically closer; faint grey edges are larger jumps; layout = ",
-        network_metadata$turn_layout_method
+        "Only semantically close links (global closest 40%; d <= ",
+        sprintf("%.3f", close_distance_threshold),
+        "). Missing links indicate larger semantic jumps"
       ),
       x = NULL,
       y = NULL
     ) +
     theme(
-      legend.position = "right",
+      legend.position = "none",
       axis.text = element_blank(),
       axis.ticks = element_blank(),
-      panel.grid = element_blank()
+      panel.grid = element_blank(),
+      panel.background = element_rect(fill = "white", colour = NA),
+      plot.background = element_rect(fill = "white", colour = NA)
     )
+
+  distance_panel <- ggplot(turn_edges, aes(x = adjacent_distance, fill = condition)) +
+    geom_density(alpha = 0.75, color = NA, adjust = 1.1) +
+    geom_vline(
+      xintercept = close_distance_threshold,
+      linetype = "dashed",
+      color = "grey25",
+      linewidth = 0.35
+    ) +
+    facet_wrap(~condition, nrow = 1) +
+    scale_fill_manual(values = condition_colors) +
+    labs(
+      x = "Adjacent semantic distance",
+      y = "Density"
+    ) +
+    theme(
+      legend.position = "none",
+      panel.grid.minor = element_blank(),
+      panel.background = element_rect(fill = "white", colour = NA),
+      plot.background = element_rect(fill = "white", colour = NA),
+      strip.text = element_blank()
+    )
+
+  semantic_network <- network_panel / distance_panel +
+    plot_layout(heights = c(3.2, 1))
 } else {
-  ggplot() +
+  semantic_network <- ggplot() +
     annotate(
       "text",
       x = 0,
@@ -500,40 +552,17 @@ if (network_available) {
     ) +
     theme_void()
 }
+
+ggsave(
+  file.path(GRAPHS_DIR, "semantic_network.png"),
+  semantic_network,
+  width = 12,
+  height = 8,
+  dpi = 300
+)
+
 ```
 
-# Supplemental: Speaker-Level Slot Trajectories
-
-```{r speaker-plot, fig.width=12, fig.height=6}
-speaker_summary <- df_speaker %>%
-  group_by(condition, slot, k) %>%
-  summarise(
-    mean_distance = mean(distance, na.rm = TRUE),
-    se_distance = sd(distance, na.rm = TRUE) / sqrt(n()),
-    .groups = "drop"
-  )
-
-ggplot(speaker_summary, aes(x = k, y = mean_distance, color = slot)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 1.8) +
-  geom_ribbon(
-    aes(ymin = mean_distance - 1.96 * se_distance,
-        ymax = mean_distance + 1.96 * se_distance,
-        fill = slot),
-    alpha = 0.15,
-    color = NA
-  ) +
-  facet_wrap(~condition) +
-  labs(
-    title = "Speaker-Level Semantic Exploration by Slot",
-    subtitle = "Supplemental lag-based slot trajectories",
-    x = "Lag Bin (k)",
-    y = "Semantic Distance",
-    color = "Slot",
-    fill = "Slot"
-  ) +
-  theme(legend.position = "bottom")
-```
 
 # Supplemental: General Condition-Level Comparison
 
