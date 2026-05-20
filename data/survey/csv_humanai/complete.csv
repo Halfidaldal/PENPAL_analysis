@@ -1,0 +1,325 @@
+"Rate the following questions on a scale from 1 - 7  - How do you perceive that the model collaborated with you when producing the narrative, with 1 being challenging and 7 being supportive? Do you feel it more often supported your line of narrative or do you feel that it more often pushed the story in a different direction?";"Rate the following questions on a scale from 1 - 7  - How do you perceive that the model collaborated with you when producing the narrative, with 1 being challenging and 7 being supportive? Do you feel it more often supported your line of narrative or do you feel that it more often pushed the story in a different direction? - Comments? ";"Rate the following questions on a scale from 1 - 7  - Did you perceive this method of collaboration to be harmful or helpful to the outcome of your story, with 1 being very harmful and 7 being very helpful.";"Rate the following questions on a scale from 1 - 7  - Did you perceive this method of collaboration to be harmful or helpful to the outcome of your story, with 1 being very harmful and 7 being very helpful. - Comments? ";"Rate the following questions on a scale from 1 - 7  - Did you enjoy interacting with a model that supported or challenged you in this way, with 1 being no enjoyment and 7 being high enjoyment?";"Rate the following questions on a scale from 1 - 7  - Did you enjoy interacting with a model that supported or challenged you in this way, with 1 being no enjoyment and 7 being high enjoyment? - Comments? ";"How do you perceive that the model collaborated with you when producing the narrative?  Do you feel it more often supported your line of narrative or do you feel that it more often pushed the story in a different direction?  1 = Challenging 7 = Supportive?";"Did you perceive this method of collaboration to be harmful or helpful to the outcome of your story?  1 = Very harmful 7 = Very Helpful";"Did you enjoy interacting with a model that supported or challenged you in this way  1 = no enjoyment 7 = high enjoyment?";"Comments to the collaboration?";"How much ownership do you feel over the story,  1 = low feeling of ownership  7 = feeling full ownership?";"Did you perceive the LLM to contribute to the narrative development of the story?  1 = no contribution 7 = high contribution.";"Comments to ownership and contribution? ";"Gender";"Language";"Age";"How often do you use LLM tools, specifically generative chatmodels like ChatGPT?";"For which of the following tasks do you use LLM tools? (Select all that apply) - Brainstorming ideas";"For which of the following tasks do you use LLM tools? (Select all that apply) - Research and information gathering";"For which of the following tasks do you use LLM tools? (Select all that apply) - Drafting outlines";"For which of the following tasks do you use LLM tools? (Select all that apply) - Writing first drafts";"For which of the following tasks do you use LLM tools? (Select all that apply) - Editing and Proofreading";"For which of the following tasks do you use LLM tools? (Select all that apply) - Generating visuals (e.g. images, charts)";"For which of the following tasks do you use LLM tools? (Select all that apply) - Creating social media content";"For which of the following tasks do you use LLM tools? (Select all that apply) - Summarizing documents";"For which of the following tasks do you use LLM tools? (Select all that apply) - Translation";"For which of the following tasks do you use LLM tools? (Select all that apply) - Generating different creative ext formats (poetry, scripts, musical pieces etc.)";"For which of the following tasks do you use LLM tools? (Select all that apply) - Coding";"For which of the following tasks do you use LLM tools? (Select all that apply) - Email or letters";"For which of the following tasks do you use LLM tools? (Select all that apply) - Other";"E-mail";"Overall Status - New";"Overall Status - Distributed";"Overall Status - Partially Complete";"Overall Status - Complete";"Overall Status - Rejected"
+;"";;"";;"";;;;"";;;"";"Male";;48,9;"Monthly";0;0;1;1;0;0;1;0;0;1;0;0;0;"";0;0;0;1;0
+;"";;"";;"";;;;"";;;"";"Female";;24;"Almost never";0;0;0;0;0;0;0;0;1;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";;;;"";;;"";"Female";;25;"Daily";0;1;0;1;1;0;0;1;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";;;;"";;;"";"Male";;28;"Daily";0;0;0;0;1;0;0;1;1;1;1;1;0;"";0;0;0;1;0
+;"";;"";;"";;;;"";;;"";"Male";;53;"Daily";1;1;1;1;1;1;1;1;1;1;1;1;0;"";0;0;0;1;0
+;"";;"";;"";;;;"";;;"";"Female";;25;"Monthly";1;0;1;1;0;0;0;1;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";;;;"";;;"";"Female";;38;"Daily";1;1;1;1;1;0;0;1;0;1;1;1;0;"";0;0;0;1;0
+;"";;"";;"";;;;"";;;"";"Male";;59;"Daily";1;1;1;1;1;0;0;1;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";;;;"";;;"";"Male";;24;"Daily";1;1;0;0;1;0;0;0;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"7";"4";"1";"";"7";"4";"";"Other/ do not want to answer ";;100;"Daily";1;1;1;1;1;1;1;1;1;1;1;1;1;"";0;0;0;1;0
+;"";;"";;"";"4";"3";"5";"";"4";"3";"";"Male";;60;"Weekly";0;1;0;1;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"3";"4";"5";"";"4";"5";"";"Male";;55;"Monthly";0;0;0;0;1;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"5";"3";"It was fun, and nice when the AI had a lot more adjectives that could support my worse vocabulary. I found myself getting a little frustrated when the AI ??replaced my last word with something else, as if my word wasn't good enough, but I guess it's a good way to illustrate a collaboration with a real person.";"4";"4";"";"Female";;24;"Almost never";0;0;0;0;0;0;0;0;0;0;0;0;1;"";0;0;0;1;0
+;"";;"";;"";"5";"5";"7";"Very fun - but sometimes the model did not follow through with its prior outputs which annoyed me. I felt like I needed to explain 'why' all the time, but the story kept moving forward in a sense";"6";"7";"Surprisingly I feel almost full ownership - did not expect this outcome.";"Female";;24;"Daily";1;1;1;0;1;1;0;0;1;0;1;1;0;"";0;0;0;1;0
+;"";;"";;"";"3";"2";"4";"";"2";"6";"";"Female";;22;"Daily";0;0;0;0;1;0;0;1;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"4";"4";"3";"As much as the model didn't strictly steer the story in another direction, I felt that it didn't sense my intentions for the characters well enough to predict how I would like the story to continue.";"5";"2";"The LLM offered little to no plot development, it felt more like it was just filling in some gaps. Granted, I did offer a lot of development on my side, so this was not necessarily a bad thing. But the model definitely contributed way less.";"Other/ do not want to answer ";;22;"Hourly";0;1;0;0;1;1;0;1;1;0;0;1;1;"";0;0;0;1;0
+;"";;"";;"";"4";"3";"5";"Pretty fun. I think it would be hard to write an entire story like this, but it helped start the story and spark new ideas along the way.";"6";"3";"It definitly shifted the story in a different direction sometimes, but overall i was the main driver and it was mostly supportive.";"Male";;26;"2-3 times per week";1;1;0;0;1;0;0;1;1;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"3";"4";"3";"";"5";"5";"";"Male";;23;"Daily";0;1;0;0;0;0;0;1;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"3";"3";"4";"";"7";"2";"";"Male";;24;"Daily";0;0;0;0;1;0;0;0;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"4";"5";"";"2";"3";"";"Male";;24;"Monthly";0;1;1;0;0;0;0;1;0;0;1;0;1;"";0;0;0;1;0
+;"";;"";;"";"1";"2";"1";"I think the model gave some very predictable twists to the story that I found a bit boring.";"4";"2";"I can't say I fully made the story, and it did introduce some new concepts as well.";"Female";;22;"2-3 times per week";0;0;0;0;1;0;0;0;1;0;1;1;0;"";0;0;0;1;0
+;"";;"";;"";"3";"4";"4";"It was like doing group work with someone on google docs, however with the exception that we couldn't discuss our next move, while the other member blatantly deleted some of my points.";"3";"4";"We disagreed over the course of the story. LLM did bring something valuable, but it was not in the direction I intended to go.";"Male";;25;"2-3 times per week";1;0;0;0;1;0;0;1;1;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"4";"5";"First time using this tool for creative writing.  I'm surprised at how it takes cues and can elaborate or provide specific details. It's an interesting experience but not for me. When it comes to writing, I want it to be my product from start to finish but then, I don't have deadlines and my income does not depend on rapid production of written works.";"3";"4";"See previous comment. Felt it developed the story but not necessarily the way I initially envisaged it. I was thinking ""a lady's companion on a European Grand Tour rather than as a crew member on a sailboat.  Interesting choice, but not my mindset.";"Female";;75;"Almost never";0;1;0;0;0;0;0;0;1;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"3";"6";"It was a good tool for creative writing when you need an idea. But the AI's prompts were quite boring after a few trials and its structure seemed repetitive and predictable.";"3";"6";"It seemed obvious it was the intention behind the AI to ensure the development of the narrative as it felt too forced to move forward. Technically speaking, regarding creative writing, it is not very good.";"Female";;23;"Weekly";1;1;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"4";"6";"";"3";"2";"I created the original idea the rest of the story was based on, so I feel ownership to the idea that could be applied to many different storylines. It rarely contributed, it just repeated what had already been established in a new way.";"Female";;23;"2-3 times per week";0;0;0;0;1;0;0;1;0;1;0;1;0;"";0;0;0;1;0
+;"";;"";;"";"4";"5";"5";"It came up with words and scenes I hadn't thought of, which was fun. However, it tended to make things more dramatic, when I tried to make them more reflective. It changed the mood of the text. Furthermore, it got confused about who was who and changed the perspective a few times. It confused the people and suddenly one person shifted to being a different one. In the same way it jumped some natural actions in the story. Suddenly Uncle Thomas had used the fire extinguisher to put out the fire, even though it was in the kitchen, where he had never been. Also, it ended with a mention of Emmas tears for the first time, even though Emma had also cried earlier ? both thing that the AI came up with. Also, the story started as being a memory that someone looked back at. It would make sense to end the story in that present, but the AI seemed to have accepted the original past as the new present, disregarding the premise from the beginning of the story.";"5";"3";"I feel like it's still my story, and that the AI was mainly a way to idea generate ? especially if it was in a setting, where I could edit the AI's inputs afterwards.";"Female";;28;"2-3 times per week";1;0;1;0;1;1;0;1;1;0;1;1;0;"";0;0;0;1;0
+;"";;"";;"";"1";"1";"1";"Jeg kan ikke se spørgsmålene";"1";"1";"Jeg kan stadig ikke se spørgsmålene";"Female";;28;"Daily";0;0;0;0;1;0;0;1;0;0;1;1;0;"";0;0;0;1;0
+;"";;"";;"";"3";"2";"3";"";"6";"2";"";"Male";;38;"Daily";1;0;0;0;0;1;0;0;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"5";"7";"Det er meget godt til at få ideerne i gang! Det bliver problematisk, når jeg pludselig selv synes jeg har en fast ide om, hvor vi skal hen, og den vil andre steder hen. Men det kan den jo ikke vide.";"5";"5";"Jeg forsøgte bevidst at lade den blande sig i historien ved at standse lige inden en handling. Ifht. ejerskab ville jeg sandsynligvis ende med at omskrive en del og kun bruge dette til at kickstarte ideprocessen";"Female";;31;"Weekly";0;1;0;1;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"4";"5";"6";"";"5";"3";"";"Female";;24;"Daily";1;1;1;1;1;1;1;1;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"4";"4";"4";"I use collaborate with AI for writing, so probably i'm not the best person for answer thi questions";"4";"4";"";"Male";;55;"Daily";1;1;1;1;1;1;1;1;1;1;1;1;0;"";0;0;0;1;0
+;"";;"";;"";"7";"5";"7";"";"5";"7";"";"Female";;24;"Monthly";1;0;0;0;1;1;0;1;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"4";"5";"6";"Underholdende og motiverende, ja. Blev produktet bedre? Det blev til noget - jeg havde ikke skrevet uden AI's hjælp. men kunne jeg skrive uden AI-hjælp, så vil jeg mene kvaliteten ville have været bedre.";"5";"4";"";"Male";;29;"Daily";1;1;0;1;1;1;0;1;0;0;1;1;0;"";0;0;0;1;0
+;"";;"";;"";"3";"2";"5";"Flere gange redigere den slutningen af min passage, hvilket jeg ikke selv kan gøre for dens tekst. Det skaber en ubalancen mellem reglerne for ""legen"" mellem AI'en og jeg, som jeg finder unfair og frustrerende.";"4";"2";"AI'en fandt kun på to enkelte nye enheder i historien, som var et kryds på et kort og kortet selv. Ellers gav den blot navne og beskrev allerede eksisterende materialer i historien.";"Male";;26;"Daily";0;1;0;0;0;0;0;0;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"6";"2";"Det virkede som om at modellen gjorde min historie bedre fordi den hjalp mig med at give fylde på historien og den brugte flere følelsesladede ord end jeg gjorde. Den gjorde dog også historien mere basic da den ikke indførte nogle uforudsigelige elementer.";"5";"4";"Jeg forstod ikke spørgsmålet om hvorvidt LLMen bidrog til den narrative udvikling og har derfor svaret 4";"Male";;19;"Almost never";0;0;0;0;0;0;0;0;0;0;0;0;1;"";0;0;0;1;0
+;"";;"";;"";"2";"3";"7";"";"2";"2";"";"Female";;26;"Daily";0;1;0;0;1;0;0;1;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"6";"6";"Jeg anvender normalt AI til at oversætte engelsk, fordi jeg synes, at mange ord på engelsk ligger langt væk. Derfor var det lidt svært at skulle skrive en historie med en AI. Til gengæld skrev den mange af de ord og vendinger, jeg også selv havde valgt, hvis ikke jeg var begrænset af mine egne engelskkundskaber.";"4";"2";"";"Female";;24;"Weekly";0;1;0;1;0;0;0;0;1;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"5";"7";"Det mindede mig om en gammel leg, hvor man skulle giftes til at skrive noget af en historie, men hvor man dog der ikke kunne se det forrige en havde skrevet, men kun de sidste fem år. Det var meget sjovt at få udviklet sine ideer, og meget tilfredsstillende at se, hvordan ens historie fortsatte som man ville have det, næsten.";"5";"4";"Der var jo lidt bidrag, men føler mere at det var et godt samarbejde, hvor man hjalp hinanden";"Female";;18;"Daily";1;1;0;0;1;1;0;1;1;0;0;0;1;"";0;0;0;1;0
+;"";;"";;"";"4";"3";"5";"";"3";"2";"";"Male";;19;"Daily";1;1;1;1;1;0;0;1;0;1;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"6";"5";"";"5";"6";"";"Male";;18;"Daily";1;1;1;1;0;1;0;1;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"3";"3";"6";"";"4";"6";"";"Male";;18;"2-3 times per week";1;0;1;1;1;0;1;0;1;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"4";"3";"3";"Det var hjælpsomt at blive sat i gang af modellen, men det var som om den begyndte at modarbejde historien mere og mere.";"5";"2";"";"Female";;20;"Monthly";0;0;1;0;1;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"5";"6";"";"4";"5";"";"Female";;19;"2-3 times per week";1;1;1;0;1;0;0;0;0;0;0;1;0;"";0;0;0;1;0
+;"";;"";;"";"4";"3";"6";"I had a lot more story in my head but the model predicted the story progressing faster than imagined. Sometimes this was annoying but I found it quite fun to work around/with it to steer the story into my vision.";"5";"5";"The model uses a lot of more 'narrative' words than I would ever use. I do not find myself a good writer story wise so in this regard it does contribute a lot with conveying feeling to the reader. I did have the feeling that I could steer the story in the direction I wanted when necessary.";"Male";;20;"Daily";0;1;1;0;1;0;0;1;1;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"5";"7";"Rigtig fed skriveoplevelse, der var et dejligt flow i teksten med nogen gode overgange mellem mine tekststykker og dens";"3";"4";"";"Other/ do not want to answer ";;18;"Almost never";0;0;0;0;1;0;0;0;0;0;0;0;1;"";0;0;0;1;0
+;"";;"";;"";"2";"3";"6";"";"3";"2";"";"Female";;18;"Weekly";0;0;0;0;1;0;0;1;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"3";"4";"It uses way too many adjectives when only writing such small passages, which means the story almost never progresses when it is writing, as it is just describing stuff.";"1";"3";"";"Male";;19;"Daily";1;1;1;0;0;1;0;1;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"3";"4";"5";"";"2";"3";"";"Female";;23;"Daily";0;1;0;0;1;0;0;1;1;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"7";"7";"";"4";"6";"Det føltes ikke helt som min historie, i forhold til hvis det kun var mig der skrev den, men i forhold til hvis det var et andet menneske jeg havde arbejdet sammen med føler jeg mere ejerskab over det med AI'en";"Female";;18;"2-3 times per week";1;0;0;0;1;0;0;1;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"2";"4";"Det var underholdende, fordi jeg ikke fattede hvad den ville, så hvad andet kunne jeg gøre end at grine? Hvis hun løber ned af trapperne, så er lyset ikke bag hende, det er over hende. Vidste heller ikke hvad ""Who forgot how to see the dark"" skulle betyde. Den slags var frustrerende.";"1";"2";"Det føltes som om den havde en ide for historien, som jeg skulle gætte mig frem til.";"Other/ do not want to answer ";;20;"Almost never";0;0;0;0;1;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"4";"7";"";"2";"4";"";"Female";;18;"Daily";1;0;0;0;1;0;0;1;0;0;1;1;0;"";0;0;0;1;0
+;"";;"";;"";"5";"5";"3";"it was frustrating that I was forced to continue on an exact spot, but the LLM was able to reduce parts of my writing to continue in a slighly different direction. It would be more ""fun"" if the challenge was equally balanced and none of us could alter the opponents words. It did not feel completely fair.";"6";"6";"Since I started the story I feel that the main narrative was mine.";"Male";;50;"Daily";1;1;1;1;0;1;1;1;1;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"3";"5";"5";"Den forbedrede sproget og rettede sætningerne, så de gav mere mening, men kom også til at slette nogle pointer en gang imellem.";"3";"5";"AI kunne godt komme til at overtage lidt og ignorere detaljer.";"Female";;17;"2-3 times per week";1;1;0;0;1;0;0;0;1;1;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"4";"7";"7";"";"4";"4";"";"Female";;18;"Daily";1;1;0;1;0;0;0;1;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"5";"6";"";"6";"5";"";"Male";;17;"Daily";0;1;0;0;1;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"4";"6";"6";"";"3";"5";"";"Female";;18;"Weekly";1;0;0;0;0;0;0;0;0;0;0;0;1;"";0;0;0;1;0
+;"";;"";;"";"5";"5";"4";"";"3";"7";"";"Female";;17;"Weekly";1;1;0;0;1;0;0;0;1;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"3";"3";"5";"Den var ikke særlig omstillingsparat og virkede til meget gerne at ville fortsætte det originale præmis frem for at ændre historien";"2";"2";"Jeg tror man føler et mindre ejerskab over historien end hvis man havde skevet det helt selv da den lidt ""streamlined"" historien og gjorde den ret upersonlig. På samme tid kom den heller ikke med nye premisser til historien og virkede lidt som et velformuleret spejl";"Female";;18;"Weekly";1;1;1;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"3";"1";"På visse tidspunkter føltes det begrænsende, at modellen ændrede din tekst. Det gav en følelse af ligegyldighed, hvor jeg ikke endte med at yde mit kreative bedste, fordi jeg vidste, at det ville blive erstattet af noget andet alligevel.  Derudover var LLMens idéer... på nogle punkter ret kliché, til et punkt, hvor det gjorde historien mindre interessant end den kunne være. Man kan godt mærke, hvilken slags historier, den er trænet på";"2";"6";"Som nævnt tidligere var det svært at føle ejerskab over en historie, hvor det lille spor af egne idéer var slettet og overstreget.  Men grundidéen (som egentlig føltes som lidt et sammenspil mellem LLMen og jeg) var egentlig spændende. Da jeg selv interesserer mig for at skrive, kunne jeg sagtens overveje at skrive en ""rigtig"" version af denne historie (eller, historien før en vis af LLMens idéer skubbede den helt ud af kurs)";"Male";;18;"Almost never";0;0;0;0;1;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"6";"7";"";"5";"6";"";"Female";;23;"Daily";1;0;1;0;1;0;1;1;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"4";"6";"Det var sjovt :))";"6";"2";"Den begyndte lige selv at bestemme til sidst";"Female";;23;"Daily";1;0;0;0;1;0;0;1;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"3";"3";"Jeg oplevede, at den havde et narrativ baseret på psykologiske selvhjælpsbøger, som var super interesserede, og at den manglende nysgerrighed på at udforske det paradoksale forhold, at afstand kan være et redskab til at skabe nærhed og forbindelse.";"3";"2";"Enkelte gange oplevede jeg, at den kunne lægge nye lag til en historie, som stadig var min. Men i de fleste af udvekslinger oplevede jeg, at den tog historien i en anden retning - derfor begyndte jeg at meta-reflektere over den og diskutere med den i selve historien frem for blot at bruge den som buddy.";"Female";;55;"Almost never";0;0;0;0;1;0;0;0;1;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"6";"7";"Doing parts of a story with AI is very engaging and gets me hooked on completing the story and seeing where it goes. I was almost sad when it had to end.";"3";"7";"It felt more like a ""Choose your own adventure"" type story, than one that is 100% my own. None the less I was very captured by the narrative.  You can certainly feel that the LLM is better at giving concrete examples of story beats and knows how to keep the story moving.";"Male";;22;"2-3 times per week";0;0;0;0;0;0;0;0;0;0;0;0;1;"";0;0;0;1;0
+;"";;"";;"";"6";"5";"5";"";"5";"6";"";"Male";;21;"2-3 times per week";1;1;0;1;1;0;0;1;1;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"4";"2";"5";"";"2";"1";"";"Female";;17;"2-3 times per week";0;0;1;0;0;0;0;1;0;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"1";"1";"1";"I hated how it changed my story as an example it changed the murdere of my story from 'the muffinman' to 'the person i trusted the most' which i found quite frusturating.";"2";"2";"";"Female";;17;"Weekly";0;0;0;0;1;0;0;0;1;0;0;0;1;"";0;0;0;1;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;38;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;60;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Male";;12;"Weekly";0;0;0;1;0;0;0;0;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;22;"Weekly";0;0;1;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Male";;23;"Daily";0;0;0;0;0;1;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;22;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;75;"Almost never";0;1;0;0;0;0;0;0;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;26;"Weekly";0;0;0;0;1;0;0;1;0;0;0;0;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;25;"Monthly";0;1;0;0;1;0;0;0;0;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;20;"Monthly";0;0;0;0;0;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;23;"2-3 times per week";0;1;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;29;"Daily";1;1;0;0;1;1;1;0;1;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;21;"Daily";0;1;0;0;1;0;0;0;1;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;25;"Daily";1;1;0;0;0;1;0;0;0;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;20;"2-3 times per week";0;1;0;0;0;1;0;1;0;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;24;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Other/ do not want to answer ";;20;"Daily";1;0;1;0;1;0;0;1;1;0;1;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;25;"Daily";1;1;0;0;0;1;0;1;1;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;20;"Weekly";0;0;0;0;0;0;0;0;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";"7";"5";"5";"";"5";"4";"";"Female";;18;"2-3 times per week";0;1;0;1;0;1;0;0;1;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"3";"5";"6";"";"5";"6";"";"Female";;21;"Monthly";0;0;0;0;0;0;0;0;1;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"3";"5";"";"5";"2";"";"Male";;24;"2-3 times per week";1;1;0;0;0;0;0;1;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"3";"6";"";"5";"6";"";"Male";;23;"Weekly";1;0;0;0;1;0;0;1;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"6";"7";"Pisse Fedt!  Den forsøgte dog i starten at skubbe historien i en lidt anden retning, men så indså den at min ide var bedre.";"5";"5";"";"Male";;20;"Almost never";1;1;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"3";"2";"6";"Sjovt koncept, men en my frustrerende at den ændrer ens sætningskonstruktion, når man ikke selve har mulighed for at ændre i, hvad den skriver af forslag.";"2";"5";"";"Female";;27;"2-3 times per week";0;1;0;0;1;0;0;0;1;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"5";"7";"Found it to be observant and able to pick up on characters introduced earlier. I did find it to be a bit bland, never changing the direction of the story or introducing a plottwist or non standard writing sentence (meaning someting like a parenthetical clause that brakes or contradicts the writing style). The parts that give texts ingenuity and seperates writers.";"6";"4";"Because of what i wrote in my previus answer, i feel i was the driving force behind the narrative, and could bend it however i wanted. Maybe i wrote in a way that didnt give the llm good opportunities of deciding plot direction.";"Male";;24;"Daily";1;1;0;0;1;0;0;1;0;1;1;1;0;"";0;0;0;1;0
+;"";;"";;"";"5";"4";"7";"jeg syntes det var lidt træls da den ændrede min ide.";"4";"6";"jeg ville slet ikke kunne skrive sådan noget selv, den ændrede historien meget fra hvad jeg havde tænkt den skulle handle om. derfor føler jeg den havde lidt mere ret til historien";"Female";;18;"Monthly";0;1;0;0;1;0;0;1;1;0;0;1;0;"";0;0;0;1;0
+;"";;"";;"";"2";"4";"6";"Jeg synes den var god til at starte ideen, men hold meget fat i sit eget narrativ. Jeg kunne ikke skubbe historien i en anden retning, så det endte med at være meget statisk";"4";"6";"Jeg oplevede, at den blev ved med at skubbe sit eget narrativ, og ikke greb mine påfund til at dreje genren eller stemningen i historien.";"Male";;28;"Daily";1;1;1;1;1;0;0;1;1;0;1;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"4";"6";"Det var veldig underholdene. Jeg forsøgte at få den til at tale om katte, men der var den opsat på at holde sig til handlingen. Fair nok. Hvis du vil kende slutningen er Tormund en skizofren ulv med børn.";"6";"2";"Hvis jeg følte den havde bidraget meget ville jeg sandsynligvis ikke føle ejerskab over historien.";"Male";;21;"Almost never";0;0;0;0;0;0;0;0;0;0;0;0;1;"";0;0;0;1;0
+;"";;"";;"";"7";"5";"7";"";"6";"7";"";"Male";;24;"2-3 times per week";1;0;0;0;1;1;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"6";"7";"Jeg synes det var en fed oplevelse. Jeg fik skrevet en meget mere i dybtgående historie på denne måde, grundet at inputtet fra modellen gav mig ideer jeg ellers ikke havde haft. Der var dog 2 gange hvor jeg ærgrede mig over retningen som den endte med at tage, og 1 gang hvor jeg næsten blev sur over ændringerne den fortog til slutningen på min sætning.";"4";"7";"";"Female";;19;"Weekly";1;0;0;0;1;0;0;1;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"3";"3";"2";"I felt the model did not really expand on the story, but always pushed it back to the start - which means the story ended up feeling very circular and repetitive";"2";"1";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"3";"4";"AI didn't come up with anything. It just added filler words but no real substance.";"4";"2";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"3";"6";"Den havde flere gange stavefejl og fejlformuleringer, men jeg valgte også at skrive historien på dansk.   Jeg kunne godt lide den ofte stoppede midt i en sætning eller et ord, så jeg selv kunne digte videre på det.";"6";"5";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"6";"7";"Det virkede som om at den umiddelbart forsøgte at skubbe historien imod den ellers ""umoralske"" mening (morale) af historien, som skulle være at gambling var godt.";"5";"4";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"4";"4";"";"6";"3";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"3";"2";"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";"6";"5";"6";"";"5";"5";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"5";"6";"It was fun  '";"5";"4";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"4";"3";"I think being challenged might be good on some aspects of story writing. For spontaneous writing with no plan I think it work very well, but when i had an idea for where i wanted the story to go and a longer plot it became very limiting and felt like a fight. It might be very useful if you could have a ""meta"" chat where you could explain to the other writer what your idea is behind the writing like a coauthorship in real life might look like. So it seems like a tool that you have to use intentionally based on where in the writing process you are and what you want.";"2";"5";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"2";"3";"It felt like cooperating with someone with else who didn't have a strong plan for a plot or knowledge of building characters or narrative";"3";"2";"See previous comment";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"1";"1";"5";"";"2";"3";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"3";"3";"4";"He provided general comments not very specific stuff which made the story less exciting at times.";"6";"3";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"4";"5";"Jeg valgte nok for silly en historie.";"3";"5";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"7";"5";"7";"The AI went very much in depth to the narrative that I started. It also kept a constant positive tone even if my tone was a bit dark and moody. To embroid and delve deeper in to each segment, it would be very helpful. The challange for me as an author was more to write a compelling story in such a short format. Since I have the need to make it matter.";"6";"4";"It felt like the it was analysing what I had meant to write next. It for example introduced my father in the story and I had intented for it to be about my father. It also guessed emotional development that I might have not embroided as much but was definitely a part of the story. It felt like I was leading the way. I was waiting for the AI to take charge and change the narrative, but it felt like it was following my lead. However maybe more positive than I would have written it. That has much to do with the length of the story though, since in a longer narrative I would have aimed for a longer character development and eventually happy ending.";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"2";"5";"It had a surprisingly small amount of priming from my own writing.";"2";"5";"That is not my story. It really didn't write what I was hoping it would and it therefore isn't really my story.";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"4";"7";"Den sidste sætning man skrev blev ofte forkortet, hvilket gjorde at historien nogle gange tog en anden drejning end jeg havde tænkt.";"6";"5";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"6";"4";"3";"Jeg tror historien blev mere ensformig fordi AI støttede mit narrativ, fremfor at udfordre og bringe nye inputs.   Samtidig var det spændende at tænke kreativt med AI.";"6";"5";"Tror jeg følte relativ stor ejerskab - både fordi historien var relaterbar, men også fordi jeg var i stand til at styre narrativet en del, da LLM'en støttede fremfor udfordre.";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"1";"2";"2";"AI pressede mig i en helt anden retning, end jeg ønskede";"2";"6";"Det var en helt anden verden, end den jeg ønskede at bygge op. Jeg ville skrive meget mørkere i tonen, end AI var med på.";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"4";"4";"7";"";"3";"5";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"2";"1";"2";"Det er svært at holde sig til én genre når der kommer input fra en anden part som ikke ved hvor man vil hen med det.";"3";"3";"Den er god til at sætte handling i gang - men ikke nødvendigvis når man gerne selv vil.";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"5";"5";"AI redigerede kontinuerligt den sidste sætning eller ord af forrige sætning, hvilket gjorde det svært for mig at styre narrativet.";"4";"5";"AI tog kontrol. Ville ikke lade mig slutte sætningerne som jeg ville.";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";"5";"4";"5";"";"2";"3";"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;0;1;0
+;"";;"";;"";;;;"";;;"";"Male";;31;"Daily";1;1;1;1;1;1;0;1;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;24;"Weekly";1;0;1;0;1;0;0;0;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;24;"Weekly";0;0;0;0;0;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;23;"Monthly";1;0;0;1;0;0;0;0;0;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;43;"Weekly";1;0;0;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;27;"Daily";1;1;1;1;1;0;0;1;0;0;1;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;27;"Weekly";1;1;0;1;0;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;29;"Daily";1;1;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;22;"Monthly";1;1;0;0;0;0;0;0;0;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Other/ do not want to answer ";;23;"Almost never";0;0;0;0;0;0;0;0;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;12;"2-3 times per week";0;0;0;1;0;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;30;"Almost never";0;0;0;1;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;46;"Monthly";0;1;1;1;0;0;0;1;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;38;"Weekly";0;1;1;0;0;0;0;0;0;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;32;"Daily";1;0;0;1;1;0;1;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;53;"Daily";0;1;0;0;0;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;28;"Daily";1;1;0;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;30;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;29;"Daily";0;1;1;0;1;0;0;1;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;24;"Weekly";0;0;1;0;0;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;26;"Daily";1;0;1;0;1;1;1;0;1;0;1;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;33;"Daily";1;0;1;1;1;1;0;0;0;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;22;"2-3 times per week";0;0;1;0;0;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Daily";1;1;0;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;23;"Weekly";0;0;0;0;1;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Daily";0;1;0;0;0;0;0;0;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;19;"Daily";0;1;0;0;0;0;0;0;1;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;18;"Daily";1;1;0;0;1;1;0;1;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;19;"Daily";0;1;0;1;1;0;0;1;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"Weekly";0;0;0;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;19;"2-3 times per week";1;1;1;0;1;0;0;0;0;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;20;"Monthly";0;0;1;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;20;"Monthly";0;0;1;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;17;"Monthly";0;0;0;0;0;0;0;1;1;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;28;"Almost never";0;1;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;19;"Daily";1;1;0;1;1;1;0;1;1;0;1;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;22;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;20;"2-3 times per week";1;0;1;1;0;0;0;1;0;0;1;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;24;"Almost never";0;0;0;0;0;0;0;0;0;0;0;0;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"Daily";0;0;1;0;1;1;0;1;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Daily";0;0;0;0;1;0;0;1;1;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;18;"Almost never";0;0;0;0;0;0;0;1;0;1;0;0;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Daily";1;1;1;1;1;1;1;1;1;1;1;1;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;19;"2-3 times per week";1;0;1;0;1;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Daily";0;1;0;0;0;1;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;17;"Almost never";0;0;0;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Weekly";0;1;0;0;1;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"Weekly";0;0;1;0;0;0;0;0;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"Weekly";0;0;0;0;0;0;0;0;0;0;0;0;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;19;"Weekly";1;1;0;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"Daily";1;1;0;1;1;0;0;1;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"2-3 times per week";0;1;1;0;0;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;17;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"2-3 times per week";0;1;1;1;1;0;0;1;0;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"2-3 times per week";1;0;0;1;1;0;0;1;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;17;"Monthly";1;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"2-3 times per week";0;0;0;0;1;0;0;0;1;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;17;"2-3 times per week";1;1;0;0;0;0;0;0;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;17;"Daily";0;1;0;1;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;16;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;18;"Almost never";0;0;0;0;0;0;0;0;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;18;"Monthly";0;1;0;0;0;0;0;0;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;17;;1;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"Weekly";0;0;0;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Weekly";0;0;0;0;0;0;0;0;0;0;0;0;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Weekly";0;0;0;0;0;0;0;0;0;0;0;0;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"Hourly";1;1;1;1;1;1;0;1;1;1;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;19;"2-3 times per week";1;1;0;1;1;0;0;0;0;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"Almost never";0;0;0;0;0;0;0;0;0;0;0;0;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;18;"2-3 times per week";0;1;0;0;1;0;0;1;1;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"Almost never";0;0;0;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;17;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Almost never";0;0;0;0;1;0;0;1;1;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;19;"Hourly";1;1;0;0;0;0;0;1;0;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"2-3 times per week";0;0;0;0;1;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Monthly";1;0;0;0;0;0;0;1;0;0;0;0;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;19;"Almost never";0;1;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Daily";0;1;1;0;0;0;0;1;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;23;"Daily";0;0;0;0;1;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;20;"Weekly";0;1;0;0;0;0;0;0;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;19;"Almost never";0;1;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"Almost never";1;1;0;0;1;1;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;16;"Weekly";0;0;1;0;1;0;0;1;0;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;17;"Weekly";1;1;1;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Daily";0;0;0;0;1;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;19;"Daily";0;1;1;1;1;0;0;0;1;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;19;"2-3 times per week";0;1;0;0;0;0;0;0;0;0;0;0;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Almost never";0;0;0;0;0;0;0;0;0;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Almost never";0;0;0;0;1;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Daily";1;1;0;1;1;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"2-3 times per week";1;0;1;1;1;0;0;1;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;26;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"2-3 times per week";1;1;1;0;0;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"2-3 times per week";0;1;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;18;"Almost never";0;0;0;0;0;0;0;0;0;0;0;0;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"2-3 times per week";1;0;0;0;0;1;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;17;"Daily";1;1;1;1;0;0;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;20;"Weekly";0;0;1;0;1;0;0;0;1;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;22;"Hourly";0;1;0;0;1;0;0;1;0;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;21;"Almost never";1;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;23;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;23;"Daily";1;0;0;0;0;0;0;1;0;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;37;"Daily";1;1;0;0;0;1;0;0;1;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;20;"Weekly";0;0;0;1;1;0;0;1;1;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";"Male";;24;"Daily";1;1;0;0;1;0;0;1;1;0;1;1;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;18;"Monthly";1;0;0;0;1;0;0;0;0;0;1;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;18;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;28;"Weekly";0;1;0;1;1;0;0;0;1;0;0;1;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;2;"Hourly";0;1;1;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;24;"2-3 times per week";0;1;0;0;1;1;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;24;"2-3 times per week";1;1;0;0;1;1;0;1;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Female";;19;"Weekly";1;0;0;0;1;0;0;1;0;0;0;0;1;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;12;"2-3 times per week";0;0;0;0;0;0;1;1;1;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;2;"Daily";1;1;0;0;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";"Male";;2;"Daily";0;1;0;1;0;0;0;0;0;0;0;0;0;"";0;0;1;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0
+;"";;"";;"";;;;"";;;"";;;;;0;0;0;0;0;0;0;0;0;0;0;0;0;"";0;1;0;0;0

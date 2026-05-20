@@ -1,0 +1,138 @@
+---
+title: "Minimal Survey Comparison"
+output:
+  html_document:
+    toc: false
+    code_folding: hide
+  pdf_document:
+    toc: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(purrr)
+  library(readr)
+  library(stringr)
+  library(tidyr)
+  library(tibble)
+  library(here)
+  library(knitr)
+})
+```
+
+```{r}
+to_num <- function(x) {
+  parse_number(as.character(x), locale = locale(decimal_mark = ","))
+}
+
+load_survey <- function(folder, condition) {
+  df <- read_delim(
+    here("data/survey", folder, "dataset.csv"),
+    delim = ";",
+    col_types = cols(.default = col_character()),
+    na = c("", "\"\"", "NA")
+  )
+
+  if (!"statoverall_4" %in% names(df)) {
+    df$statoverall_4 <- "1"
+  }
+
+  df |>
+    mutate(
+      condition = condition,
+      complete = to_num(statoverall_4) == 1
+    )
+}
+
+gender_labels <- read_delim(
+  here("data/survey/csv_humanai/labels.csv"),
+  delim = ";",
+  col_names = c("variable", "value", "label"),
+  col_types = cols(.default = col_character())
+) |>
+  filter(variable == "b_2") |>
+  transmute(gender_code = value, gender = str_squish(label))
+
+survey <- bind_rows(
+  load_survey("csv_humanai", "Human-AI"),
+  load_survey("csv_humanhuman", "Human-Human")
+)
+
+survey |>
+  mutate(age = to_num(b_3)) |>
+  group_by(condition) |>
+  summarise(
+    rows = n(),
+    complete_rows = sum(complete, na.rm = TRUE),
+    gender_n = sum(!is.na(b_2) & complete %in% TRUE),
+    age_n = sum(!is.na(age) & complete %in% TRUE),
+    age_mean = if_else(age_n > 0, mean(age[complete %in% TRUE], na.rm = TRUE), NA_real_),
+    age_sd = if_else(age_n > 1, sd(age[complete %in% TRUE], na.rm = TRUE), NA_real_),
+    .groups = "drop"
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 2))) |>
+  kable(caption = "Survey sample summary")
+```
+
+```{r}
+survey |>
+  filter(complete) |>
+  mutate(gender_code = coalesce(b_2, "missing")) |>
+  left_join(gender_labels, by = "gender_code") |>
+  mutate(gender = coalesce(gender, "Missing")) |>
+  count(condition, gender, name = "n") |>
+  group_by(condition) |>
+  mutate(percent = 100 * n / sum(n)) |>
+  ungroup() |>
+  mutate(percent = round(percent, 1)) |>
+  arrange(condition, desc(n)) |>
+  kable(caption = "Gender distribution among complete survey rows")
+```
+
+```{r}
+items <- tribble(
+  ~variable, ~item,
+  "s_94", "collaboration support",
+  "s_95", "helpfulness",
+  "s_96", "enjoyment",
+  "s_92", "ownership",
+  "s_93", "perceived contribution",
+  "s_43", "LLM use frequency",
+  "b_3",  "age"
+)
+
+rating_summary <- survey |>
+  filter(complete) |>
+  select(condition, any_of(items$variable)) |>
+  pivot_longer(-condition, names_to = "variable", values_to = "raw_value") |>
+  mutate(value = to_num(raw_value)) |>
+  filter(!is.na(value)) |>
+  inner_join(items, by = "variable") |>
+  group_by(item, variable, condition) |>
+  summarise(
+    n = n(),
+    mean = mean(value),
+    sd = sd(value),
+    median = median(value),
+    .groups = "drop"
+  )
+
+rating_summary |>
+  mutate(across(c(mean, sd, median), \(x) round(x, 2))) |>
+  arrange(variable, condition) |>
+  kable(caption = "Complete-response numeric survey items")
+```
+
+```{r}
+rating_summary |>
+  select(item, variable, condition, mean) |>
+  pivot_wider(names_from = condition, values_from = mean) |>
+  filter(!is.na(`Human-AI`), !is.na(`Human-Human`)) |>
+  mutate(`Human-AI - Human-Human` = `Human-AI` - `Human-Human`) |>
+  mutate(across(where(is.numeric), \(x) round(x, 2))) |>
+  arrange(variable) |>
+  kable(caption = "Mean differences on numeric items present in both conditions")
+```

@@ -1,0 +1,100 @@
+---
+title: "Minimal Dataset Balance Summary"
+output:
+  html_document:
+    toc: false
+    code_folding: hide
+  pdf_document:
+    toc: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(purrr)
+  library(readr)
+  library(stringr)
+  library(tibble)
+  library(tidyr)
+  library(here)
+  library(knitr)
+})
+```
+
+```{r}
+conditions <- c("human-ai", "human-human", "ai-ai")
+
+count_words <- function(x) {
+  x <- str_squish(replace_na(as.character(x), ""))
+  if_else(x == "", 0L, str_count(x, "\\S+"))
+}
+
+interaction_data <- map_dfr(conditions, function(condition) {
+  df <- read_csv(
+    here("data", condition, "interim", "interaction_level_stories_filtered.csv"),
+    show_col_types = FALSE
+  )
+
+  if (!"complete_exchange" %in% names(df)) {
+    df$complete_exchange <- NA
+  }
+  if (!"analysis_turn" %in% names(df)) {
+    df$analysis_turn <- NA_real_
+  }
+
+  df |>
+    mutate(
+      condition = condition,
+      conversation_id = as.character(conversation_id),
+      turn_index = coalesce(
+        suppressWarnings(as.numeric(analysis_turn)),
+        suppressWarnings(as.numeric(turn)),
+        suppressWarnings(as.numeric(interaction_count))
+      ),
+      author_1_words = count_words(author_1),
+      author_2_words = count_words(author_2),
+      exchange_words = author_1_words + author_2_words,
+      complete_exchange = as.logical(complete_exchange)
+    )
+})
+
+story_lengths <- interaction_data |>
+  group_by(condition, conversation_id) |>
+  summarise(
+    interactions_per_story = n(),
+    max_turn_index = max(turn_index, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+story_summary <- story_lengths |>
+  group_by(condition) |>
+  summarise(
+    mean_interactions_per_story = mean(interactions_per_story),
+    mean_max_turn_index = mean(max_turn_index),
+    .groups = "drop"
+  )
+
+interaction_summary <- interaction_data |>
+  group_by(condition) |>
+  summarise(
+    stories = n_distinct(conversation_id),
+    interactions = n(),
+    complete_interactions = sum(complete_exchange %in% TRUE, na.rm = TRUE),
+    mean_turn_length_words = mean(c(author_1_words, author_2_words)),
+    median_turn_length_words = median(c(author_1_words, author_2_words)),
+    mean_exchange_words = mean(exchange_words),
+    .groups = "drop"
+  )
+
+interaction_summary |>
+  left_join(story_summary, by = "condition") |>
+  select(
+    condition, stories, interactions, complete_interactions,
+    mean_interactions_per_story, mean_max_turn_index,
+    mean_turn_length_words, median_turn_length_words, mean_exchange_words
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 2))) |>
+  kable(caption = "Filtered interaction-level dataset size and turn length by condition")
+```

@@ -1,0 +1,37 @@
+questionName;variableName;questionType;subType;questionText;choiceValue;choiceText
+s_84;s_84;Closed;Single;"Rate the following questions on a scale from 1 - 7  - How do you perceive that the co-writer collaborated with you when producing the narrative, with 1 being challenging and 7 being supportive? Do you feel it more often supported your line of narrative or do you feel that they more often pushed the story in a different direction?";;
+s_85;s_85;Open;String;"Rate the following questions on a scale from 1 - 7  - How do you perceive that the co-writer collaborated with you when producing the narrative, with 1 being challenging and 7 being supportive? Do you feel it more often supported your line of narrative or do you feel that they more often pushed the story in a different direction? - Comments? ";;
+s_86;s_86;Closed;Single;"Rate the following questions on a scale from 1 - 7  - Did you perceive this method of collaboration to be harmful or helpful to the outcome of your story, with 1 being very harmful and 7 being very helpful.";;
+s_87;s_87;Open;String;"Rate the following questions on a scale from 1 - 7  - Did you perceive this method of collaboration to be harmful or helpful to the outcome of your story, with 1 being very harmful and 7 being very helpful. - Comments? ";;
+s_88;s_88;Closed;Single;"Rate the following questions on a scale from 1 - 7  - Did you enjoy interacting with a co-writer that supported or challenged you in this way, with 1 being no enjoyment and 7 being high enjoyment?";;
+s_91;s_91;Open;String;"Rate the following questions on a scale from 1 - 7  - Did you enjoy interacting with a co-writer that supported or challenged you in this way, with 1 being no enjoyment and 7 being high enjoyment? - Comments? ";;
+s_94;s_94;Closed;Single;"How do you perceive that the co-writer collaborated with you when producing the narrative?  Do you feel they more often supported your line of narrative or do you feel that they more often pushed the story in a different direction?  1 = Challenging 7 = Supportive?";;
+s_95;s_95;Closed;Single;"Did you perceive this method of collaboration to be harmful or helpful to the outcome of your story?  1 = Very harmful 7 = Very Helpful";;
+s_96;s_96;Closed;Single;"Did you enjoy interacting with a co-writer that supported or challenged you in this way  1 = no enjoyment 7 = high enjoyment?";;
+s_97;s_97;Open;String;"Comments to the collaboration?";;
+s_92;s_92;Closed;Single;"How much ownership do you feel over the story,  1 = low feeling of ownership  7 = feeling full ownership?";;
+s_93;s_93;Closed;Single;"Did you perceive the co-writer to contribute to the narrative development of the story?  1 = no contribution 7 = high contribution.";;
+s_98;s_98;Open;String;"Comments to ownership and contribution? ";;
+b_2;b_2;Closed;Single;"Gender";;
+lang;lang;Closed;Single;"Language";;
+b_3;b_3;Open;Double;"Age";;
+s_43;s_43;Closed;Single;"How often do you use LLM tools, specifically generative chatmodels like ChatGPT?";;
+s_44;s_44_1;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";1;"Brainstorming ideas"
+s_44;s_44_2;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";2;"Research and information gathering"
+s_44;s_44_3;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";3;"Drafting outlines"
+s_44;s_44_4;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";4;"Writing first drafts"
+s_44;s_44_5;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";5;"Editing and Proofreading"
+s_44;s_44_6;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";6;"Generating visuals (e.g. images, charts)"
+s_44;s_44_7;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";7;"Creating social media content"
+s_44;s_44_8;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";8;"Summarizing documents"
+s_44;s_44_9;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";9;"Translation"
+s_44;s_44_10;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";10;"Generating different creative ext formats (poetry, scripts, musical pieces etc.)"
+s_44;s_44_11;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";12;"Coding"
+s_44;s_44_12;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";13;"Email or letters"
+s_44;s_44_13;Closed;Multiple;"For which of the following tasks do you use LLM tools? (Select all that apply)";11;"Other"
+email;email;Open;String;"E-mail";;
+statoverall;statoverall_1;Closed;Multiple;"Overall Status";1;"New"
+statoverall;statoverall_2;Closed;Multiple;"Overall Status";2;"Distributed"
+statoverall;statoverall_3;Closed;Multiple;"Overall Status";3;"Partially Complete"
+statoverall;statoverall_4;Closed;Multiple;"Overall Status";4;"Complete"
+statoverall;statoverall_5;Closed;Multiple;"Overall Status";5;"Rejected"
