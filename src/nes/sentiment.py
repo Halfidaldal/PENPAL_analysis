@@ -1,20 +1,18 @@
 """
-Sentiment analysis functions.
+Sentiment scoring via semantic concept-vector projection.
 
-This module provides sentiment scoring using:
-- German BERT sentiment model (oliverguhr/german-sentiment-bert)
-- Continuous valence scoring
-- Batch processing for efficiency
+The returned score is a cosine projection onto the sentiment concept vector.
+It is bounded to [-1, 1]: lower values indicate more negative tone, higher
+values indicate more positive tone.
 """
 
 from typing import List, Optional
-import pandas as pd
-import numpy as np
-import torch
-from tqdm import tqdm
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from sentence_transformers import SentenceTransformer
 import os
+
+import numpy as np
+import pandas as pd
+import torch
+from sentence_transformers import SentenceTransformer
 
 
 _MISSING_TEXT_VALUES = {"", "nan", "none", "null"}
@@ -46,275 +44,63 @@ def get_device() -> torch.device:
     return device
 
 
-def load_sentiment_model(
-    model_name: str = "oliverguhr/german-sentiment-bert",
-    device: Optional[torch.device] = None
-):
-    """
-    Load a sentiment classification model.
-    
-    Args:
-        model_name: HuggingFace model identifier
-        device: Torch device (auto-detected if None)
-        
-    Returns:
-        Tuple of (tokenizer, model, device)
-    """
-    if device is None:
-        device = get_device()
-    
-    print(f"Loading sentiment model: {model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
-    model = AutoModelForSequenceClassification.from_pretrained(model_name)
-    model.eval()
-    model.to(device)
-    
-    return tokenizer, model, device
-
-
-def continuous_valence_score(
-    probs: torch.Tensor,
-    method: str = "simple"
-) -> torch.Tensor:
-    """
-    Convert sentiment probabilities to continuous valence scores.
-    
-    Assumes 3-class model: [positive, negative, neutral]
-    
-    Args:
-        probs: Probability tensor of shape (batch_size, 3)
-        method: Scoring method:
-            - "simple": P(pos) - P(neg)
-            - "amplify": (P(pos) - P(neg)) / (1 - P(neutral) + eps)
-            - "dampen": (P(pos) - P(neg)) * (1 - P(neutral))
-            
-    Returns:
-        Valence scores of shape (batch_size,)
-    """
-    if method == "simple":
-        # Ignore neutral, just positive minus negative
-        valence = probs[:, 2] - probs[:, 0]
-    elif method == "amplify":
-        # Amplify when neutral is high
-        valence = (probs[:, 2] - probs[:, 0]) / (1 - probs[:, 1] + 1e-6)
-    elif method == "dampen":
-        # Dampen when neutral is high
-        valence = (probs[:, 2] - probs[:, 0]) * (1 - probs[:, 1])
-    else:
-        raise ValueError(f"Unknown method: {method}")
-    
-    return valence
-
-
-def compute_sentiment_batch(
-    texts: List[str],
-    model_name: str = "oliverguhr/german-sentiment-bert",
-    batch_size: int = 64,
-    valence_method: str = "simple",
-    device: Optional[torch.device] = None
-) -> np.ndarray:
-    """
-    Compute continuous sentiment scores for a list of texts.
-    
-    Args:
-        texts: List of text strings
-        model_name: HuggingFace model identifier
-        batch_size: Number of texts to process at once
-        valence_method: Method for computing continuous valence
-        device: Torch device (auto-detected if None)
-        
-    Returns:
-        NumPy array of sentiment scores (float, range approx -1 to +1)
-    """
-    normalized_texts = [_normalize_metric_text(text) for text in texts]
-    valid_positions = [idx for idx, text in enumerate(normalized_texts) if text is not None]
-    scores_out = np.full(len(texts), np.nan, dtype=float)
-
-    if not valid_positions:
-        return scores_out
-
-    tokenizer, model, device = load_sentiment_model(model_name, device)
-
-    valid_texts = [normalized_texts[idx] for idx in valid_positions]
-    valid_scores = []
-    print(f"Computing sentiment for {len(valid_texts)} substantive texts (batch_size={batch_size})...")
-
-    for i in tqdm(range(0, len(valid_texts), batch_size), desc="Sentiment batches"):
-        batch = valid_texts[i:i+batch_size]
-        inputs = tokenizer(
-            batch,
-            return_tensors="pt",
-            truncation=True,
-            padding=True
-        ).to(device)
-        
-        with torch.no_grad():
-            outputs = model(**inputs)
-            probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-            valence = continuous_valence_score(probs, method=valence_method)
-            valid_scores.extend(valence.cpu().numpy())
-
-    scores_out[valid_positions] = np.array(valid_scores, dtype=float)
-    return scores_out
-
-
-def add_sentiment_to_dataframe(
-    df: pd.DataFrame,
-    text_columns: List[str],
-    model_name: str = "oliverguhr/german-sentiment-bert",
-    batch_size: int = 64,
-    valence_method: str = "simple"
-) -> pd.DataFrame:
-    """
-    Add sentiment score columns to a DataFrame.
-    
-    Args:
-        df: Input DataFrame
-        text_columns: List of column names to score
-        model_name: Sentiment model to use
-        batch_size: Batch size for processing
-        valence_method: Method for computing valence
-        
-    Returns:
-        DataFrame with new sentiment_score columns
-    """
-    df_out = df.copy()
-    
-    for col in text_columns:
-        if col not in df.columns:
-            print(f"Warning: Column '{col}' not found, skipping")
-            continue
-        
-        print(f"\n=== Computing sentiment for column: {col} ===")
-        texts = df[col].astype(str).tolist()
-        
-        scores = compute_sentiment_batch(
-            texts,
-            model_name=model_name,
-            batch_size=batch_size,
-            valence_method=valence_method
-        )
-        
-        df_out[f"{col}_sentiment"] = scores
-    
-    return df_out
-
-
-def compute_dyadic_sentiment(
-    df: pd.DataFrame,
-    valence_method: str = "simple",
-    batch_size: int = 64,
-    model_name: str = "oliverguhr/german-sentiment-bert"
-) -> pd.DataFrame:
-    """
-    Compute turn-by-turn sentiment for dyadic conversations.
-    
-    Uses standardized column names: author_1, author_2.
-    
-    Args:
-        df: DataFrame with author_1 and author_2 text columns
-        valence_method: Method for valence scoring
-        batch_size: Batch size for processing
-        model_name: Sentiment model to use
-        
-    Returns:
-        DataFrame with added sentiment columns (author_1_sentiment_score, author_2_sentiment_score)
-    """
-        
-    
-    turn_axis = "analysis_turn" if "analysis_turn" in df.columns and df["analysis_turn"].notna().any() else "turn"
-
-    def _scale_turn_positions(series: pd.Series) -> pd.Series:
-        valid = series.dropna()
-        out = pd.Series(np.nan, index=series.index, dtype=float)
-        if valid.empty:
-            return out
-        if valid.max() > valid.min():
-            out.loc[valid.index] = (valid - valid.min()) / (valid.max() - valid.min())
-        else:
-            out.loc[valid.index] = 0.0
-        return out
-
-    df["pct_turn"] = df.groupby("conversation_id")[turn_axis].transform(_scale_turn_positions)
-    
-    # Compute sentiment for all turns using standardized column names
-    print(f"\nComputing sentiment for {len(df)} turns...")
-    author_1_scores = compute_sentiment_batch(
-        df['author_1'].astype(str).tolist(),
-        batch_size=batch_size,
-        valence_method=valence_method,
-        model_name=model_name
-    )
-    author_2_scores = compute_sentiment_batch(
-        df['author_2'].astype(str).tolist(),
-        batch_size=batch_size,
-        valence_method=valence_method,
-        model_name=model_name
-    )
-    df['author_1_sentiment_score'] = author_1_scores
-    df['author_2_sentiment_score'] = author_2_scores
-    sort_columns = ['conversation_id']
-    if 'turn' in df.columns:
-        sort_columns.append('turn')
-    elif turn_axis in df.columns:
-        sort_columns.append(turn_axis)
-    df = df.sort_values(sort_columns).reset_index(drop=True)
-    return df
-
-
 class SemanticProjectionSentiment:
     """
-    Sentiment analysis using Semantic Projection (embedding projection onto a concept vector).
-    Reference: https://github.com/lauritswl/SemanticProjection
+    Sentiment analysis using semantic projection onto a concept vector.
+
+    Scores are cosine projections: both the text embedding and concept vector
+    are L2-normalized before the dot product, so valid scores are in [-1, 1].
     """
+
     def __init__(
-        self, 
-        model_name: str = "paraphrase-multilingual-mpnet-base-v2", 
-        vector_path: str = "src/nes/data/Sentiment.csv", 
-        device: Optional[torch.device] = None
+        self,
+        model_name: str = "paraphrase-multilingual-mpnet-base-v2",
+        vector_path: str = "src/nes/data/Sentiment.csv",
+        device: Optional[torch.device] = None,
     ):
         self.model_name = model_name
         self.vector_path = vector_path
         self.device = device if device else get_device()
-        
+
         print(f"Loading Semantic Projection model: {model_name}")
         self.model = SentenceTransformer(model_name, device=str(self.device))
         self.vector = self._load_vector()
 
     def _load_vector(self) -> np.ndarray:
         if not os.path.exists(self.vector_path):
-            # Try relative path if absolute fails
             rel_path = os.path.join(os.path.dirname(__file__), "data", "Sentiment.csv")
             if os.path.exists(rel_path):
                 self.vector_path = rel_path
             else:
-                # Try one level up if we are in src/nes
-                rel_path_2 = os.path.join(os.path.dirname(os.path.dirname(__file__)), "nes", "data", "Sentiment.csv")
-                if os.path.exists(rel_path_2):
-                    self.vector_path = rel_path_2
-                else:
-                    raise FileNotFoundError(f"Vector file not found at {self.vector_path}. Please download it first.")
-        
-        # The file has a header 0,1,2... so we read it normally
+                raise FileNotFoundError(
+                    f"Vector file not found at {self.vector_path}. "
+                    "Expected src/nes/data/Sentiment.csv."
+                )
+
         df = pd.read_csv(self.vector_path)
-        return df.values.flatten()
+        return df.values.flatten().astype(float)
+
+    @staticmethod
+    def _l2_normalize(matrix: np.ndarray) -> np.ndarray:
+        norms = np.linalg.norm(matrix, axis=-1, keepdims=True)
+        if np.any(norms == 0):
+            raise ValueError("Cannot normalize zero-length embedding or concept vector.")
+        return matrix / norms
 
     def compute_score(self, texts: List[str], batch_size: int = 32) -> np.ndarray:
-        print(f"Encoding {len(texts)} texts for projection...")
-        embeddings = self.model.encode(texts, batch_size=batch_size, show_progress_bar=True, convert_to_numpy=True)
-        
-        # Project onto the sentiment vector
-        v = self.vector
-        norm_v = np.linalg.norm(v)
-        if norm_v == 0:
-            raise ValueError("Concept vector has zero norm.")
-            
-        unit_v = v / norm_v
-        
-        # Scalar projection: dot product with unit vector
-        # This gives the component of the embedding along the sentiment direction
-        scores = np.dot(embeddings, unit_v)
-        return scores
+        print(f"Encoding {len(texts)} texts for sentiment projection...")
+        embeddings = self.model.encode(
+            texts,
+            batch_size=batch_size,
+            show_progress_bar=True,
+            convert_to_numpy=True,
+        )
+
+        unit_embeddings = self._l2_normalize(embeddings)
+        unit_vector = self._l2_normalize(self.vector.reshape(1, -1)).ravel()
+
+        scores = np.dot(unit_embeddings, unit_vector)
+        return np.clip(scores, -1.0, 1.0)
 
 
 def compute_semantic_projection_batch(
@@ -322,20 +108,13 @@ def compute_semantic_projection_batch(
     model_name: str = "paraphrase-multilingual-mpnet-base-v2",
     vector_path: str = "src/nes/data/Sentiment.csv",
     batch_size: int = 32,
-    device: Optional[torch.device] = None
+    device: Optional[torch.device] = None,
 ) -> np.ndarray:
     """
-    Compute sentiment scores using Semantic Projection.
-    
-    Args:
-        texts: List of text strings
-        model_name: SentenceTransformer model name
-        vector_path: Path to the concept vector CSV
-        batch_size: Batch size for encoding
-        device: Torch device
-        
-    Returns:
-        NumPy array of sentiment scores
+    Compute sentiment scores using semantic concept-vector projection.
+
+    Returns a NumPy array of cosine-projection scores in [-1, 1]. Missing or
+    non-substantive input texts are returned as NaN.
     """
     normalized_texts = [_normalize_metric_text(text) for text in texts]
     valid_positions = [idx for idx, text in enumerate(normalized_texts) if text is not None]
@@ -349,3 +128,4 @@ def compute_semantic_projection_batch(
     valid_scores = projector.compute_score(valid_texts, batch_size)
     scores_out[valid_positions] = valid_scores
     return scores_out
+
