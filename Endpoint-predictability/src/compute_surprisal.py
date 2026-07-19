@@ -28,6 +28,11 @@ def build_dataset(filepath):
 def load_and_parse_text(filepath):
     with open(filepath, 'r') as f:
         latex_content = f.read()
+    
+    # Preprocess to strip \href{url} prefixes, leaving {text} to prevent pylatexenc parser crashes
+    import re
+    latex_content = re.sub(r'\\href\s*\{[^{}]*\}', '', latex_content)
+
     plain_text = LatexNodes2Text().latex_to_text(latex_content)
 
     paragraphs = [p.strip() for p in plain_text.replace('\r\n', '\n').split('\n\n') if p.strip()]
