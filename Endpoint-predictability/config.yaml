@@ -1,0 +1,23 @@
+# Endpoint Predictability Configuration
+
+# Directory paths for datasets
+data:
+  raw_dir: "data"
+  processed_dir: "data/processed"
+  pilot_papers:
+    - "data/pilot-paper.tex"
+    - "data/pilot-paper-2.tex"
+
+# Scorer model configuration (simplified to use Gemma-4)
+scorer:
+  model_name: "google/gemma-4-31B"
+  device: "auto"
+  use_bf16: true
+
+# Calculation and parsing hyperparameters
+parameters:
+  # Segment size of the body to treat as "Discussion/Conclusion tail" (0.2 = last 20% of sentences)
+  tail_ratio_threshold: 0.2
+
+  # Normalization strategy for cross-tokenizer comparisons: "bits-per-byte" or "z-score"
+  normalization_strategy: "bits-per-byte"

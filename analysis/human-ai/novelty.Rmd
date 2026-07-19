@@ -140,7 +140,7 @@ print(desc_stats)
 knitr::kable(desc_stats, caption = "Descriptive Statistics for Novelty Metrics by Agent", digits = 3)
 ```
 
-```{r metric-distribution-stack, fig.width=10, fig.height=12}
+```{r metric-distribution-stack, fig.width=7.5, fig.height=3.2}
 agent_colors <- c("User" = "#377EB8", "LLM" = "#FF7F00")
 
 df_metric_distributions <- df_res_long %>%
@@ -160,58 +160,34 @@ df_metric_distributions <- df_res_long %>%
 
 metric_summary <- df_metric_distributions %>%
   group_by(metric, agent) %>%
-  summarise(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
+  summarise(
+    mean_value = mean(value, na.rm = TRUE),
+    .groups = "drop"
+  )
 
-make_metric_distribution <- function(metric_label, show_legend = FALSE) {
-  metric_data <- df_metric_distributions %>%
-    filter(metric == metric_label)
-
-  metric_lines <- metric_summary %>%
-    filter(metric == metric_label)
-
-  density_plot <- ggplot(metric_data, aes(x = value, fill = agent, color = agent)) +
-    geom_density(alpha = 0.35, linewidth = 0.9, na.rm = TRUE) +
-    geom_vline(
-      data = metric_lines,
-      aes(xintercept = mean_value, color = agent),
-      linetype = "dashed",
-      linewidth = 0.8,
-      show.legend = FALSE
-    ) +
-    scale_fill_manual(values = agent_colors, name = "") +
-    scale_color_manual(values = agent_colors, name = "") +
-    labs(title = metric_label, x = NULL, y = "Density") +
-    theme(
-      legend.position = if (show_legend) "top" else "none",
-      plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
-      axis.text.x = element_blank(),
-      axis.ticks.x = element_blank(),
-      plot.margin = margin(8, 8, 0, 8)
-    )
-
-  box_plot <- ggplot(metric_data, aes(x = value, y = agent, fill = agent)) +
-    geom_boxplot(width = 0.45, alpha = 0.7, outlier.alpha = 0.25, na.rm = TRUE) +
-    scale_fill_manual(values = agent_colors, name = "") +
-    labs(x = metric_label, y = NULL) +
-    theme(
-      legend.position = "none",
-      axis.text.y = element_text(size = 11),
-      plot.margin = margin(0, 8, 10, 8)
-    )
-
-  wrap_plots(density_plot, box_plot, ncol = 1, heights = c(3, 1))
-}
-
-p_metric_distributions <- wrap_plots(
-  make_metric_distribution("Novelty", show_legend = TRUE),
-  make_metric_distribution("Transience"),
-  make_metric_distribution("Resonance"),
-  ncol = 1,
-  heights = c(1, 1, 1)
+p_metric_distributions <- ggplot(
+  df_metric_distributions,
+  aes(x = agent, y = value, fill = agent)
 ) +
-  plot_annotation(
-    title = "Distributions of Novelty, Transience, and Resonance by Agent",
-    theme = theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"))
+  geom_violin(alpha = 0.4, colour = NA, trim = FALSE, na.rm = TRUE) +
+  geom_boxplot(width = 0.18, outlier.shape = NA, alpha = 0.9, na.rm = TRUE) +
+  facet_wrap(~ metric, nrow = 1, scales = "free_y") +
+  scale_fill_manual(values = agent_colors, name = NULL) +
+  scale_color_manual(values = agent_colors, name = NULL) +
+  labs(
+    title = "Novelty Metrics by Agent",
+    x = NULL,
+    y = NULL
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "top",
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold", size = 10),
+    plot.title = element_text(hjust = 0.5, size = 12, face = "bold"),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    plot.margin = margin(4, 4, 4, 4)
   )
 
 print(p_metric_distributions)
@@ -219,8 +195,8 @@ print(p_metric_distributions)
 ggsave(
   file.path(GRAPHS_DIR, "Novelty_Transience_Resonance_Distributions_Agent.png"),
   p_metric_distributions,
-  width = 10,
-  height = 12,
+  width = 7.5,
+  height = 3.2,
   dpi = 300
 )
 ```
@@ -388,4 +364,3 @@ sessionInfo()
 ------------------------------------------------------------------------
 
 **Analysis complete.** All figures saved to `analysis/figures/` and tables to `analysis/tables/`.
-

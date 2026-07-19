@@ -1,0 +1,1044 @@
+\documentclass{article} % For LaTeX2e
+\usepackage[preprint]{colm2026_conference}
+
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{booktabs}
+\usepackage{makecell}
+\usepackage[capitalise]{cleveref}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage[table]{xcolor}
+\usepackage{tabularx}
+\usepackage{ragged2e}
+\usepackage{caption}
+\usepackage{wrapfig}
+\usepackage{ltablex}
+\keepXColumns
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+\definecolor{palegreen}{RGB}{212, 247, 212}
+\definecolor{palered}{RGB}{250, 209, 214}
+\definecolor{skipred}{RGB}{237, 94, 111}
+
+\usepackage{lineno}
+
+\definecolor{darkblue}{rgb}{0, 0, 0.5}
+\hypersetup{colorlinks=true, citecolor=darkblue, linkcolor=darkblue, urlcolor=darkblue}
+
+
+\title{Attention Flows: Tracing LLM Conceptual Engagement via Story Summaries}
+
+
+
+\author{Rebecca M.\ M.\ Hicke\thanks{Equal contribution.} \\
+Computer Science\\
+Cornell University\\
+\texttt{rmh327@cornell.edu} \\
+\And
+Sil Hamilton\footnotemark[1] \\
+Information Science \\
+Cornell University \\
+\texttt{srh255@cornell.edu} \\
+\And
+David Mimno \\
+Information Science \\
+Cornell University \\
+\texttt{mimno@cornell.edu} \\
+\AND
+\hspace*{0.3\textwidth}Ross Deans Kristensen-McLachlan \\
+\hspace*{0.3\textwidth}School of Communication and Culture \\
+\hspace*{0.3\textwidth}Aarhus University \\
+\hspace*{0.3\textwidth}\texttt{rdkm@cc.au.dk} \\
+}
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Although LLM context lengths have grown, there is evidence that their ability to integrate information across long-form texts has not kept pace.
+We evaluate one such understanding task: generating summaries of novels.
+When human authors of summaries compress a story, they reveal what they consider narratively important.
+Therefore, by comparing human and LLM-authored summaries, we can assess whether models mirror human patterns of \textit{conceptual engagement} with texts.
+To measure conceptual engagement, we align sentences from 150 human-written novel summaries with the specific chapters they reference.
+We demonstrate the difficulty of this alignment task, which indicates the complexity of summarization as a task.
+We then generate and align additional summaries by nine state-of-the-art LLMs for each of the 150 reference texts.
+Comparing the human and model-authored summaries, we find both stylistic differences between the texts and differences in how humans and LLMs distribute their focus throughout a narrative, with models emphasizing the ends of texts.
+Comparing human narrative engagement with model attention mechanisms suggests explanations for degraded narrative comprehension and targets for future development.
+We release our dataset to support future research.
+
+
+\end{abstract}
+
+\section{Introduction}
+
+Large language models' (LLMs) context windows have grown by orders of magnitude in recent years, from thousands of tokens (e.g.\ \cite{radford2019language, devlin2019bert}) to millions (e.g.\ \cite{MetaAI2025Llama4, qwen3.5}). This scaling has been accompanied by a wave of benchmarks designed to test whether models can actually \textit{use} all that context. The Needle in a Haystack test \citep{li2025needlebench}, for instance, embeds a target token in a long document and measures retrieval accuracy as a function of position and document length. By this measure, frontier LLMs appear remarkably competent at handling long contexts.
+
+However, retrieval is not \textit{comprehension}. Research suggests that long-context model performance degrades in ways benchmarks fail to predict \citep{du-etal-2025-context}. Recently termed \textbf{context rot} \citep{hong2025context}, this phenomenon is distinct from retrieval failure; models may still locate and extract tokens while nonetheless failing to coherently integrate information across the full document. Prior work has documented a related effect in which models attend disproportionately to the beginning and end of their context, neglecting material in the middle \citep{liu-etal-2024-lost}. However, this kind of context rot is broader than positional bias alone, reflecting instead a failure of \textit{sustained conceptual engagement} with long texts.
+
+Conceptual engagement is difficult to measure directly. To do so, we need a task that requires attending to the conceptual structure of an entire document --- one where a model cannot succeed by attending only to fragments. Narrative texts are a natural candidate for such a task, since novels and other extended narratives are among the longest coherent texts that humans routinely produce and comprehend, and they demand exactly the kind of sustained, globally integrated understanding that distinguishes genuine comprehension from local retrieval. Despite this, narrative texts remain strikingly underrepresented in long-context evaluation. Existing benchmarks that make use of narratives typically include only short texts of a few hundred words or focus on extractive question-answering over longer works (e.g.\ \cite{kocisky-etal-2018-narrativeqa,bonomo-etal-2025-literaryqa}). The question of how models engage with the full content of a long-form narrative remains largely unaddressed.
+
+Story summarization offers one potential method for studying conceptual engagement. Writing a summary requires a reader to determine what narrative elements --- e.g. characters, events, and themes --- are critical for understanding a story (c.f. \cref{summarization} below). These decisions produce a kind of \textit{conceptual map}, a distribution of attention across the narrative that reveals what the summarizer considers important. By comparing the maps produced by humans and LLMs when summarizing the same texts, we can begin to evaluate how models engage with the full content of long-form narratives beyond retrieval.
+
+To this end, we collect 150 human--written plot summaries from Wikipedia and generate corresponding summaries using nine state-of-the-art LLMs. We prompt the LLMs with and without Wikipedia's summary-writing guidelines and with and without the full texts of the novels included, resulting in four summaries from each model. We then align each summary sentence to the chapters it references in the source novel, producing comparable conceptual maps for humans and models. Many models struggle with this alignment task (\cref{tab:alignResults}), which further demonstrates the difficulty of narrative comprehension tasks.
+
+We make four primary contributions.
+First, we introduce \textit{conceptual engagement} as a framework for evaluating long-context comprehension through summary-based attention tracing.
+Second, we present a dataset of 5,550 human- and model-authored summaries aligned with the 150 source novels at the sentence-chapter level.
+Third, we demonstrate that LLM-authored summaries differ systematically from human-authored equivalents both stylistically and in their conceptual mappings of novels, revealing a structural bias undetectable by existing long-context benchmarks.
+Finally, we release our dataset, alignment methods, and analysis code to support future research.\footnote{\url{https://github.com/c2-lab/att-flows/}}
+
+\begin{figure}[t]
+  \vspace{-10pt}
+  \centering
+  \includegraphics[width=1\linewidth]{figs/process_chart.png}
+  \caption{A diagram of how summaries written by humans and models are aligned with the chapters of each novel on a many-to-many basis.}
+  \label{fig:dataChart}
+  \vspace{-10pt}
+\end{figure}
+
+\section{Related Work}
+
+\paragraph{A summary of human summarization.}
+\label{summarization}
+
+Summarizing, particularly for narrative, is a complex linguistic task that requires comprehension. To produce a summary of a story, a reader must construct a mental representation, assess the importance of elements, and reformulate them in a compressed format. 
+
+
+Early AI research finds that the structural position of events predicts subsequent recall \citep{RUMELHART1975211, MANDLER1977111, Kintsch01011978, KINTSCH198087}, indicating that both readers and systems must identify a causal backbone to produce good summaries \citep{LEHNERT1981293, TRABASSO1985612}.
+
+Likewise, psychological approaches to discourse processing in humans have emphasized the centrality of building and maintaining \textit{situation models}.
+Readers construct text-specific mental models, including e.g. characters, causality, time, and intentionality \citep{zwaan-indexing-1995, emmott-comprehension-1997, Zwaan1998SituationMI}.
+Building coherent mental representations involves a combination of passive and reader-initiated processes \citep{Broek04072017, CohnSheehy2020NarrativesBT}.
+Both recall and recognition scale linearly with narrative length but, for longer narratives, readers tend to summarize content rather than retain precise details \citep{Georgiou2023LargescaleSO}.
+
+Existing literature thus suggests that a summary functions as a \textit{trace} of the comprehension process that produced it.
+
+We study not just whether LLMs produce human-like summaries of narrative text, but whether the model \textit{engaged} with the narrative as a human reader might, as reflected by the summary produced.
+
+\paragraph{Context rot as a phenomenon.}
+Language model context lengths have grown due to a number of recent advancements \citep{suRoFormerEnhancedTransformer2023,zaheer2020big,gu2024mamba,lieber2024jamba}.
+Long-context performance is typically assessed with synthetic retrieval tasks which test models on their ability to identify and retrieve specific tokens \citep{mohtashami2023randomaccess,li-etal-2024-loogle}. However, these ``Needle in a Haystack'' tests only provide a lower bound, showing whether a model is actually capable of accessing its context.
+More complex benchmarks have been proposed to address this evaluation gap.
+These typically draw on existing benchmark data that is naturally long context, such as chains of needles \citep{hsiehruler}, database-derived data \citep{yuanLVEvalBalancedLongContext2024,chenLongLeaderComprehensiveLeaderboard2025}, and long-form text data \citep{wang2024leave}.
+These benchmarks diversify and complicate traditional synthetic retrieval tests, but many ultimately still evaluate retrieval-based tasks.
+We argue that a new type of evaluation is needed to test for more nuanced degrees of engagement with texts.
+
+An increasing number of benchmarks consider narrative comprehension as a proxy task for this conceptual engagement \citep{karpinska-etal-2024-one,bonomo-etal-2025-literaryqa,kocisky-etal-2018-narrativeqa}.
+But ground truth data for narrative comprehension is non-trivial given reading is subjective.
+We turn to summaries as an artifact inherently capturing one particular reading of a narrative text.
+Existing literature benchmarks models on their ability to generate narrative summaries \citep{kryscinski2021booksum,zhao2023narrasumlargescaledatasetabstractive}.
+But these benchmarks do not necessarily consider \textit{how} models and humans might diverge in summary writing behavior or study summary writing in long-context scenarios as an inherently integrative task.
+
+
+\section{Data}
+Our dataset contains 150 novels in the public domain under US law and the corresponding Wikipedia plot summaries. Wikipedia summaries are co-written by multiple authors, meaning our dataset will not be biased towards the writing style of a individual or small group. Using works in the public domain allows us to release data, increase reproducibility, and not hit commercial models' copyright guardrails.
+
+To identify English-language novels available on Project Gutenberg with English-language summaries on Wikipedia, we first collect a candidate list of Gutenberg works in English and remove single-word titles, which often overlap titles with generic Wikipedia pages. We then search for Wikipedia pages with titles in our candidate list that contain ``Plot'' or ``Summary'' subheadings. We find 80 texts with corresponding summaries. We then add and additional 70 novels and their corresponding Wikipedia summaries by including all missing novels from the BookSum dataset \citep{kryscinski2021booksum} and searching for novels recently released into the public domain.
+
+We additionally regularize and segment texts and summaries. We first split novels into chapters using the \texttt{chapterize} package and manually validate the resulting segmentation. We remove illustration markers, ensure that footnotes are in the correct chapter file, and lightly standardize punctuation. We extract Wikipedia summaries manually,\footnote{All summaries were gathered between 02/18/2026 and 02/19/2026.} excluding paragraphs that only provide publication information or similar. Finally, we split summaries into sentences using NLTK's Punkt algorithm \citep{kiss-strunk-2006-unsupervised}.
+
+All novels and their corresponding Project Gutenberg IDs can be found in Appendix \ref{app:novels}; cleaned texts and summaries are available at \href{https://github.com/c2-lab/att-flows/}{this Github}. The novels contain 3--86 chapters (32 on average) and are 9,780 to 488,101 tokens long (147,173 on average).
+
+
+\section{Methods}
+\begin{figure}[t]
+  \vspace{-10pt}
+  \centering
+  \includegraphics[width=1\linewidth]{figs/process_chart2.png}
+  \caption{The summary generation and alignment pipeline. Note LLMs are involved twice --- first to write the prompt, and then again to align summary sentences with their respective novel chapters. Different model pairs are used in all cases to minimize bias.}
+  \label{fig:processChart}
+  \vspace{-10pt}
+\end{figure}
+
+To compare how LLMs and humans write novel summaries --- and thus conceptually engage with their target texts --- we must first consider how to characterize summarization behavior.
+The goal of a summary is to convey the narrative concisely, so the events included reflect what readers consider important.
+We therefore create a bipartite graph for each summary/text pair, mapping each summary sentence $s \in S$ to zero or more chapters $c \in C$.
+By comparing the degree to which summary authors ``engage'' with particular chapters, or how many sentences from a summary describe that chapter, we can compare the extent to which different summary authors consider a chapter salient.
+Across an entire text, we can thus compare how that perceived salience, or engagement, is distributed.
+
+
+\subsection{Generating Alignments}
+\label{subsec:validation}
+
+\begin{wraptable}{r}{5.5cm}
+  \small
+  \centering
+  \begin{tabular}{rl}
+    \textbf{Method} & \textbf{F1} \\
+    \midrule
+    TF-IDF & 22 \\
+    Embeddings & 25 \\
+    \midrule
+    Gemma 3 (27b) & 70 [$\pm$ 2] \\
+    GPT-5 (nano) & 73 [$\pm$ 2] \\
+    GPT-4o (mini) & 73 [$\pm$ 3] \\
+    GPT-OSS (20b) & 76 [$\pm$ 3] \\
+    Qwen 3 Next (80b) & 77 [$\pm$ 1] \\
+    GPT-5 (mini) & 78 [$\pm$ 3] \\
+    Qwen 3.5 (122b) & 79 [$\pm$ 5] \\
+    GPT-OSS (120b) & 80 [$\pm$ 3] \\
+    GPT-4o & 82 [$\pm$ 6] \\
+    GPT-5.2 & 83 [$\pm$ 5] \\
+    Claude Sonnet 4.6 & 88 [$\pm$ 6] \\
+    \bottomrule
+  \end{tabular}
+  \caption{Performance on the sentence-to-chapter alignment task.}
+  \label{tab:alignResults}
+\end{wraptable}
+
+We find that mapping summary sentences to novel chapters is in itself a challenging problem.
+To evaluate sentence-to-chapter alignment, two expert human annotators created an evaluation dataset of sentence-to-chapter alignments for four novels randomly sampled from our corpus and their Wikipedia summaries.\footnote{\textit{Rookwood} by William Harrison Ainsworth, \textit{Kazan} by James Oliver Curwood, \textit{Kim} by Rudyard Kipling, and \textit{Carmilla} by Joseph Sheridan Le Fanu.}
+Annotators were allowed to align each sentence to as many chapters as needed.
+Interannotator agreement was high with mean Cohen's $\kappa$ of 0.74 across all texts.
+Resolving disagreements via discussion left the final evaluation dataset with 172 sentence-to-chapter matches across four novels.
+
+We then used the human annotations to create and evaluate an automated algorithm for aligning summary sentences to novel chapters.
+To do this, we created a prompt that accepts an entire summary with each sentence indexed and a single chapter from the corresponding novel and returns the set of indices for summary sentences that describe that chapter.
+We do not pass full novel texts to the prompt, as this risks triggering the same long-context failure modes we hope to explore.
+The full prompt text can be found in Appendix \ref{sec:alignPrompts}.
+
+We then evaluated two na\"ive baselines and eleven LLMs on our alignment task. The baselines pair summary sentences with novel chapters using TF-IDF values \citep{scikit-learn} and embeddings from EmbeddingGemma \citep{vera2025embeddinggemmapowerfullightweighttext} created using \texttt{sentence-transformers} \citep{reimers-2019-sentence-bert}. Each sentence was matched to the chapter whose TF-IDF vector or embedding is closest by cosine distance. We additionally applied the prompt to five open-weight models\footnote{GPT-OSS (20b and 120b) \citep{openai2025gptoss120bgptoss20bmodel}, Qwen 3 Next (80b) \citep{qwen3.5}, Qwen 3.5 (122b-a10b), and Gemma 3 (27b) \citep{gemmateam2025gemma3technicalreport}} and six proprietary models.\footnote{GPT-4o \citep{openai2024gpt4ocard}, GPT-4o (mini), GPT-5 \citep{singh2025openaigpt5card}, GPT-5 (mini and nano), GPT-5.2, Gemini 3.1 Pro \citep{GeminiTeam2026Gemini31Pro}, and Claude Sonnet 4.6 \citep{Anthropic2025Claude4SystemCard}} Each model was run five times over all four books in the evaluation dataset.
+
+All tested models far outperformed the baselines (\cref{tab:alignResults}), indicating that token overlap is not by itself sufficient to align summary sentences. LLM accuracy varied considerably; larger models performed better overall. Although GPT-4o, GPT-5.2, and Claude Sonnet 4.6 performed better, we ultimately selected GPT-OSS (120b) for alignments downstream. This model still achieved an overall F1 of 80 with a comparatively low standard error and is much cheaper to apply at scale.
+
+\begin{wraptable}{r}{6.5cm}
+  \vspace{-10pt}
+  \small
+  \centering
+  \begin{tabular}{lc}
+    \textbf{} & \makecell{\textbf{BLEU Score}\\(0 -- 100)} \\
+    \midrule
+    Qwen 2.5 (7b) & 1.91 [$\pm$ 0.05] \\
+    Qwen 3.5 (9b) & 3.86 [$\pm$ 0.10]\\
+    GLM 4 (9b) & 2.40 [$\pm$ 0.07] \\
+    Llama 4 Scout (17b) & 3.31 [$\pm$ 0.10] \\
+    Qwen 3.5 (27b) & 4.09 [$\pm$ 0.10] \\
+    Qwen 3.5 (35b) & 4.17 [$\pm$ 0.09] \\
+    Gemini 3.1 Flash-Lite & 4.30 [$\pm$ 0.09] \\
+    Gemini 3.1 Pro & 6.81 [$\pm$ 0.12] \\
+    GPT 5.4 & 4.58 [$\pm$ 0.12] \\
+    \midrule
+    Prompt: Text & 4.19 [$\pm$ 0.07] \\
+    Prompt: Text + Inst. & 4.34 [$\pm$ 0.07] \\
+    Prompt: Title & 3.62 [$\pm$ 0.07] \\
+    Prompt: Title + Inst. & 3.60 [$\pm$ 0.07] \\
+    \midrule
+    Baseline & 1.23 [$\pm$ 0.01] \\
+    \bottomrule
+  \end{tabular}
+  \caption{Model summaries have marginal overlap with their Wikipedia equivalents. The baseline is calculated by comparing every possible pair of human-authored summaries; standard error in brackets.}
+  \label{tab:modelHumanSims}
+  \vspace{-10pt}
+\end{wraptable}
+
+
+\subsection{Synthetic Summaries}
+We next produced summaries for each novel in our corpus with nine LMs that range from smaller open-source models to frontier proprietary models.
+The longest volume in our corpus is 488,101 tokens, so we included only models with a context window $>$500,000 tokens.
+This criterion leads to a slightly different selection of models than the sentence alignment task.
+We selected three small open-weight models: Qwen 2.5 (7b) \citep{qwen2025qwen25technicalreport}, Qwen 3.5 (9b), and GLM 4 (9b) \citep{glm2024chatglmfamilylargelanguage} with a 1m token context window extension.
+We then selected three larger open-weight models: Llama 4 Scout (17b) \citep{MetaAI2025Llama4}, Qwen 3.5 (27b), and Qwen 3.5 (35b).
+We finally selected three proprietary models: Gemini 3.1 Flash-Lite \citep{GeminiTeam2026Gemini31Pro}, Gemini 3.1 Pro, and GPT 5.4 \citep{OpenAI2025GPT5}.
+Of the open-weight models, four are dense (Qwen 2.5 7b, Qwen 3.5 9b, Qwen 3.5 27b, and GLM 4 9b) and the remaining two are mixture-of-experts (MoE) models.
+Each model produced summaries for four prompts, defined by two binary variables:
+first, whether we include summarization instructions from Wikipedia\footnote{Available here: \href{https://en.wikipedia.org/wiki/Wikipedia:How_to_write_a_plot_summary}{\texttt{https://en.wikipedia.org/wiki/Wikipedia:How\_to\_write\_a\_plot\_summary}}} and second, whether we include the full text of a novel or just the title and author. Including Wikipedia instructions tests whether specific requirements can standardize the summarization style across humans and models.
+Since out-of-copyright novels are likely to exist in LM training data, the title/author prompt tests for memorization. 
+All four ask the model to ``summarize the above story in as many paragraphs as needed.''
+Full prompts are available in Appendix \ref{sec:generationPrompts}.
+
+Overall, we generated 5,400 total summaries across 150 novels, 9 models, and 4 prompts. These summaries and the 150 Wikipedia summaries were then aligned with the source texts using GPT-OSS (120b). An overview of our pipeline can be seen in \cref{fig:processChart}.
+
+\section{Comparing Human- and Model-Authored Summaries}
+We next evaluate differences between human- and model-generated summaries.
+
+\paragraph{Lexical differences}
+Models do not appear to simply repeat Wikipedia summaries.
+Table \ref{tab:modelHumanSims} quantifies verbatim overlap with BLEU scores for each model averaged over prompts and each prompt averaged over models.
+Similarity between model- and human-written summaries of the same novel are only slightly higher than similarity between human summaries of different novels (Baseline).
+Larger models have more overlap, as do responses to prompts that include the full novel texts.
+Adding the Wikipedia instructions has a much weaker and less consistent effect.
+
+\paragraph{Syntactic differences}
+Human- and model-authored summaries also differ in linguistic features.
+Table \ref{tab:sumData} shows five variables averaged over prompts and over models; detailed breakdowns and Kolmogorov-Smirnov significance scores with Benjamini-Hochberg correction \citep{benjamini1995controlling} are in Appendix \ref{sec:featureDists}.
+Overall, we find small but significant differences, especially when models are smaller and do not have access to full texts.
+
+Model-authored summaries are on average shorter than human summaries by token and sentence counts for all models except Llama 4 Scout (17b) and GPT 5.4, although human summaries vary considerably in length.
+There is also substantial variability between models.
+Summaries based on full-text prompts are closer to human length than on title-only prompts.
+
+\begin{table*}
+  \small
+  \centering
+  \begin{tabular}{lrrrrr}
+    \textbf{} & \textbf{\# Tokens} & \textbf{\# Sentences} & \makecell{\textbf{Dependency}\\\textbf{Distance}} & \makecell{\textbf{Avg. \#}\\\textbf{Named}\\\textbf{Entities}} & \makecell{\textbf{Avg. \#}\\\textbf{Person}\\\textbf{Entities}} \\
+    \midrule
+    Human & 990 [$\pm$ 39] & 38.5 [$\pm$ 1.6] & 3.21 [$\pm$ 0.02] & 8.94 [$\pm$ 0.20] & 4.45 [$\pm$ 0.18] \\
+    \midrule
+    Qwen 2.5 (7b) & \cellcolor{palered}225 [$\pm$ 3] & \cellcolor{palered}9.0 [$\pm$ 0.1] & \cellcolor{palered}2.98 [$\pm$ 0.01] & \cellcolor{palered}7.89 [$\pm$ 0.12] & \cellcolor{palered}4.35 [$\pm$ 0.11] \\
+    Qwen 3.5 (9b) & \cellcolor{palered}591 [$\pm$ 7] & \cellcolor{palered}18.9 [$\pm$ 0.2] & \cellcolor{palegreen}3.27 [$\pm$ 0.01] & \cellcolor{palered}6.84 [$\pm$ 0.10] & \cellcolor{palered}3.63 [$\pm$ 0.09] \\
+    GLM 4 (9b) & \cellcolor{palered}332 [$\pm$ 14] & \cellcolor{palered}12.8 [$\pm$ 0.6] & \cellcolor{palered}3.05 [$\pm$ 0.01] & \cellcolor{palered}7.15 [$\pm$ 0.11] & \cellcolor{palered}3.75 [$\pm$ 0.09] \\
+    Llama 4 Scout (17b) & \cellcolor{palegreen}1257 [$\pm$ 58] & \cellcolor{palegreen}54.7 [$\pm$ 2.8] & \cellcolor{palered}3.00 [$\pm$ 0.01] & \cellcolor{palered}7.06 [$\pm$ 0.08] & \cellcolor{palered}3.77 [$\pm$ 0.08] \\
+    Qwen 3.5 (27b) & \cellcolor{palered}469 [$\pm$ 4] & \cellcolor{palered}18.5 [$\pm$ 0.2] & \cellcolor{palered}3.07 [$\pm$ 0.01] & \cellcolor{palered}8.01 [$\pm$ 0.11] & \cellcolor{palered}4.25 [$\pm$ 0.10] \\
+    Qwen 3.5 (35b) & \cellcolor{palered}506 [$\pm$ 14] & \cellcolor{palered}20.4 [$\pm$ 0.8] & \cellcolor{palered}3.08 [$\pm$ 0.01] & \cellcolor{palered}7.76 [$\pm$ 0.11] & \cellcolor{palered}4.11 [$\pm$ 0.09] \\
+    Gemini 3.1 Flash-Lite & \cellcolor{palered}451 [$\pm$ 4] & \cellcolor{palered}15.4 [$\pm$ 0.2] & \cellcolor{palered}3.18 [$\pm$ 0.01] & \cellcolor{palered}6.85 [$\pm$ 0.09] & \cellcolor{palered}3.53 [$\pm$ 0.08] \\
+    Gemini 3.1 Pro & \cellcolor{palered}696 [$\pm$ 5] & \cellcolor{palered}26.0 [$\pm$ 0.2] & \cellcolor{palered}3.16 [$\pm$ 0.01] & \cellcolor{palered}8.53 [$\pm$ 0.10] & \cellcolor{palered}4.38 [$\pm$ 0.09] \\
+    GPT 5.4 & \cellcolor{palegreen}1187 [$\pm$ 27] & \cellcolor{palegreen}49.2 [$\pm$ 1.2] & \cellcolor{palered}3.11 [$\pm$ 0.01] & \cellcolor{palered}7.02 [$\pm$ 0.10] & \cellcolor{palered}3.70 [$\pm$ 0.08] \\
+    \midrule
+    Prompt: Text & \cellcolor{palered}763 [$\pm$ 19] & \cellcolor{palered}30.1 [$\pm$ 0.9] & \cellcolor{palered}3.15 [$\pm$ 0.01] & \cellcolor{palered}7.79 [$\pm$ 0.07] & \cellcolor{palered}4.23 [$\pm$ 0.06] \\
+    Prompt: Text + Inst. & \cellcolor{palered}860 [$\pm$ 27] & \cellcolor{palered}35.7 [$\pm$ 1.3] & \cellcolor{palered}3.10 [$\pm$ 0.01] & \cellcolor{palered}8.16 [$\pm$ 0.07] & \cellcolor{palered}4.38 [$\pm$ 0.06] \\
+    Prompt: Title & \cellcolor{palered}477 [$\pm$ 6] & \cellcolor{palered}17.3 [$\pm$ 0.2] & \cellcolor{palered}3.09 [$\pm$ 0.01] & \cellcolor{palered}6.74 [$\pm$ 0.07] & \cellcolor{palered}3.47 [$\pm$ 0.06] \\
+    Prompt: Title + Inst. & \cellcolor{palered}439 [$\pm$ 7] & \cellcolor{palered}16.9 [$\pm$ 0.3] & \cellcolor{palered}3.06 [$\pm$ 0.01] & \cellcolor{palered}7.15 [$\pm$ 0.07] & \cellcolor{palered}3.68 [$\pm$ 0.06] \\
+    \bottomrule
+  \end{tabular}
+  \caption{Model-authored summaries differ from Wikipedia summaries on multiple syntactic levels. Values are averaged by book, then separately by model and by prompt for synthetic prompts. Cells are green if the value is greater than the human average and red otherwise; standard errors are in brackets.}
+  \label{tab:sumData}
+  \vspace{-10pt}
+\end{table*}
+
+All models except Qwen 3.5 (9b) show less syntactic complexity than human summaries as measured by mean dependency distance \citep{liu2008dependency}. The differences are relatively small, but significant for responses to three of four prompts for all but the Gemini 3.1 models (see Appendix \ref{sec:featureDists}, \cref{fig:depenDistDists}). Generally, summaries by smaller models and those written in response to prompts without the full novel texts are less complex.
+
+Finally, model-authored summaries contain fewer named entities, and, within those, fewer \textit{person} entities, per hundred words on average (\cref{tab:sumData}). However, the distances between the distributions of these values for human- and model-authored summaries are mostly significant for responses to prompts without full texts (Appendix \ref{sec:featureDists}, \cref{fig:avgEntDists,fig:avgPersonDists}). When models have access to the full novel text, they use more named entities.
+
+
+\subsection{Conceptual engagement differences}
+Having established that human and model summaries are comparable (though not identical), we next examine how models' and humans' conceptual maps of novels differ using the sentence-to-chapter alignments for each summary.
+We find that, on average, summary sentences written by all models except Qwen 3.5 (9b) are aligned with more chapters than human summary sentences (\cref{tab:sentAssign}); the differences between the human and model distributions for this value are often significant (Appendix \ref{sec:featureDists}, \cref{fig:reachDists}).
+Going the other way, each chapter is aligned with fewer summary sentences for all models but Llama 4 Scout (17b) and GPT 5.4.
+The distances between the distributions of human and model values are significant for all but two model and prompt combinations, although it appears that this may be because the human distribution is right-skewed (Appendix \ref{sec:featureDists}, \cref{fig:densityDists}).
+Combined with the fact that models tend to write shorter summaries than humans, this may suggest their summaries are `higher-level,' describing broader events or including less detail.
+
+Again, not including the full text in a prompt results in less-detailed summaries. Novel chapters are aligned with about one sentence fewer on average from responses to title-only prompts. This makes intuitive sense, as models likely either write in less detail about events or write more factually incorrect sentences, which do not get matched with any novel chapters, in response to these prompts (see Appendix \ref{sec:sumExamples}). Interestingly, providing the Wikipedia summarization guidelines appears to encourage the models to write more summary sentences which describe each chapter.
+
+\begin{table*}
+  \centering
+  \small
+  \begin{tabular}{lrrrrr}
+    \textbf{} & \makecell{\textbf{Avg. Chapters}\\\textbf{per Sentence}} & \makecell{\textbf{Avg. Sentences}\\\textbf{per Chapter}} & \makecell{\textbf{Prop. Chapters}\\\textbf{Skipped}} & \makecell{\textbf{Prop. Sentences}\\\textbf{Skipped}} \\
+    \midrule
+    Human & 1.95 [$\pm$ 0.13] & 2.57 [$\pm$ 0.17] & 0.22 [$\pm$ 0.01] & 0.09 [$\pm$ 0.01] \\
+    \midrule
+    Qwen 2.5 (7b) & \cellcolor{palegreen}4.48 [$\pm$ 0.18] & \cellcolor{palered}1.32 [$\pm$ 0.05] & \cellcolor{palegreen}0.43 [$\pm$ 0.02] & \cellcolor{palegreen}0.19 [$\pm$ 0.01] \\
+    Qwen 3.5 (9b) & \cellcolor{palered}1.80 [$\pm$ 0.07] & \cellcolor{palered}1.27 [$\pm$ 0.05] & \cellcolor{palegreen}0.45 [$\pm$ 0.02] & \cellcolor{palegreen}0.27 [$\pm$ 0.01] \\
+    GLM 4 (9b) & \cellcolor{palegreen}4.00 [$\pm$ 0.16] & \cellcolor{palered}1.42 [$\pm$ 0.06] & \cellcolor{palegreen}0.44 [$\pm$ 0.02] & \cellcolor{palegreen}0.22 [$\pm$ 0.01] \\
+    Llama 4 Scout (17b) & \cellcolor{palegreen}2.24 [$\pm$ 0.09] & \cellcolor{palegreen}3.89 [$\pm$ 0.16] & \cellcolor{palegreen}0.35 [$\pm$ 0.01] & \cellcolor{palegreen}0.17 [$\pm$ 0.01] \\
+    Qwen 3.5 (27b) & \cellcolor{palegreen}2.02 [$\pm$ 0.08] & \cellcolor{palered}1.44 [$\pm$ 0.06] & \cellcolor{palegreen}0.38 [$\pm$ 0.02] & \cellcolor{palegreen}0.16 [$\pm$ 0.01] \\
+    Qwen 3.5 (35b) & \cellcolor{palegreen}2.10 [$\pm$ 0.09] & \cellcolor{palered}1.54 [$\pm$ 0.06] & \cellcolor{palegreen}0.36 [$\pm$ 0.02] & \cellcolor{palegreen}0.15 [$\pm$ 0.01] \\
+    Gemini 3.1 Flash-Lite & \cellcolor{palegreen}3.39 [$\pm$ 0.14] & \cellcolor{palered}1.78 [$\pm$ 0.07] & \cellcolor{palegreen}0.29 [$\pm$ 0.01] & \cellcolor{palered}0.04 [$\pm$ 0.00] \\
+    Gemini 3.1 Pro & \cellcolor{palegreen}2.03 [$\pm$ 0.08] & \cellcolor{palered}2.03 [$\pm$ 0.08] & \cellcolor{palegreen}0.24 [$\pm$ 0.01] & \cellcolor{palered}0.05 [$\pm$ 0.00] \\
+    GPT 5.4 & \cellcolor{palegreen}2.67 [$\pm$ 0.11] & \cellcolor{palegreen}4.29 [$\pm$ 0.17] & \cellcolor{palered}0.17 [$\pm$ 0.01] & \cellcolor{palered}0.06 [$\pm$ 0.00] \\
+    \midrule
+    Prompt: Text & \cellcolor{palegreen}2.87 [$\pm$ 0.12] & \cellcolor{palered}2.54 [$\pm$ 0.10] & \cellcolor{palegreen}0.27 [$\pm$ 0.01] & \cellcolor{palered}0.05 [$\pm$ 0.00] \\
+    Prompt: Text + Inst. & \cellcolor{palegreen}2.64 [$\pm$ 0.11] & \cellcolor{palegreen}2.77 [$\pm$ 0.11] & \cellcolor{palegreen}0.27 [$\pm$ 0.01] & \cellcolor{palered}0.07 [$\pm$ 0.00] \\
+    Prompt: Title & \cellcolor{palegreen}2.64 [$\pm$ 0.11] & \cellcolor{palered}1.60 [$\pm$ 0.07] & \cellcolor{palegreen}0.42 [$\pm$ 0.02] & \cellcolor{palegreen}0.23 [$\pm$ 0.01] \\
+    Prompt: Title + Inst. & \cellcolor{palegreen}2.85 [$\pm$ 0.12] & \cellcolor{palered}1.51 [$\pm$ 0.06] & \cellcolor{palegreen}0.42 [$\pm$ 0.02] & \cellcolor{palegreen}0.24 [$\pm$ 0.01] \\
+    \bottomrule
+  \end{tabular}
+  \caption{Model-authored summaries distribute conceptual engagement differently from Wikipedia summaries by several metrics. Values are averaged by book, then separately by model and by prompt for synthetic prompts. Cells are green if the value is greater than the human average and red otherwise; standard errors are in brackets.}
+  \label{tab:sentAssign}
+  \vspace{-10pt}
+\end{table*}
+
+We can get more insight on how human and model summaries differ by counting the number of chapters that are skipped (not matched with any summary sentence) and the number of sentences skipped (not matched to any chapter).
+In almost all cases, models skip more than humans.
+As in other metrics, the largest models are the closest:
+GPT 5.4 is the only model that skips both chapters and sentences less than humans; Gemini 3.1 models skip more chapters but fewer sentences.
+Averaging over models, the prompts that include full texts skip fewer chapters and sentences than the title-only prompts; inclusion of summarization instructions has no effect.
+Detailed results including measurements of significance are in Appendix \ref{sec:featureDists}. Examining the sentences that are skipped shows smaller models tend to hallucinate more without access to full text (see Section \ref{sec:sumExamples}).
+The unaligned sentences from human summaries often include context not explicitly stated in the novel (e.g.\ ``The novel takes place in... 1837.''); these sentences are less common in model summaries.
+
+
+
+
+
+The next dimension of difference we evaluate is linearity.
+In a strictly linear summary, each sentence in order should match to chapters no earlier than those matched from a previous sentence.
+But summaries frequently rearrange events or draw similar events from multiple chapters.\footnote{To measure summary linearity, we first sort the set of summary sentence indices matched with each chapter. Then we concatenate each set of sorted indices in the order of the chapters they correspond to; the indices matched to Chapter $i+1$ are appended after the indices matched to Chapter $i$. Finally, we create a sorted copy of the concatenated list with all matched indices and compare this to the unsorted version using Kendall's tau \citep{kendall1945treatment}.} When we average over prompts, all models except Gemini 3.1 Pro write less linear summaries than humans (\cref{tab:spreadMets}). However, this effect is mostly due to title-only prompts.
+When the novel text is provided only Qwen 2.5 (7b) and GLM 4 (9b) seem to consistently write less linear summaries (Appendix \ref{sec:featureDists}, \cref{fig:linearityDists}).
+This suggests that models are meaningfully using long-context input text relative to pure memorization.
+
+\begin{table*}
+  \small
+  \centering
+  \begin{tabular}{lrrr}
+    \textbf{} & \makecell{\textbf{Linearity}} & \makecell{\textbf{Skew}} & \makecell{\textbf{Avg. Sentence-to-}\\\textbf{Chapter Match}}\\
+    \midrule
+    Human & 0.70 [$\pm$ 0.02] & -0.06 [$\pm$ 0.03] & 0.54 [$\pm$ 0.01] \\
+    \midrule
+    Qwen 2.5 (7b) & \cellcolor{palered}0.35 [$\pm$ 0.01] & \cellcolor{palered}-0.11 [$\pm$ 0.02] & \cellcolor{palegreen}0.55 [$\pm$ 0.01] \\
+    Qwen 3.5 (9b) & \cellcolor{palered}0.57 [$\pm$ 0.01] & \cellcolor{palered}-0.10 [$\pm$ 0.02] & \cellcolor{palegreen}0.54 [$\pm$ 0.01] \\
+    GLM 4 (9b) & \cellcolor{palered}0.40 [$\pm$ 0.01] & \cellcolor{palegreen}-0.01 [$\pm$ 0.02] & \cellcolor{palered}0.51 [$\pm$ 0.01] \\
+    Llama 4 Scout (17b) & \cellcolor{palered}0.51 [$\pm$ 0.01] & \cellcolor{palegreen}0.12 [$\pm$ 0.02] & \cellcolor{palered}0.49 [$\pm$ 0.01] \\
+    Qwen 3.5 (27b) & \cellcolor{palered}0.63 [$\pm$ 0.01] & \cellcolor{palered}-0.15 [$\pm$ 0.02] & \cellcolor{palegreen}0.56 [$\pm$ 0.00] \\
+    Qwen 3.5 (35b) & \cellcolor{palered}0.59 [$\pm$ 0.01] & \cellcolor{palered}-0.14 [$\pm$ 0.02] & \cellcolor{palegreen}0.56 [$\pm$ 0.00] \\
+    Gemini 3.1 Flash-Lite & \cellcolor{palered}0.58 [$\pm$ 0.01] & \cellcolor{palered}-0.15 [$\pm$ 0.02] & \cellcolor{palegreen}0.56 [$\pm$ 0.00] \\
+    Gemini 3.1 Pro & \cellcolor{palegreen}0.73 [$\pm$ 0.01] & \cellcolor{palered}-0.19 [$\pm$ 0.01] & \cellcolor{palegreen}0.57 [$\pm$ 0.00] \\
+    GPT 5.4 & \cellcolor{palered}0.62 [$\pm$ 0.01] & \cellcolor{palered}-0.19 [$\pm$ 0.02] & \cellcolor{palegreen}0.57 [$\pm$ 0.00] \\
+    \midrule
+    Prompt: Text & \cellcolor{palered}0.62 [$\pm$ 0.01] & \cellcolor{palered}-0.18 [$\pm$ 0.02] & \cellcolor{palegreen}0.57 [$\pm$ 0.00]  \\
+    Prompt: Text + Inst. & \cellcolor{palered}0.63 [$\pm$ 0.01] & \cellcolor{palered}-0.16  [$\pm$ 0.02]& \cellcolor{palegreen}0.56 [$\pm$ 0.00] \\
+    Prompt: Title & \cellcolor{palered}0.50 [$\pm$ 0.01] & \cellcolor{palegreen}-0.02 [$\pm$ 0.02] & \cellcolor{palered}0.53 [$\pm$ 0.01] \\
+    Prompt: Title + Inst. & \cellcolor{palered}0.47 [$\pm$ 0.01] & \cellcolor{palegreen}-0.05 [$\pm$ 0.02] & \cellcolor{palered}0.53 [$\pm$ 0.01] \\
+    \bottomrule
+  \end{tabular}
+  \caption{Model-authored summaries distribute conceptual engagement differently from Wikipedia summaries by several metrics. Values are averaged by book, then separately by model and by prompt for synthetic prompts. Cells are green if the value is greater than the human average and red otherwise; standard errors are in brackets.}
+  \label{tab:spreadMets}
+  \vspace{-10pt}
+\end{table*}
+
+We next measure the overall distribution of story engagement from summaries to chapters.
+We define two metrics to quantify the asymmetry of a summary's distribution over novel chapters.
+\textit{Skew} measures the skewness of the histogram and is negative if a summary matches more to the second half of a novel.
+\textit{Average match} measures the mean normalized chapter position for sentences and is greater than 0.5 if a summary matches more to the second half of a novel.
+Human summaries tend to have a slight bias towards the later half of novels under both metrics, while models (except GLM 4 and Llama 4 Scout) have a much more substantial bias.
+Unlike the previous cases, having access to the full text makes models \textit{less} similar to humans, and this trend towards end-weighting increases with model size.
+
+\begin{figure}[h]
+  \centering
+  \begin{minipage}{0.49\textwidth}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/grid_qwen-2.5-7b.png}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.49\textwidth}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/grid_gpt-5.4.png}
+  \end{minipage}
+  \caption{Averaging over 150 novels, human-authored summaries (top row) engage with all parts of novel relatively equally whereas model-authored summaries focus on endings, especially when prompted with full novel text.}
+  \label{fig:exampleHeatmaps}
+\end{figure}
+
+Finally, in addition to quantifying models' preference for end-weighted summarization, we can visualize the average distribution of sentence-to-chapter matches.
+Figure \ref{fig:exampleHeatmaps} shows the conceptual engagement of all human summaries, averaged over 150 novels, along the top row alongside average model engagement over the same novels for four prompts.\footnote{Each heatmap includes a layer for each of the 150 summarized novels, where each layer is a heatmap depicting the proportion of the sentence-to-chapter alignments for a summary that are aligned to Chapter $i$, which is $\frac{i}{n}$ through each novel with $n$ chapters.}
+Human engagement is relatively uniform, with regions of slightly higher density at the beginning, middle, and end.
+However, Qwen 2.5 (7b) and GPT 5.4 have noticeable spikes in the final segment.
+As expected based on the aggregate statistics, removing access to full text leads to a patchier but less skewed distribution of engagement.
+All models except Llama 4 Scout (17b) show a similar pattern (figures for additional models are in Appendix \ref{sec:heatmaps}).
+Some models, including Llama 4 Scout (17b) and Gemini 3.1 Flash-Lite, also engage disproportionately with the beginnings of novels.
+
+\section{Probing the Attention Mechanism}
+\begin{wraptable}{r}{5.3cm}
+\centering
+\small
+\begin{tabular}{lrrr}
+  \toprule
+  \textbf{Novel} & \textbf{\# Ch.} & \textbf{$\rho$} & \textbf{Top-1} \\
+  \midrule
+  \textit{Carmilla}  & 17 & 0.490 & 86\%\\
+                      &    & 0.436 & 95\%\\
+  \midrule
+  \textit{Kazan}     & 27 & 0.349 & 75\%\\
+                      &    & 0.327 & 79\%\\
+  \midrule
+  \textit{Kim}       & 15 & 0.251 & 41\%\\
+                      &    & 0.377 & 70\%\\
+  \midrule
+  \textit{Rookwood}  & 51 & 0.181 & 25\%\\
+                      &    & 0.199 & 33\%\\
+  \bottomrule
+\end{tabular}
+\caption{Correlation between per-chapter attention mass and summary sentence density. Top-1 describes how often the chapter with the greatest attention match is aligned to that summary sentence. Rows correspond to Prompts 1 and 2 respectively.}
+\label{tab:attnCorr}
+\end{wraptable}
+
+Evaluating long-context performance through alignments of generated summaries has the advantage that we can measure conceptual engagement without having access to model internals.
+For open models, we can also compare summary-based engagement with model attention weights.
+One hypothesis for why models engage disproportionately with novels' beginnings and ends is the ``lost in the middle'' phenomenon, where models fail to properly distribute attention mass across their full context window.
+To investigate, we examine Qwen 3.5 (9b)'s attention mechanism.
+We capture the attention matrices at the eight pure attention layers for the summaries generated in response to the two full text prompts for the novels in our alignment validation set (\cref{subsec:validation}).\footnote{Layers 3, 7, 11, 15, 19, 23, 27, and 31. We skip all linear attention layers because their attention process cannot be cleanly mapped to the context window.}
+We then average the matrices across all tokens and layers for each sentence in each summary to determine the proportion of attention each summary sentence pays to each chapter.
+Finally, we compare these values to the summary sentence-to-chapter alignments to determine whether summaries pay more attention to the chapters they summarize.
+
+Averaging across all books and both prompts, we find that models attend slightly more to the chapters they are actively summarizing (Pearson's $R$ = 0.32).
+The chapter receiving the greatest attention mass is aligned with the summary sentence 63\% of the time --- above random chance in all cases --- although accuracy decreases with novel length (\cref{tab:attnCorr}).
+This suggests Qwen 3.5 (9b) has more difficulty properly targeting chapters with attention mass in longer texts, potentially contributing to failures during summarization.
+We finally note adding the summarization instructions to the prompt reliably increases Top-1 accuracy across all four books, indicating that priming the model with the task is potentially helping attention heads identify relevant spans of text.
+
+\section{Conclusion}
+We introduce a new framework for evaluating LLMs' long-context comprehension: using novel summarization to assess models' \textit{conceptual engagement} and compare it with human equivalents.
+In doing so, we discover syntactic differences between human- and model- authored summaries (e.g. models almost always write shorter, less complex summaries) and similarities (e.g. models and humans refer to people with about the same frequency).
+Moreover, we find evidence that models tend to write higher-level and less linear summaries than human authors and focus disproportionately on novel endings.
+Interpretability tests determine that one model, Qwen 3.5 (9b), fails to accurately target attention mass on the chapters being summarized in each summary sentence in longer novels.
+These behavioural variations between LLMs and humans point to differences in how models engage with long-form texts which has implications for both model design and evaluation and for practitioners using LLMs to analyze long texts.
+Future work will focus on a semantic analysis of the events and event types extracted by humans and LLMs.
+
+\section*{Acknowledgements}
+We would like to thank Axel Bax, Federica Bologna, Kiara Liu, Sanghoon Oh, Andrea Wang, Matthew Wilkens, and Shengqi Zhu for their thoughtful feedback.
+This work was supported in part by the Cornell Foundational AI PhD Fellowship and the Danish National Research Foundation via TEXT: Center for Contemporary Cultures of Text, grant number DNRF193.
+We acknowledge the support of the Natural Sciences and Engineering Research Council of Canada (NSERC). Nous remercions le Conseil de recherches en sciences naturelles et en génie du Canada (CRSNG) de son soutien.
+
+\section*{Ethics Statement}
+We acknowledge the following ethical considerations:
+
+\paragraph{English-only data.}
+Our dataset only considers novels written in English and whose summaries are available on English Wikipedia, in English.
+We leave expanding our results to multicultural and multilingual domains for future work.
+
+\paragraph{Novel-only data.} We only study novels in our experiment.
+We do not include shorter genres of fiction like short stories or stage plays.
+These genres are typically written with differing expectations on structure and plot, which could impact how human readers choose to summarize them, and likewise impact how models process them.
+
+\paragraph{Normalizing a particular literacy.}
+While generic in the sense that they were contributed by multiple persons to Wikipedia, the summaries selected in our study may possibly encode a certain level of literacy.
+This carries a level of risk, especially if results derived from our study are taken into consideration during the training of future LLMs.
+
+\bibliography{colm2026_conference}
+\bibliographystyle{colm2026_conference}
+
+\newpage 
+
+\appendix
+\section{Novel Dataset}\label{app:novels}
+
+\begin{center}
+\newcolumntype{R}{>{\RaggedRight\arraybackslash}X}
+\renewcommand{\arraystretch}{1.3}
+\rowcolors{2}{gray!15}{white}
+\begin{tabularx}{\linewidth}{RRrr}
+    \toprule
+    \textbf{Author} & \textbf{Title} & \textbf{Publication Date} & \textbf{ID} \\
+    \midrule
+    \endhead
+    \bottomrule
+    \endfoot
+    Abbott, Edwin Abbott & Flatland: A Romance of Many Dimensions & 1884 & 45506 \\
+    Ainsworth, William Harrison & Rookwood & 1834 & 23564 \\
+    Alcott, Louisa May & Little Women & 1868--9 & 514  \\
+    Alcott, Louisa May & Moods & 1864 \\
+    Alcott, Louisa May & Work: A Story of Experience & 1873 & 4770 \\
+    Austen, Jane & Emma & 1816 & 158 \\
+    Austen, Jane & Mansfield Park & 1814 & 141 \\
+    Austen, Jane & Northanger Abbey & 1818 & 121 \\
+    Austen, Jane & Persuasion & 1818 & 105 \\
+    Austen, Jane & Pride and Prejudice & 1813 & 1342 \\
+    Baum, L.\ Frank & Rinkitink in Oz & 1916 & 25581 \\
+    Baum, L.\ Frank & The Wonderful Wizard of Oz & 1900 & 55 \\
+    Bellamy, Edward & Equality & 1897 & 7303 \\
+    Braddon, M.\ E.\ & Lady Audley's Secret & 1862 & 8954 \\
+    Bront\"e, Charlotte & Jane Eyre & 1847 & 1260 \\
+    Bront\"e, Charlotte & Shirley & 1849 & 30486 \\
+    Bront\"e, Charlotte & Villette & 1853 & 9182 \\
+    Bront\"e, Emily & Wuthering Heights & 1847 & 768 \\
+    Buchan, John & Greenmantle & 1916 & 559 \\
+    Buchan, John & Huntingtower & 1922 & 3782 \\
+    Burroughs, Edgar Rice & The Cave Girl & 1925 & 69191 \\
+    Burnett, Frances Hodgson & A Little Princess & 1905 & 146 \\
+    Burney, Fanny & Evelina & 1778 & 6053 \\
+    Butler, Samuel & The Way of All Flesh & 1903 & 2084 \\
+    Carroll, Lewis & Alice's Adventures in Wonderland & 1865 & 11 \\
+    Cather, Willa & My \'{A}ntonia & 1918 & 242\\
+    Cather, Willa & O Pioneers! & 1913 & 24 \\
+    Chesnutt, Charles W.\ & The Marrow of Tradition & 1901 & 11228 \\
+    Christie, Agatha & The Murder of Roger Ackroyd & 1926 & 69087 \\
+    Christie, Agatha & The Seven Dials Mystery & 1929 & 75288 \\
+    Collins, Wilkie & Armadale & 1866 & 1895 \\
+    Cooper, James Fenimore & The Deerslayer & 1841 & 3285 \\
+    Cooper, James Fenimore & The Last of the Mohicans & 1826 & 940 \\
+    Conrad, Joseph & Heart of Darkness & 1902 & 219 \\
+    Conrad, Joseph & Nostromo: A Tale of the Seaboard & 1904 & 2021 \\
+    Conrad, Joseph & The Secret Agent: A Simple Tale & 1907 & 974 \\
+    Conrad, Joseph & Victory: An Island Tale & 1915 & 6378 \\
+    Crane, Stephen & Maggie: A Girl of the Streets & 1893 & 447 \\
+    Crane, Stephen & The Red Badge of Courage & 1895 & 73 \\
+    Curwood, James Oliver  & Kazan & 1914 & 10084 \\
+    Defoe, Daniel & The Further Adventures of Robinson Crusoe & 1719 & 561 \\
+    Dickens, Charles & A Christmas Carol & 1843 & 19337 \\
+    Dickens, Charles & David Copperfield & 1850 & 766 \\
+    Dickens, Charles & Little Dorrit & 1857 & 963 \\
+    Dickens, Charles & Oliver Twist & 1838 & 730 \\
+    Dickens, Charles & A Tale of Two Cities & 1859 & 98 \\
+    Doyle, Arthur Conan & The Hound of the Baskervilles & 1902 & 2852 \\
+    Doyle, Arthur Conan & A Study in Scarlet & 1888 & 244 \\
+    Doyle, Arthur Conan & The Valley of Fear & 1914 & 3289 \\
+    Dreiser, Theodore & Sister Carrie: A Novel & 1900 & 233 \\
+    Du Maurier, George & Trilby & 1894 & 39858 \\
+    Dumas, Alexandre & The Three Musketeers & 1844 & 1257 \\
+    Eliot, George & Adam Bede & 1859 & 507 \\
+    Eliot, George & Middlemarch & 1871--2 & 145 \\
+    Eliot, George & The Mill on the Floss & 1860 & 6688 \\
+    Eliot, George & Romola & 1862--3 & 24020 \\
+    Falkner, John Meade & Moonfleet & 1898 & 10743 \\
+    Faulkner, William & The Sound and the Fury & 1929 & 75170 \\
+    Fitzgerald, F.\ Scott & This Side of Paradise & 1920 & 805 \\
+    Flaubert, Gustave & Madame Bovary & 1857 & 2413 \\
+    Ford, Ford Madox & The Good Soldier & 1915 & 2775 \\
+    Forster, E.\ M.\ & Howards End & 1910 & 2891 \\
+    Forster, E.\ M.\ & A Room with a View & 1908 & 2641 \\
+    Forster, E.\ M.\ & Where Angels Fear to Tread & 1905 & 2948 \\
+    Galdos, Benita Perez & Marianela & 1878 & 48818 \\
+    Gaskell, Elizabeth & Mary Barton & 1848 & 2153 \\
+    Gilman, Charlotte Perkins & Herland & 1979 & 32 \\
+    Gissing, George & Demos & 1886 & 4309 \\
+    Glasgow, Ellen & Virginia & 1913 & 26316 \\
+    Goldsmith, Oliver & The Vicar of Wakefield & 1766 & 2667 \\
+    Goncharov, Ivan & Oblomov & 1859 & 54700 \\
+    Grahame, Kenneth & The Wind in the Willows & 1908 & 289 \\
+    Haggard, H.\ Rider & She: A History of Adventure & 1887 & 3155 \\
+    Hammett, Dashiell & The Maltese Falcon & 1930 & 77600 \\
+    Hardy, Thomas & Jude the Obscure & 1895 & 153 \\
+    Hardy, Thomas & The Return of the Native & 1878 & 122 \\
+    Harrison, Harry & Deathworld & 1960 & 28346 \\
+    Hawthorne, Nathaniel & Fanshawe & 1828 & 7085 \\
+    Hawthorne, Nathaniel & The House of the Seven Gables & 1851 & 77 \\
+    Hawthorne, Nathaniel & The Scarlet Letter & 1850 & 25344 \\
+    Hemingway, Ernest & A Farewell to Arms & 1929 & 75201 \\
+    Hesse, Hermann & Siddhartha & 1922 & 2500 \\
+    Heyer, Georgette & Beauvallet & 1929 & 75547 \\
+    Heyer, Georgette & The Black Moth: A Romance of the XVIIIth Century & 1921 & 38703 \\
+    Howells, William Dean & The Rise of Silas Lapham & 1885 & 154 \\
+    Hudson, W.\ H.\ & Green Mansions: A Romance of the Tropical Forest & 1904 & 942 \\
+    Hughes, Richard & A High Wind in Jamaica & 1929 & 75530 \\
+    Hugo, Victor & Ninety-Three & 1874 & 49372 \\
+    Jackson, Helen Hunt & Ramona & 1884 & 2802 \\
+    James, Henry & The Turn of the Screw & 1898 & 209 \\
+    James, Henry & What Maisie Knew & 1897 & 7118 \\
+    Joyce, James & Ulysses & 1922 & 4300 \\
+    Kafka, Franz & Metamorphosis & 1915 & 5200 \\
+    Keene, Carolyn & The Hidden Staircase & 1930 & 77602 \\
+    Kipling, Rudyard & Kim & 1901 & 2226 \\
+    Le Fanu, Joseph Sheridan & Carmilla & 1872 & 10007 \\
+    Lawrence, D.\ H.\ & Sons and Lovers & 1913 & 217 \\
+    Lindsay, David & A Voyage to Arcturus & 1920 & 1329 \\
+    Leroux, Gaston & The Phantom of the Opera & 1910 & 175 \\
+    Lewis, Sinclair & Arrowsmith & 1925 & 70875 \\
+    Lewis, Sinclair & Babbitt & 1922 & 1156 \\
+    Lewis, Sinclair & Main Street & 1920 & 543 \\
+    Lofting, Hugh & The Voyages of Doctor Dolittle & 1922 & 1154 \\
+    London, Jack & The Valley of the Moon & 1913 & 1449 \\
+    London, Jack & White Fang & 1906 & 910 \\
+    Mason, A.\ E.\ W.\ & Clementina & 1901 & 13567 \\
+    Montgomery, L.\ M.\ & Anne of Green Gables & 1908 & 45 \\
+    Orczy, Baroness & The Triumph of the Scarlet Pimpernel & 1922 & 65695 \\
+    Peacock, Thomas Love & Gryll Grange & 1861 & 21514 \\
+    Poe, Edgar Allan & The Narrative of Arthur Gordon Pym of Nantucket & 1838 & 51060 \\
+    Pohl, Frederik \& C.\ M.\ Kornbluth & Wolfbane & 1959 & 51845 \\
+    Porter, Eleanor H.\ & Pollyanna & 1913 & 1450 \\
+    Radcliffe, Ann & The Mysteries of Udolpho & 1794 & 3268 \\
+    Rand, Ayn & Anthem & 1938 & 1250 \\
+    Rice, Alice Hegan & Sandy & 1905 & 14079 \\
+    Sabatini, Rafael & Captain Blood & 1922 & 1965 \\
+    Salten, Felix & Bambi, a Life in the Woods & 1923 & 63849 \\
+    Saltykov-Shchedrin, Mikhail & The Golovlyov Family & 1880 & 44237 \\
+    Sand, George & Indiana & 1832 & 63445 \\
+    Sayers, Dorothy L.\ \& Robert Eustace & The Documents in the Case & 1930 & 77601 \\
+    Scott, Walter & Ivanhoe: A Romance & 1819 & 82 \\
+    Scott, Walter & Kenilworth & 1821 & 1606 \\
+    Shelley, Mary Wollstonecraft & Frankenstein & 1818 & 84 \\
+    Sinclair, Upton & Oil! & 1926--7 & 70379 \\
+    Smollett, Tobias & The Expedition of Humphry Clinker & 1771 & 2160 \\
+    Spyri, Johanna & Heidi & 1880--1 & 1448 \\
+    Stevenson, Robert Louis & Catriona & 1893 & 589 \\
+    Stevenson, Robert Louis & Kidnapped & 1886 & 421 \\
+    Stevenson, Robert Louis & Treasure Island & 1883 & 120 \\
+    Stoker, Bram & Dracula & 1897 & 45839 \\
+    Stratton-Porter, Gene & Freckles & 1904 & 111 \\
+    Thackeray, William Makepeace & Vanity Fair & 1848 & 599 \\
+    Verne, Jules & Around the World in Eighty Days & 1873 & 103 \\
+    Verne, Jules & From the Earth to the Moon & 1865 & 83 \\
+    Verne, Jules & A Journey to the Centre of the Earth & 1864 & 18857 \\
+    Verne, Jules & Twenty Thousand Leagues Under the Sea & 1870 & 164 \\
+    Voltaire & Candide & 1759 & 19942 \\
+    Voltaire & Microm\'{e}gas & 1752 & 30123 \\
+    Warner, Gertrude Chandler & The Box-Car Children & 1924 & 42796 \\
+    Waugh, Evelyn & Vile Bodies & 1930 & 77900 \\
+    Webb, Frank J.\ & The Garies and Their Friends & 1857 & 11214 \\
+    Wells, H.\ G.\ & Bealby: A Holiday & 1915 & 59769 \\
+    Wells, H.\ G.\ & The Invisible Man & 1897 & 5230 \\
+    Wells, H.\ G.\ & The Time Machine & 1895 & 35 \\
+    Wharton, Edith & The House of Mirth & 1905 & 284 \\
+    Wilkins, Mary E.\ & The Jamesons & 1899 & 17792 \\
+    Wodehouse, P.\ G.\ & Mike & 1909 & 7423 \\
+    Zamiatin, Evgenii Ivanonich & We & 1924 & 61963 \\
+    Zola, \'{E}mile & L'Assommoir & 1877 & 8600 \\
+    Zola, \'{E}mile & Germinal & 1855 & 56528 \\
+\end{tabularx}
+\end{center}
+
+\section{Prompts}
+\label{sec:prompts}
+
+
+\subsection{Alignment Prompt}
+\label{sec:alignPrompts}
+
+You are an intelligent literary assistant. Your goal is to match summary sentences to a novel chapter using **only** the information provided below. Do not use any memorized information.
+
+SUMMARY SENTENCES: \\
+\verb|```|\\
+\texttt{[summary]}\\
+\verb|```|
+
+CHAPTER: \\
+\verb|```| \\
+\texttt{[text]}\\
+\verb|```|
+
+TASK: \\
+Determine whether each sentence in the summary describes an event or events that happen(s) during this chapter. 
+
+Some sentences describe multiple related events. A sentence should be matched to each chapter that contains **at least one** event it describes.
+
+Double-check that the event in this chapter is the exact event described in the summary sentence before matching.
+
+Here are the summary sentence ids that have already been matched to previous chapters: \texttt{[old\_ids]}
+
+**DO NOT** match sentences to chapters that only mention events which happened previously in the text. Think carefully about whether the event is *actually happening* before re-matching sentences. 
+
+Remember to make matches based **only** on the summary and chapter provided.
+
+OUTPUT FORMAT: \\
+For **every** sentence, output whether it should be matched to this chapter (YES or NO). \\
+Return ONLY \{ ``1'': ``YES|NO'', ``2'': ``YES|NO'', ... \}
+
+\subsection{Generation Prompts}
+\label{sec:generationPrompts}
+
+\subsubsection{Text}
+
+\{``text'': ``\texttt{[full\_text]}''\}
+
+Summarize the above story in as many paragraphs as needed. Respond with only the summary. Don't add any additional text.
+
+\subsubsection{Text + Inst.}
+
+\{``text'': ``\texttt{[full\_text]}'', ``guidelines'': ``\texttt{[guidelines]}''\}
+
+Summarize the above story in as many paragraphs as needed. Respond with only the summary. Don't add any additional text.
+
+\subsubsection{Title}
+
+Summarize the plot of ``\texttt{[title]}'' by \texttt{[author]} in as many paragraphs as needed. Respond with only the summary. Don't add any additional text.
+
+\subsubsection{Title + Inst.}
+
+\{``guidelines'': ``\texttt{[guidelines]}''\}
+
+Summarize the plot of ``\texttt{[title]}'' by \texttt{[author]} in as many paragraphs as needed. Respond with only the summary. Don't add any additional text.
+
+\section{Complete Feature Distributions}
+\label{sec:featureDists}
+
+Each figure below depicts the distribution of values for a metric for all 150 summaries written by each model with each prompt. The grey histograms represent data for human-authored summaries. The labels in each subfigure are the Kolmogorov-Smirnov distances between the human and model distributions; the numbers are bolded if the distances are significant at $\alpha=0.01$ after adjusting for multiple statistical tests with Benjamini-Hochberg correction \citep{benjamini1995controlling}.
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/bleus_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:bleuDists}}}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/summary_tokens_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:tokenDists}}}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/summary_sentences_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:sentenceDists}}}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/dependency_distances_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:depenDistDists}}}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/avg_ents_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:avgEntDists}}}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/avg_persons_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{}}
+    \label{fig:avgPersonDists}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/reaches_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:reachDists}}}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/densities_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:densityDists}}}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/skipped_chaps_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:skipChapDists}}}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/skipped_sents_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:skipSentDists}}}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/linearities_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:linearityDists}}}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/skews_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:skewDists}}}
+\end{center}
+
+\begin{center}
+    \centering
+    \includegraphics[width=\linewidth]{figs/dist_centers_combined.pdf}
+    {\captionsetup{hypcap=false, labelformat=simple, labelsep=none, textformat=empty}\captionof{figure}{\label{fig:distCenterDists}}}
+\end{center}
+
+\section{Engagement Heatmaps}
+\label{sec:heatmaps}
+
+
+\begin{center}
+  \begin{minipage}{0.49\textwidth}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/grid_qwen-2.5-7b.png}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.49\textwidth}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/grid_qwen-3.5-9b.png}
+  \end{minipage}
+\end{center}
+
+\begin{center}
+  \begin{minipage}{0.49\textwidth}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/grid_glm-4-9b.png}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.49\textwidth}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/grid_llama-4-scout-17b.png}
+  \end{minipage}
+\end{center}
+
+\begin{center}
+  \begin{minipage}{0.49\textwidth}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/grid_qwen-3.5-27b.png}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.49\textwidth}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/grid_qwen-3.5-35b.png}
+  \end{minipage}
+\end{center}
+
+\begin{center}
+  \begin{minipage}{0.49\textwidth}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/grid_gemini-3.1-flash-lite.png}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.49\textwidth}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/grid_gemini-3.1-pro.png}
+  \end{minipage}
+\end{center}
+
+\begin{center}
+  \begin{minipage}{0.49\textwidth}
+    \centering
+    \includegraphics[width=0.95\linewidth]{figs/grid_gpt-5.4.png}
+  \end{minipage}
+\end{center}
+
+\section{Summary Examples}
+\label{sec:sumExamples}
+
+This section includes the Wikipedia summary and all model-authored summaries for \textit{Carmilla} by Joseph Sheridan Le Fanu. Summary sentences that were not matched with any chapter of the text after alignment appear \textcolor{skipred}{in red}.
+
+\subsection{Human}
+
+The story is presented as part of the casebook of Dr. Hesselius. A woman named Laura narrates, beginning with her childhood in a ``picturesque and solitary'' castle amid an extensive forest in Styria, where she lives with her father, a wealthy English widower retired from service to the Austrian Empire. When she was six, Laura had a vision of a beautiful visitor in her bedchamber. She later claims to have been punctured in her breast, although no wound was found. All the household assure Laura that it was just a dream, but they step up security as well and there is no subsequent vision or visitation. Twelve years later, Laura's father tells her of a letter from his friend, General Spielsdorf. The General was supposed to visit them with his niece, Bertha Rheinfeldt, but she died under mysterious circumstances. The General promises to discuss the circumstances in detail when they meet later. Laura, saddened by the loss of a potential friend, longs for a companion. A carriage accident outside Laura's home unexpectedly brings Carmilla, a girl of Laura's age, into the family's care. Both girls instantly recognise each other from the ``dream'' they both had when they were young. Carmilla appears injured after her carriage accident, but her mysterious mother informs Laura's father that her journey is urgent and cannot be delayed. She arranges to leave Carmilla with Laura and her father until she can return in three months. Before leaving, she notes that Carmilla will not disclose any information whatsoever about her family, her past, or herself. Carmilla and Laura grow to be close friends, but occasionally Carmilla's mood abruptly changes. She sometimes makes romantic advances towards Laura. Carmilla refuses to tell anything about herself, despite questioning by Laura. Her secrecy is not the only mysterious thing about Carmilla; she never joins the household in its prayers, she sleeps much of the day, and she seems to sleepwalk outside at night. Meanwhile, young women and girls in the nearby towns have begun dying from an unknown malady. When the funeral procession of one such victim passes by the two girls, Laura joins in the funeral hymn. Carmilla bursts out in rage and scolds Laura, complaining that the hymn hurts her ears. When a shipment of restored heirloom paintings arrives, Laura finds a portrait of her ancestor, Countess Mircalla Karnstein, dated 1698. The portrait resembles Carmilla exactly, down to the mole on her neck. Carmilla suggests that she might be descended from the Karnsteins, though the family died out centuries before. During Carmilla's stay, Laura has nightmares of a large, cat-like beast entering her room. The beast springs onto the bed and Laura feels something like two needles, an inch or two apart, darting deep into her breast. The beast then takes the form of a female figure and disappears through the door without opening it. In another nightmare, Laura hears a voice say, ``Your mother warns you to beware of the assassin,'' and a light reveals Carmilla standing at the foot of her bed, her nightdress drenched in blood. Laura's health declines, and her father has a doctor examine her. He finds a small, blue spot, an inch or two below her collar, where the creature in her dream bit her, and speaks privately with her father, only asking that Laura never be unattended. Her father sets out with Laura in a carriage for the ruined village of Karnstein, three miles distant. They leave a message behind asking Carmilla and a governess to follow once the perpetually late-sleeping Carmilla awakes. En route to Karnstein, Laura and her father encounter Spielsdorf, who tells them his story. At a costume ball, Spielsdorf and Bertha had met a beautiful young woman named Millarca and her enigmatic mother. Bertha was immediately taken with Millarca. The mother convinced Spielsdorf that she was an old friend of his and asked that Millarca be allowed to stay with them for three weeks while she attended to a secret matter of great importance. Bertha fell mysteriously ill, suffering the same symptoms as Laura. \textcolor{skipred}{After consulting with a specially ordered priestly doctor, Spielsdorf realised that Bertha was being visited by a vampire. He hid with a sword and waited until a large, black creature crawled onto Bertha's bed and spread itself onto her throat. He leapt from his hiding place and attacked the creature, which had then taken the form of Millarca. She fled through the locked door, unharmed. Bertha died before the morning dawned.} Upon arriving at Karnstein, Spielsdorf asks a woodman where he can find the tomb of Mircalla Karnstein. The woodman says the tomb was relocated long ago by a Moravian nobleman who vanquished the vampires haunting the region. While Spielsdorf and Laura are alone in the ruined chapel, Carmilla appears. Spielsdorf attacks her with an axe. Carmilla disarms Spielsdorf and disappears. Spielsdorf explains that Carmilla is also Millarca, both anagrams for the original name of the vampire Mircalla, Countess Karnstein. The party is joined by Baron Vordenburg, the descendant of the hero who rid the area of vampires. Vordenburg, an authority on vampires, has discovered that his ancestor was romantically involved with Mircalla before she died. Using his forefather's notes, he locates Mircalla's hidden tomb. An imperial commission exhumes the body of Mircalla. Immersed in blood, it seems to be breathing faintly, its heart beating, its eyes open. A stake is driven through its heart, and it gives a corresponding shriek; then, the head is struck off. The body and head are burned to ashes, which are thrown into a river. Afterwards, Laura's father takes his daughter on a year-long tour through Italy to regain her health and recover from the trauma, but she never fully does.
+
+\subsection{Qwen 2.5 (7b)}
+
+\subsubsection{Prompt: Text}
+
+The narrative recounts the strange and terrifying experiences of a young woman staying at a castle in Styria. She encounters Carmilla, a mysterious guest who claims to be in delicate health and refuses to divulge much about her past. Carmilla exhibits unusual behavior, including sleepwalking and strange dreams. The young woman begins to suspect Carmilla might be a vampire when she experiences similar symptoms, including strange dreams and sensations. The General, a visitor to the castle, reveals he has been seeking out vampires, particularly the Countess Mircalla (Carmilla), for over a century. During a visit to the ruins of Karnstein, the General uncovers the tomb of Mircalla, who is revealed to be the vampire. The vampire is destroyed through a series of ritualistic procedures, and her body is reduced to ashes. The young woman's father later informs her that Carmilla's true name was Mircalla, and the family's connection to vampires dates back generations. The young woman reflects on the events with lingering fear and ambivalence, as memories of Carmilla shift between affection and horror.
+
+\subsubsection{Prompt: Text + Inst.}
+
+The story begins in the castle of an English family in Styria, where the young narrator, Laura, lives with her father and two governesses. One evening, Laura encounters an apparition in her bedroom, which soothes her and then leaves suddenly. The following day, Laura learns that the mysterious figure was Carmilla, a young lady who was in the carriage accident that night. Carmilla, now staying at the castle, exhibits strange and disturbing behaviors. She has a fascination with Laura and seems to have an irresistible charm that draws her closer. Laura's father, upon learning of Carmilla's past, realizes that she is the Countess Mircalla, a vampire from the Karnstein family. Carmilla's vampire nature is revealed when she is seen disappearing in the night, and Laura witnesses a terrifying transformation that leads to her collapse. After Laura's father consults an old General, they discover the location of Mircalla's grave, leading to her exorcism and execution by stake and beheading. The General reveals that Carmilla had been a loved one of his ancestor, and the vampire's actions were driven by a passionate love turned into a deadly obsession. Laura's experiences with Carmilla leave her haunted, and the family takes a trip to Italy to escape the memory.
+
+\subsubsection{Prompt: Title}
+
+In the story, Laura, a young woman, becomes ill and exhibits strange behavior. \textcolor{skipred}{Her aunt, Countess Dolmancé, arrives to care for her.} Countess Dolmancé is described as an attractive older woman. Soon, Laura's condition worsens, and she enters a coma-like state. \textcolor{skipred}{Countess Dolmancé insists that Laura's illness is supernatural in nature, and she becomes increasingly controlling and possessive. Laura begins to exhibit vampiric traits, including a preference for blood, and her behavior becomes increasingly erratic. After Countess Dolmancé's departure, Laura's condition improves, but she remains wary of her aunt. When Countess Dolmancé returns, she is dead. The story concludes with Laura's growing suspicion that Countess Dolmancé was a vampire who sought to feed on her blood.}
+
+\subsubsection{Prompt: Title + Inst.}
+
+\textcolor{skipred}{Carmilla is a Gothic horror novella by Joseph Sheridan Le Fanu, published in 1872. The story revolves around the mysterious and beautiful Carmilla, a vampire who arrives in the remote Carpathian village of Törn, where she befriends the protagonist, Lucy Hiller. Lucy, a young and sheltered woman, harbors a secret romance with her cousin, Jonás Holmby-Schünemann.} As Carmilla's visits to Lucy increase, she becomes more and more withdrawn and ill. \textcolor{skipred}{Eventually, Lucy's mother, a doctor, and her cousin discover that Carmilla is a vampire who has been terrorizing the village. The family confronts Carmilla, and after a series of violent encounters, they manage to drive her off with garlic, a method typically used to repel vampires. However, Carmilla returns and attacks Lucy, leading to a climactic struggle.} In the end, the family successfully kills Carmilla, bringing peace to the village. \textcolor{skipred}{The novella explores themes of sexuality, vampirism, and the blurred lines between life and death.}
+
+\subsection{Qwen 3.5 (9b)}
+
+\subsubsection{Prompt: Text}
+
+The narrative begins with a prologue by the narrator, Doctor Hesselius, who introduces the story as a case file intended for lay readers, omitting his own scholarly analysis due to the sensitivity of the subject. The story proper is told by Laura, a nineteen-year-old Englishwoman living in a remote castle in Styria with her aging father, two governesses, and a few occasional visitors. Her peaceful, solitary life is upended by the arrival of a mysterious young woman named Carmilla, who has fled with her mother after a carriage accident. Carmilla's mother, a woman of imposing presence, entrusts her daughter to the family, insisting on secrecy and a departure in three months, though she leaves immediately after a tense conversation with Laura's father. Laura and Carmilla quickly form an intense bond, marked by a strange, reciprocal recognition dating back to their childhood. While Laura finds Carmilla beautiful and fascinating, she also senses a deep-seated repulsion and fear in their interactions. Carmilla is described as languid, beautiful, and excessively affectionate, yet she maintains a strict reserve regarding her origins, claiming to be of ancient noble descent from the extinct Karnstein family. She displays peculiar habits, such as locking her door despite claiming fear of robbers, and exhibits sudden, terrifying outbursts of anger and physical distress that seem to involve a struggle against unseen forces. The tension escalates when Laura begins experiencing unexplained symptoms, including vivid nightmares of a black animal and a sensation of being pierced by needles near her throat. These attacks are accompanied by a feeling of strangulation and a gradual physical decline, though Laura initially dismisses them as nerves. Her fears are compounded when she discovers that while she was unconscious from a nightmare, she found herself in Carmilla's locked room, and shortly after, Carmilla vanishes entirely. The household searches fruitlessly, leading Laura to believe she has been kidnapped or killed, only for Carmilla to reappear mysteriously in her own room later that day, claiming to have walked in her sleep. The situation reaches a crisis when General Spielsdorf, the uncle of Laura's late friend who died under similar mysterious circumstances, visits the castle. He recounts the death of his niece, Millarca, who suffered from identical symptoms before dying while Laura was present. The General explains that Millarca was also known as Mircalla, Countess Karnstein, a vampire from the extinct Karnstein family. He reveals that vampires do not remain in their graves but wander to feed on the living, specifically targeting those fascinated by them. The General's story is interrupted by a supernatural event in the ruined chapel of Karnstein, where he attempts to strike Carmilla with a hatchet, but she effortlessly catches his wrist and vanishes. The General is eventually joined by Baron Vordenburg, a scholar of vampirism who has dedicated his life to studying these creatures. Together, they locate the hidden tomb of Mircalla, confirming the vampire's identity through physical signs such as flexible limbs, a pulse, and blood-filled veins despite being buried for over a century. Following ancient law, the vampire is destroyed by staking and decapitation, ending the local plague of vampirism. The story concludes with the narrator, now a doctor, recounting the events years later, reflecting on the ambiguous nature of Carmilla—both the charming girl and the terrible monster—and the lingering terror of her presence.
+
+\subsubsection{Prompt: Text + Inst.}
+
+Upon discovering a mysterious paper attached to a manuscript by Doctor Hesselius, the narrator decides to publish the case of an intelligent lady who relates a story she heard years ago. She recounts her life in a lonely castle in Styria with her English father, a governess, and a second governess. At the age of six, she had a terrifying childhood experience where a woman appeared beside her in bed, then vanished, leaving the narrator with two needle-like pains in her chest. Years later, the narrator's father receives a frantic letter from his friend, General Spielsdorf, announcing the death of his niece, Mademoiselle Rheinfeldt, killed by a ``fiend'' who betrayed the family's hospitality. Shortly after, a carriage carrying a mother and her daughter arrives at the castle after a mishap on the road. The mother, a woman of imposing demeanor, leaves the child, Carmilla, in the care of the narrator and her father, promising to return in three months. The mother briefly speaks to the father in a stern manner before departing. The narrator forms a deep, complicated bond with the beautiful and enigmatic Carmilla. Despite her beauty and charm, the narrator feels an unexplainable mix of attraction and repulsion. Carmilla refuses to reveal her family history, claiming she is bound by vows, but eventually discloses that her name is Mircalla Countess Karnstein, a title associated with a ruined family and castle nearby. Carmilla displays strange habits, including a dislike of funerals and sudden, hysterical fits. She tells the narrator of a vision from twelve years ago where she saw the narrator as a child, mirroring the narrator's own childhood dream. As the narrator's health declines with symptoms of strangulation and cold sensations, she discovers a small blue mark on her throat, which a visiting doctor identifies as a sign of vampirism. The narrator later hears the General's story at the ruined Karnstein castle. The General explains that his ward, Millarca (Carmilla), died under mysterious circumstances after being attacked by a creature that entered her room while she slept. A local doctor had previously diagnosed her with vampirism and advised the General to kill the beast. Upon returning to the castle, the General and the narrator discover Carmilla missing just as a mysterious Baron Vordenburg arrives. Vordenburg, a descendant of the Moravian nobleman who once destroyed a vampire at Karnstein, leads them to the hidden grave of Mircalla Karnstein. They find the coffin containing a fresh, flexible body with signs of life and blood. Following ancient law, the body is staked through the heart and decapitated, ending the vampire's reign. \textcolor{skipred}{Baron Vordenburg explains that the vampire is a woman who murdered her lover to become undead and that she specifically targeted the narrator due to a past connection.} The narrator survives the ordeal but is left with lingering nightmares of Carmilla.
+
+\subsubsection{Prompt: Title}
+
+\textcolor{skipred}{The story opens in a quiet Austrian village where young Laura, the sole daughter of a wealthy widower, lives with her governess, Miss Hesselgrave.} When Hesselgrave leaves to attend to a sick aunt, Laura invites her friend Carmilla, a mysterious and enchanting young woman from an unknown land, to stay at the family estate. Laura quickly becomes captivated by Carmilla's beauty and charm, spending almost all her time with her and neglecting her studies and other social obligations. As the summer progresses, the atmosphere at the estate grows increasingly unsettling. Laura finds herself plagued by strange dreams and recurring nightmares featuring the face of Carmilla. She begins to suffer from mysterious ailments, including sudden fevers, deep exhaustion, and strange bleeding that seems to occur when she is near Carmilla. Despite these alarming signs, Laura remains oblivious to the danger, viewing Carmilla as a benevolent and protective friend who seems to know the secrets of her dreams. The tension escalates when Laura's health deteriorates rapidly, leaving her bedridden and delirious. During this period of vulnerability, she recounts her vivid dreams to Carmilla, who listens with an intensity that unsettles the narrator. The dreams reveal a dark history of Carmilla's own past, hinting at a predatory nature that mirrors the very fate befalling Laura. The narrative builds toward a climax where Laura's life hangs in the balance, with Carmilla acting as both her confidante and her unseen tormentor. In the final confrontation, Laura, having recovered enough strength, discovers Carmilla in her room, seemingly dead from a broken neck, only to find that she has simply fallen asleep. The narrator, a local physician who has been investigating the strange occurrences, reveals that Carmilla is actually a female vampire who has been draining the life force of her victims, particularly young women. The story concludes with the arrival of a mysterious stranger who helps slay the vampire Carmilla, saving Laura's life and restoring peace to the village.
+
+\subsubsection{Prompt: Title + Inst.}
+
+\textcolor{skipred}{In the summer of 1872, Laura Lescaze returns to the ancestral castle of her parents in Transylvania, having just recovered from a mysterious illness and the death of her father. She is accompanied by her childhood friend, Milena.} Upon their arrival, they are greeted by the stern and somber Countess Carmilla Karnstein, who takes an immediate and intense interest in Laura. While Milena and her fiancé, Lord John Westlake, explore the grounds and engage with the local villagers, Laura and Carmilla spend their days together, sharing secrets and forming a deep, unconventional bond. As the summer progresses, Laura begins to experience inexplicable symptoms that parallel her own earlier illness: sudden chills, fatigue, and a strange aversion to sunlight. Her health deteriorates rapidly, and she finds herself drawn to Carmilla's presence, unable to resist the Countess's allure despite her growing fear. \textcolor{skipred}{Carmilla reveals her true nature as a female vampire, feeding on the blood of young women to sustain her immortality. She targets Laura specifically, luring her into the castle's secluded chambers at night to drink from her veins. The plot intensifies when Laura's condition worsens to the point where she cannot move or speak without Carmilla's help, effectively trapping her in the Countess's grasp. John Westlake, suspecting foul play after witnessing Laura's erratic behavior and finding traces of blood, begins to investigate. He discovers that the local villagers have been dying of mysterious fevers and that a series of unsolved murders points to a supernatural predator. Realizing that Carmilla is the source of the evil, John recruits the help of a local hunter and his allies to confront the Countess.} In a climactic confrontation within the castle, the group corners Carmilla in her chamber. A fierce struggle ensues, during which Carmilla attempts to escape and claim more victims. \textcolor{skipred}{The hunters manage to wound her, but she is not easily defeated.} Ultimately, Carmilla is forced to flee the castle, leaving behind the trail of destruction she has created. \textcolor{skipred}{The story concludes with Laura recovering from the encounter, though scarred by the experience, while the local community is left to grapple with the lingering threat of the Karnstein family and the dark history of their land.}
+
+\subsection{GLM 4 (9b)}
+
+\subsubsection{Prompt: Text}
+
+The story takes place in a remote castle in Styria, where the narrator, Laura, lives with her father and governess, Madame Perrodon, and occasionally visits with friends. At the age of six, Laura experiences a terrifying encounter with a mysterious woman who appears in her room at night, causing her to develop a lifelong fear of being alone. Years later, Laura meets a young woman named Carmilla, who becomes her friend and confidante. Carmilla is very reserved about her past and family, but reveals she is related to the noble Karnstein family, who were said to have been cursed by vampirism. As Laura and Carmilla grow closer, Laura begins experiencing strange dreams and sensations, including a feeling of being strangled. She becomes increasingly weak and ill, and eventually confides in her father and doctor, who suspect she is suffering from a supernatural affliction. Meanwhile, the General, who had been caring for Carmilla's mother and niece before their tragic deaths, reveals his suspicion that Carmilla is the vampire responsible for the mysterious deaths in their neighborhood. Laura and her father visit the ruins of the Karnstein castle, where they are guided by the General to the chapel. In a chilling scene, the General attacks Carmilla, who transforms into the vampire Mircalla, Countess Karnstein. The vampire is defeated, and her body and head are burned, ending the curse and freeing the land from her influence. Laura survives the ordeal, and her health slowly recovers, although she is haunted by the memory of Carmilla. \textcolor{skipred}{The story concludes with a description of the General's final moments and the narrator's enduring fear of the supernatural.}
+
+\subsubsection{Prompt: Text + Inst.}
+
+In the opening prologue, Dr. Hesselius notes his essay on the mysterious subject of vampireism and its relation to the narrative to follow. The narrator reveals the solitude of their Styrian castle, their small but comfortable party, and their lack of familiarity with England. The early incident that deeply frightened the narrator involved a ghostly apparition in their childhood, an event that led to their becoming nervous and needing a servant to stay with them in the nursery. This fear intensified when they encountered a carriage accident with a young lady who claimed to be her mother, and the mother expressed reluctance to leave her daughter with them, citing her delicate health. Despite their concerns, the young lady, Carmilla, was welcomed into their home. Carmilla's strange habits and occasional outbreaks of fury troubled the narrator but also intrigued them. She would come down late and take a cup of chocolate, then go out for a leisurely walk. She showed an unusual aversion to funerals and expressed a strong fear of robbers. \textcolor{skipred}{The narrator also noticed her peculiar dreams and the punctures she claimed to experience, which she attributed to a charm she had purchased from a hunchback mountebank.} The narrator's own strange experiences began with dreams that left her feeling exhausted and with a sense of impending death. She grew pale and weak, and Carmilla, although initially supportive, became increasingly fixated on her. The narrator finally confided in their father, who arranged for a doctor to examine them. The doctor found a small blue spot below the narrator's collarbone, which he believed to be a symptom of the mysterious illness that had plagued the surrounding countryside. The narrator accompanied their father on a trip to the ruins of Karnstein, where they met General Spielsdorf, who explained the strange events that had befallen his niece, Millarca. The General had witnessed a masked woman, believed to be Millarca's mother, request his help in caring for Millarca. However, Millarca soon began to exhibit strange behavior and symptoms, including walking in her sleep and experiencing piercing dreams. The General's physician diagnosed Millarca with a vampire bite, leading the General to seek help from a learned doctor who also believed in vampireism. \textcolor{skipred}{The General's own daughter, Millarca, had been taken by a vampire, and the learned doctor had concealed the truth to avoid a scandal. The doctor advised the General to seek out a Moravian nobleman, known for his expertise in vampire matters.} The narrator's father took them to see the Moravian nobleman, known as Baron Vordenburg. The General explained the events surrounding Millarca's illness and death. Vordenburg revealed his own connection to the Karnstein family and his love for Mircalla, Countess Karnstein, who he believed had been cursed by a vampire. Vordenburg had hidden Mircalla's grave and had arranged for her body to be exhumed and destroyed, but he had been too late. The General, determined to avenge Millarca's death, confronted Carmilla in the ruins of the chapel and struck her with a hatchet, but she escaped. The narrator saw the transformation of Carmilla into a vampire and witnessed the General's struggle with her. The General and Vordenburg identified Carmilla as the vampire Millarca and planned to hold an inquest to expel her. The narrator, feeling terror and sorrow, was taken home to recover. \textcolor{skipred}{The next morning, the narrator's father informed them that Carmilla had disappeared and that the General had been seen striking her with a hatchet.} The narrator was anxious and feared for her own safety, but the doctor assured her that she would recover as long as she followed his instructions. \textcolor{skipred}{The narrator's father then revealed that they were going to see a priest to perform a ceremony for their protection. The narrator's father later informed them that the General had confessed to the Moravian nobleman that he had been Millarca's lover and had hidden her grave to protect her.} The narrator's father and the Moravian nobleman had planned to track down and destroy the vampire, but the narrator had seen Carmilla transform and escape. The narrator's father and the priest had decided to stay with her for safety.
+
+\subsubsection{Prompt: Title}
+
+\textcolor{skipred}{Carmilla is a novella by Joseph Sheridan Le Fanu published in 1872, which serves as a precursor to the vampire genre. The story follows the young Mary Russell, a Victorian girl sent to live with her aunt, Mrs. Grose, at her isolated estate. When Mary arrives, she becomes intrigued by a mysterious figure, the Countess Dracula, who appears at night and spends time with the local villagers, including Mary's friend, Miles. Mary's aunt, however, is suspicious and warns her against befriending the countess, suggesting she may be a vampire.} Despite her aunt's warnings, Mary is drawn to Carmilla, and over time, she becomes aware of her own attraction to the countess and of the supernatural events that are occurring around her. Carmilla's actions, which include seducing and ultimately killing her prey, are described in detail, and the story culminates with Mary's realization that she has been a victim of Carmilla's seductive powers. \textcolor{skipred}{In a dramatic confrontation, Mary, aided by her aunt and Miles, manages to defeat Carmilla, restoring order to the estate and revealing the true nature of her mysterious visitor.}
+
+\subsubsection{Prompt: Title + Inst.}
+
+\textcolor{skipred}{Carmilla is a short story by Joseph Sheridan Le Fanu that revolves around the protagonist, Carmilla, a vampire who falls in love with a young woman named Laura.} The story begins with a young girl, Emily, who is haunted by strange dreams and has a premonition of her own death. \textcolor{skipred}{Her guardian, Sir John, seeks advice from a local doctor, who refers him to a witch named Mrs. Verrinder. Mrs. Verrinder suggests that Emily's visions are the result of a vampire's curse. Sir John and Mrs. Verrinder visit a mysterious woman named Mrs. Westenra, who is rumored to be a vampire. They attempt to confront her about the curse, but she turns them away. Meanwhile, Emily's health deteriorates, and she becomes increasingly obsessed with Mrs. Westenra. Laura Westenra, a close friend of Emily, becomes fascinated by the vampire legend and decides to investigate the supernatural phenomena. She discovers that her own grandmother, Mrs. Westenra, is the vampire in question. Carmilla, the vampire's daughter, has taken a strong interest in Laura and plans to turn her into a vampire. As Laura becomes more entangled with the supernatural world, she becomes increasingly dependent on Carmilla. Eventually, she falls in love with a young man named Walter Hartright, who is also a close friend of Emily's. Carmilla becomes jealous of Walter's affection for Laura and tries to seduce him herself.} In the end, Sir John and Mrs. Verrinder manage to track down Carmilla and confront her. \textcolor{skipred}{A battle ensues, and Carmilla is ultimately defeated by Sir John's sword. Laura is saved, but she is left emotionally scarred by the experience.} The story ends with a hint that Carmilla may have survived and is still searching for her next victim.
+
+\subsection{Llama 4 Scout (17b)}
+
+\subsubsection{Prompt: Text}
+
+The narrator, Laura, recounts a mysterious and terrifying experience that occurred when she was a young girl living in a castle in Styria with her father and governesses. She describes a strange and frightening encounter with a ghostly woman in her nursery when she was six years old, which left her with a lasting impression. Years later, when Laura was 19, a new governess, Madame Perrodon, and a finishing governess, Mademoiselle De Lafontaine, joined them at the castle. Laura's life was relatively solitary, with occasional visits from young lady friends. One evening, her father told her that a visit from General Spielsdorf and his niece, Mademoiselle Rheinfeldt, had been postponed due to the young lady's death. The General had written a letter to Laura's father, which was extraordinary and incoherent, suggesting that he was consumed by grief and obsession. The letter hinted at a dark and sinister event that had occurred, and the General vowed to track down and punish the perpetrator. On a summer evening, Laura and her father took a walk in the forest, where they met Madame Perrodon and Mademoiselle De Lafontaine at the drawbridge. They admired the moonlit scene together, and Mademoiselle De Lafontaine discussed the supposed influences of the full moon on dreams, lunacy, and nervous people. As they stood there, they heard the sound of carriage wheels and hoofbeats approaching. A luxurious carriage, drawn by four horses, came into view, accompanied by two horsemen. The team suddenly panicked, and the carriage careened out of control towards the castle. The horses swerved, bringing the wheel over the roots of a lime tree, and the carriage crashed. A lady in black velvet emerged, followed by a servant who helped her lift a young woman from the carriage. The young woman appeared lifeless, but Laura's father checked her pulse and found it to be faint but still present. The lady, who introduced herself as the mother of the young woman, explained that she was on a journey of vital importance and had to leave her daughter in someone's care. Laura's father offered to let her stay at the castle, and the lady agreed, but not before having a brief, intense conversation with him. As the lady departed, Laura and her governesses took the young woman, whose name was Carmilla, to her room. That night, Laura and her family discussed the strange encounter and Carmilla's unusual behavior. The next day, Laura visited Carmilla in her room and was shocked to discover that she was the exact likeness of the ghostly woman she had seen in her childhood. Carmilla revealed that she had seen Laura's face in a dream twelve years ago, and it had haunted her ever since. Laura and Carmilla began to talk and discovered that they had a strange and unexplained connection. Carmilla was beautiful, slender, and languid, with long, dark hair and large, dark eyes. However, Laura found her habits to be odd, including her late risings, peculiar eating habits, and tendency to fall asleep easily. As Laura got to know Carmilla better, she found herself drawn to her, but also experienced moments of repulsion. Carmilla's behavior was sometimes affectionate and playful, but at other times, it was strange and unsettling. One evening, a mountebank arrived at the castle, selling charms against vampires. Carmilla purchased one, and Laura did the same. The mountebank noticed something peculiar about Laura and offered to file down her sharp tooth. That night, Laura had a terrifying dream, in which a sooty-black animal resembling a monstrous cat moved around her room, and she felt a stinging pain in her breast. When she woke up, she saw a female figure standing at the foot of her bed, which disappeared through the door. The next day, Laura told Madame Perrodon and Mademoiselle De Lafontaine about her dream, and they revealed that the long lime tree walk behind Carmilla's bedroom window was said to be haunted. Martin, a servant, claimed to have seen a female figure walking down the avenue. Carmilla revealed that she had also had a frightening dream that night and had used the charm she bought from the mountebank to protect herself. Laura and Carmilla began to suspect that they were being haunted by a supernatural force. As the days passed, Laura's health began to decline, and she felt a strange, unaccountable fascination with her condition. She experienced vague and terrifying sensations, including dreams, visions, and physical symptoms. One night, Laura heard a voice in her sleep, warning her to beware of an assassin. She woke up to find Carmilla standing near her bed, bathed in blood. Laura rushed out of her room, crying for help, and her companions found her in a state of distress. They discovered that Carmilla was missing, and a search of the castle and grounds ensued. Eventually, they found Carmilla in her room, and she claimed to have no knowledge of where she had been. Laura's father consulted with a doctor, who revealed that Laura was suffering from a mysterious illness, possibly related to vampirism. The doctor arranged for a servant to sleep outside Carmilla's door, and the next day, he visited Laura and examined her. The doctor discovered a small blue spot on Laura's neck, which he believed was a symptom of the vampire's bite. \textcolor{skipred}{He warned Laura's father that the situation was serious and that they needed to take precautions.} Laura's father decided to take her on a drive to the ruined castle of Karnstein, where they met General Spielsdorf, who was obsessed with avenging his niece's death. He told them a story about a masquerade ball, where he met a mysterious and beautiful woman, Countess Mircalla, who was accompanied by her daughter, Millarca. The General became suspicious of the Countess and her daughter and eventually discovered that they were vampires. He revealed that Millarca had been staying with him, and he had undertaken to take care of her. However, strange things began to happen, and the General suspected that Millarca was a vampire. He discovered that she was sometimes absent from her room, and she would walk in her sleep. My dear child began to lose her looks and health, and the General became thoroughly frightened. The General consulted with two physicians, who failed to produce any impression on my dear child's disease. An abler physician was called in from Gratz, who suggested a consultation. The two physicians withdrew to discuss, and the General overheard them in sharp discussion. The General's ward was growing rapidly worse, and the physician from Gratz wrote a note stating that the patient was suffering from the visits of a vampire. The General acted on the instructions of the letter and discovered Millarca to be the vampire. The General and his companions went to the chapel of Karnstein, where they met a strange-looking man, Baron Vordenburg, who was learned on the subject of vampirism. The General and my father recognized the perfidious and beautiful guest, Carmilla, in the face now disclosed to view. The body was raised, and a sharp stake driven through the heart of the vampire, who uttered a piercing shriek at the moment. Then the head was struck off, and a torrent of blood flowed from the severed neck. The next day, the formal proceedings took place in the Chapel of Karnstein, and the report of the Imperial Commission was attached to verify the statement. Laura concludes that writing about her experience has been difficult and has brought back memories of the horror she experienced. The image of Carmilla still haunts her, and she sometimes starts, thinking she hears Carmilla's step at the door. The Baron Vordenburg had devoted himself to investigating the tradition of vampirism and had a vast knowledge of the subject. He explained that vampires are prone to be fascinated with particular persons and will exercise patience and stratagem to gain access to them. The vampire is subject to special conditions and seems to yearn for sympathy and consent. In the particular instance of Mircalla, she seemed to be limited to a name that reproduced her original name anagrammatically. The Baron revealed that he had discovered the exact position of the long-concealed tomb of the Countess Mircalla through the journals and papers of a Moravian nobleman. The Moravian nobleman had been a passionate and favored lover of the beautiful Mircalla, Countess Karnstein, and had removed her remains and obliterated her monument to save her from posthumous execution. The Baron's ancestor had left a paper to prove that the vampire, on expulsion, is projected into a far more horrible life. The vampire's power is not confined to its grasp, but also leaves a numbness in the limb it seizes. The following Spring, Laura's father took her on a tour through Italy, and they remained away for more than a year. The terror of recent events subsided slowly, and the image of Carmilla still haunts Laura's memory.
+
+\subsubsection{Prompt: Text + Inst.}
+
+The story begins with a prologue written by Doctor Hesselius, who has written a note referencing his Essay on the strange subject that the manuscript illuminates. The story that follows is a narrative of a young lady who relates her experiences with a mysterious and supernatural being. The narrator, who remains unnamed, is the daughter of an English father and a Styrian mother, and she lives in a castle or schloss in Styria with her father and a small group of servants and governesses. The narrator's life is solitary, and she has few visitors, but she does have a few close relationships with her governesses, Madame Perrodon and Mademoiselle De Lafontaine. The narrator recounts an early incident from her childhood, in which she awoke in her nursery to find a young lady kneeling beside her bed, looking at her with a solemn but pretty face. The young lady caressed the narrator and lay down beside her, and the narrator felt soothed and fell asleep again. However, when the narrator awoke, she felt a sensation as if two needles had run into her breast, and the young lady started back and hid under the bed. The narrator was frightened and called for help, and her nurse and other servants came running in. They examined the narrator's chest and found no sign of injury, but they did find that the place where the narrator had felt the puncture was still warm. The narrator's father returned home from a journey, and they went for a walk in the forest. They met Madame Perrodon and Mademoiselle De Lafontaine at the drawbridge, and they discussed the beauty of the moonlight. Mademoiselle De Lafontaine mentioned that the full moon had a special spiritual activity and could affect dreams and lunacy. Suddenly, they heard the sound of carriage wheels and hoofbeats, and a carriage came into view. The carriage was traveling at a wild pace, and one of the horses took fright and caused the carriage to swerve and crash into a lime tree. A lady with a commanding air and figure got out of the carriage, and she was clearly distraught. She explained that she was on a journey of life and death and that she had to leave her daughter behind. The narrator's father offered to take care of the young lady, and the lady agreed. The young lady was taken to the narrator's room, and she quickly fell asleep. The narrator went to visit her and was shocked to find that she was the same person who had visited her in her childhood. The young lady introduced herself as Carmilla, and she explained that she had seen the narrator's face in a dream twelve years ago. The narrator and Carmilla quickly became friends, but the narrator began to notice that Carmilla was mysterious and evasive about her past. Carmilla would only reveal small details about herself, such as her name and her noble family. The narrator was curious and tried to pry more information out of Carmilla, but she was unsuccessful. As the days passed, the narrator began to experience strange and terrifying occurrences. She would have vivid dreams and feel a presence in her room. She started to feel a strong connection to Carmilla, but she also felt a sense of repulsion. The narrator tried to understand what was happening to her, but she couldn't. The narrator and Carmilla went for walks in the forest, and one day, they encountered a funeral procession. Carmilla was upset by the music and told the narrator that it was discordant. The narrator mentioned that the deceased girl had thought she saw a ghost a fortnight ago and had been dying ever since. Carmilla became agitated and had a fit, and the narrator was alarmed. She realized that Carmilla was not like other girls and that she had a strange effect on her. The narrator's father returned home and mentioned that there had been another case of a similar illness in the neighborhood. The doctor came to visit the narrator, and he was concerned about her health. He examined her and found a blue spot on her neck. He told her father that the narrator was suffering from a mysterious illness and that she needed to be careful. \textcolor{skipred}{The doctor also mentioned that he would visit Carmilla in the afternoon.} The narrator's father took her and Madame on a drive to Karnstein, where they met the General, who had been a friend of the narrator's family. The General was gloomy and anxious, and he told them that he had lost his beloved niece and ward, Bertha, who had died under mysterious circumstances. \textcolor{skipred}{The General believed that Bertha had been murdered by a vampire, and he was determined to find out who was responsible.} He told them that he had been to a ball at the Count Carlsfeld's schloss, where he had met a mysterious woman who had taken an interest in his ward. The woman had been masked, but the General had been drawn to her. \textcolor{skipred}{The General's ward, Millarca, had become friends with the General's niece, and the General had left her in the care of a stranger. He had regretted his decision when he realized that Millarca was missing. The General told them that he had discovered that Millarca was actually a vampire and that she had killed his niece.} The General, the narrator's father, and a group of men went to the ruined chapel of Karnstein, where they found the grave of Mircalla, Countess Karnstein. They opened the grave and found that Carmilla was in it, but she was not dead. The General and the narrator's father decided to execute her, and they drove a stake through her heart. Carmilla uttered a piercing shriek as she was executed, and her body was burned to ashes. The narrator reflected on her experiences with Carmilla and realized that she had been in grave danger. She was grateful to have been saved and to have learned about the supernatural forces that existed in the world. The narrator's story was verified by the Imperial Commission, and it was included in a report that documented the existence of vampires. The narrator's father had a copy of the report, which included the signatures of all who were present at Carmilla's execution. The narrator concluded her story by mentioning the Baron's role in discovering Carmilla's grave. The Baron was a learned man who had devoted himself to investigating the tradition of vampirism. He had studied the subject extensively and had developed a system of principles that governed the condition of vampires. The narrator noted that vampires were prone to be fascinated by particular persons and would exercise patience and stratagem to gain access to them. They would also try to yearn for sympathy and consent from their victims. The narrator reflected on her own experiences with Carmilla and realized that she had been drawn to her despite the danger she posed.The narrator and her father spent over a year traveling through Italy, but the memory of Carmilla still haunted her. \textcolor{skipred}{The narrator recalled seeing Carmilla's face in her dreams twelve years prior, and Carmilla had revealed that she had seen the narrator's face in her own dreams.} The narrator noted that vampires do not have the typical pallor associated with them, but instead appear healthy and vibrant.  Vampires are able to escape and re-enter their graves without disturbing the soil or leaving any signs of disturbance. The vampire's existence is sustained by daily renewed slumber in the grave, and their lust for living blood supplies their waking existence. The vampire is prone to being fascinated by particular persons and will use patience and strategy to gain access to them.  In some cases, vampires seem to yearn for sympathy and consent from their victims. Mircalla, the vampire, was limited to a specific name, either Mircalla or Carmilla, which contained the same letters. The narrator's father related the story of the Moravian nobleman who removed the tomb of Mircalla to the Baron Vordenburg.  The Baron discovered the location of Mircalla's grave through the notes and tracings left by the nobleman, who was a native of Upper Styria and had been a passionate lover of Mircalla. The nobleman had pretended to remove Mircalla's remains and obliterate her monument to save her from posthumous execution.  The Baron explained that vampires are created when a person, often a suicide, dies under certain circumstances and visits living people in their slumbers, causing them to die and develop into vampires in their graves. The narrator reflected on the strange and terrifying events that had occurred, and the image of Carmilla still returned to her memory.  The power of a vampire's hand is also a notable sign, as it can leave a numbness in the limb it seizes. The narrator's experience with Carmilla was a testament to the enduring fascination and terror of the vampire's presence. The narrator was grateful to have escaped the clutches of the vampire and to have gained a deeper understanding of the supernatural forces that existed in the world.
+
+\subsubsection{Prompt: Title}
+
+The novel ``Carmilla'' by Joseph Sheridan Le Fanu is a Gothic novella that tells the story of a young woman named Laura, who lives with her father in a remote castle in Austria. \textcolor{skipred}{The story begins in the 1840s, and Laura's life is quiet and uneventful, spent reading, playing the harp, and taking care of her ailing father.} One night, a mysterious and beautiful guest named Carmilla arrives at the castle, seeking refuge from a carriage accident. Laura's father, a kind and hospitable man, welcomes Carmilla into their home, and she quickly becomes a part of their lives. Carmilla is charming, elegant, and charismatic, and Laura finds herself drawn to her new friend. As the days pass, Laura and Carmilla grow closer, spending their days reading, playing games, and exploring the surrounding countryside. However, Laura begins to notice strange and unexplained occurrences around the castle, and she starts to feel a creeping sense of unease. She also experiences vivid and disturbing dreams, and she begins to feel a strange and unsettling attraction to Carmilla. As the relationship between Laura and Carmilla deepens, Laura becomes increasingly ill, suffering from mysterious and unexplained symptoms. She also begins to notice that Carmilla seems to be avoiding her, and that she appears to be hiding secrets. \textcolor{skipred}{Laura's governess, Bertha, becomes concerned about Laura's health and tries to intervene, but Carmilla's presence seems to be having a malign influence on the household. One night, Laura's governess discovers Carmilla drinking Laura's blood, and she realizes that Carmilla is a vampire. Bertha and Laura's father are shocked and horrified, and they quickly take action to protect Laura from Carmilla's evil influence.} They summon a local vampire hunter, Baron Vordenburg, who is an expert in the supernatural. \textcolor{skipred}{Baron Vordenburg reveals that Carmilla is a member of a family of vampires, and that she has been preying on Laura and other young women in the area.} He tells them that the only way to kill a vampire is with a stake through the heart, and he prepares to confront Carmilla. \textcolor{skipred}{However, Carmilla escapes, and the Baron and Laura's father pursue her to her tomb, where they kill her with a stake. In the aftermath of Carmilla's death, Laura recovers from her illness, and the household is finally able to rest easy. The novella ends with Laura reflecting on the strange and terrifying events that have occurred, and she is grateful to have been saved from Carmilla's clutches. The story is a classic tale of vampire fiction, and it has had a lasting influence on the genre.}
+
+\subsubsection{Prompt: Title + Inst.}
+
+The story of ``Carmilla'' revolves around the protagonist, a young woman who lives in a remote castle in Austria with her father, the Baron. The narrator, who remains unnamed throughout the story, is a teenage girl who has been living with her father, the Baron, in the castle since her childhood. Her life is quiet and isolated, with only her father and a few servants for company. The tranquility of her life is disrupted when a mysterious and beautiful young woman named Carmilla arrives at the castle. She is a guest of the Baron, and the narrator is immediately drawn to her charms. Carmilla is a charming and affectionate person, and the narrator finds herself falling deeply in love with her. As the days pass, the narrator becomes increasingly infatuated with Carmilla, and the two women spend all their time together. However, strange and unexplained events begin to occur, and the narrator starts to feel a sense of unease and fear. She begins to experience vivid and disturbing dreams, and she starts to feel a strange and unexplainable connection to Carmilla. The narrator also starts to notice that Carmilla seems to be avoiding the daylight and has an unusual aversion to garlic. As the narrator's suspicions grow, she discovers that Carmilla is a vampire. \textcolor{skipred}{The narrator and Carmilla engage in a series of intense and intimate encounters, during which Carmilla preys on the narrator.} The narrator's health begins to decline, and she becomes weaker and more frail. A series of mysterious deaths occur in the surrounding area, and the narrator's father becomes increasingly concerned for her safety. He invites a friend, General Kearber, to visit the castle, and they begin to suspect that something is amiss. They soon discover that Carmilla is a vampire and that she has been preying on the narrator. The General and the Baron take action to stop Carmilla, and they eventually kill her by staking her through the heart with a sacred dagger. \textcolor{skipred}{The narrator is saved, but not before she has been deeply affected by her experiences with Carmilla.} The story ends with the narrator reflecting on the events that have occurred and the lessons she has learned about the dangers of desire and the supernatural.
+
+
+\subsection{Qwen 3.5 (27b)}
+
+\subsubsection{Prompt: Text}
+
+The narrative begins with an editor's prologue introducing a manuscript written by a deceased lady regarding a mysterious case involving supernatural elements. The story centers on Laura, a young woman living in a remote castle in Styria with her father and governesses. Laura recalls a childhood incident where a beautiful woman visited her bed, causing her pain at the throat before vanishing. Years later, a carriage accident brings a mysterious young stranger named Carmilla and her mother to the castle. The mother leaves Carmilla in the family's care for three months, insisting on strict secrecy regarding their identity and origins. Laura and Carmilla form an intense, almost supernatural bond, recognizing each other from the childhood vision. Carmilla is enchanting but secretive, displaying odd habits such as avoiding funerals and exhibiting strange physical strength. Over time, Laura begins to suffer from debilitating fatigue, nightmares, and a sensation of strangulation, eventually discovering a blue spot on her neck. Carmilla's affection seems to drain Laura's vitality, though her mother remains absent and communication is strictly limited. Laura's health declines rapidly while she remains under the influence of her beautiful companion. General Spielsdorf arrives, revealing that his own ward, Bertha, died under identical mysterious circumstances. He recounts meeting Carmilla, then known as Millarca, at a masked ball where her mother, the Countess Karnstein, persuaded him to take custody of the girl. The General describes how Bertha was attacked by a vampiric entity, ultimately dying from the ordeal, and expresses his determination to find and destroy the monster responsible. He identifies the creature as a vampire linked to the extinct Karnstein family. The group travels to the ruins of the Karnstein castle and chapel, where the General spots Carmilla and attempts to strike her with a hatchet, but she escapes. A learned expert, Baron Vordenburg, arrives and helps locate the hidden tomb of Mircalla, Countess Karnstein, confirming Carmilla's true identity as an undead entity from the extinct family. The tomb is opened to reveal the Countess's body, which appears fresh and breathing within a coffin filled with blood. In accordance with ancient tradition, the vampire is staked, decapitated, and burned to ash, ending the plague on the region. Laura recovers from her affliction, and Baron Vordenburg explains the history of Mircalla's transformation into a vampire and the efforts to conceal her grave. Laura and her father leave for Italy to escape the memories of the horror, though the image of Carmilla continues to haunt her.
+
+\subsubsection{Prompt: Text + Inst.}
+
+Laura, the daughter of an English nobleman, lives in a remote castle in Styria with her father and two governesses. She recalls a childhood incident where a mysterious woman visited her bed and bit her neck, causing her great terror. Years later, a carriage accident near the castle brings a young woman named Carmilla and her mother into their lives. The mother, a stern and mysterious figure, leaves Carmilla in the family's care for three months before departing on urgent business, instructing her daughter to keep their identity secret. Laura and Carmilla immediately bond, discovering they share a childhood vision of one another. Despite Carmilla's intense, sometimes overwhelming affection, she remains secretive about her past and exhibits odd habits, such as avoiding funerals and sleeping only during the day. As their friendship deepens, Laura begins to suffer from a mysterious wasting illness characterized by extreme lethargy, nightmares, and a sensation of strangulation. She discovers small puncture marks on her neck similar to those from her childhood memory. A portrait of Mircalla, Countess Karnstein, from 1698 arrives at the castle, bearing an uncanny resemblance to Carmilla, suggesting a connection to the extinct Karnstein family. General Spielsdorf arrives at the castle, grieving the recent death of his ward, Bertha Rheinfeldt. He reveals that Bertha was visited by a similar girl named Millarca and succumbed to the same wasting sickness. The General suspects a supernatural cause, specifically vampirism, recounting how he witnessed Millarca transform into a black creature feeding on Bertha before she died. He recognizes Carmilla's name as an anagram of Mircalla and behavior as identical to the threat that killed his ward and joins Laura's father to hunt the creature. The group travels to the ruins of Karnstein castle, the ancestral home of the Karnstein family. In the chapel, Carmilla appears. The General attacks her with a hatchet, but she vanishes instantly. A vampire expert, Baron Vordenburg, arrives and helps locate the hidden tomb of Countess Mircalla using ancient documents. Following the discovery, Carmilla disappears from the castle entirely, and Laura's illness ceases. An official commission opens Countess Mircalla's grave. The body is found fresh and bloated with blood, confirming the existence of a vampire. In accordance with ancient laws, the body is staked through the heart, beheaded, and burned to prevent further attacks. Baron Vordenburg explains that his ancestor, a former lover of Mircalla, had previously hidden the grave to protect her remains from posthumous execution, inadvertently allowing the vampire to survive for centuries. Laura and her father leave for Italy to recover, though Laura remains haunted by memories of Carmilla.
+
+\subsubsection{Prompt: Title}
+
+Laura, an only child, lives in a remote estate in the Austrian borderlands with her father. \textcolor{skipred}{She is plagued by recurring dreams of a beautiful woman with red eyes and strange markings. One night, a carriage crashes near the property, and a mysterious young woman named Carmilla and her sick father arrive seeking lodging.} Despite the strange circumstances of their arrival, they are welcomed into the home. Carmilla and Laura quickly develop an intense, intimate friendship. Carmilla is alluring but secretive, often insisting on visiting Laura's room at night under the pretense of sleeplessness. Laura begins to suffer from mysterious illnesses, including extreme lethargy and a distinct mark on her neck, while Carmilla remains strangely vital. \textcolor{skipred}{The family dog becomes hostile toward the visitor, and Laura's father notices odd behavior from Carmilla's companion. As Laura's health deteriorates, she discovers a diary in the attic belonging to a young woman named Miss Millicent, who died under mysterious circumstances years earlier. The entries describe a similar seduction and death caused by a woman named Mircilla. Meanwhile, more women in the village are found dead.} General Spielsdorf, an old friend of the family, arrives to investigate the string of deaths. He recognizes the signs of vampirism and identifies Carmilla as the ancient vampire Mircilla. \textcolor{skipred}{Spielsdorf reveals that Carmilla's carriage was actually a coffin designed for transport.} He and Laura's father track the vampire to a hidden tomb in the woods. They break in and destroy her by driving a stake through her heart. Laura survives the ordeal and eventually regains her health, though the experience leaves a lasting mark on her life.
+
+\subsubsection{Prompt: Title + Inst.}
+
+\textcolor{skipred}{The narrative is framed as a manuscript received by a physician from a friend, detailing the supernatural events surrounding a young woman named Laura at Blackwater Park.} Laura lives with her father, a widower, and has long been haunted by vivid dreams of a beautiful woman with a sickly pallor. These visions materialize when a carriage accident near the estate brings a mysterious guest, Countess Karnstein, and her silent servant, Bernard. Karnstein, who calls herself Carmilla, is frail but captivating, and she immediately establishes a close, almost obsessive friendship with Laura. Over time, Laura's health declines as she suffers from recurrent fainting spells and a persistent lethargy. She discovers that Carmilla enters her bedroom at night, sitting vigil by her bed. \textcolor{skipred}{Laura wakes to find the countess pale and cold, and occasionally discovers small wounds on her neck that she cannot explain.} Despite a growing sense of dread, Laura feels an inexplicable, magnetic attraction to Carmilla. The household is plagued by other ominous signs, including the sudden death of the family's hounds and servants, while Carmilla's father, Count Karnstein, makes occasional visits that add to the tension. Concerned by Laura's condition, the family physician, Sir Robert, investigates the situation. After examining Laura's wounds and observing Carmilla's behavior, he identifies her as a vampire. \textcolor{skipred}{Sir Robert explains that Carmilla is a creature of the grave feeding on the life force of the Hesketh family line.} Armed with this knowledge, the men track Carmilla to a concealed room in the house where she is confined within a coffin. Upon opening the coffin, the undead woman rises to attack, but Sir Robert stakes her through the heart, destroying her. \textcolor{skipred}{A diary discovered inside the coffin reveals Carmilla's true history as Mircalla Karnstein, a woman who was murdered in the seventeenth century and resurrected to prey upon descendants of her enemies. The text details her long history of killing and her specific predation on Laura's family. With the threat eliminated, Laura gradually recovers her strength and vitality. The story concludes with Laura's marriage to Mervyn Hesketh, restoring peace to Blackwater Park, while the physician's frame narrative confirms the tragic reality of the Karnstein legacy.}
+
+
+\subsection{Qwen 3.5 (35b)}
+
+\subsubsection{Prompt: Text}
+
+The story is introduced through a prologue by Doctor Hesselius, framing the narrative as a case study regarding the supernatural, written by an informant who has since died. The narrator, Laura, lives in a secluded castle in Styria with her father. She recounts a terrifying childhood memory at age six where a beautiful young woman visited her in bed, caressed her, and pierced her breast with two needles before vanishing. Years later, while expecting a visit from General Spielsdorf and his niece, Laura learns the General has written that his niece has died mysteriously, blaming a ``fiend.'' Shortly after, a carriage accident brings a stranger named Carmilla to the castle, whose mother leaves her in Laura's care for three months while she travels. Laura and Carmilla quickly form an intense bond, discovering they each had a vision of the other during their childhoods. Carmilla is beautiful, languid, and secretive about her past, often displaying strange aversions to religious hymns and funerals. Despite her affectionate demeanor, Laura begins to suffer from a mysterious illness characterized by extreme weakness, nightmares, and a sensation of cold streams. She notices small puncture marks on her throat, mirroring the childhood trauma she experienced, and feels a confusing mix of attraction and fear regarding Carmilla, who becomes increasingly possessive. Concerned by local rumors of a vampire epidemic known as the ``oupire,'' Laura's father consults a doctor who identifies the symptoms as vampirism. Laura's father and Laura travel to the ruins of Karnstein, where they encounter the General Spielsdorf. He recounts how his niece, Bertha, died after meeting a woman named Millarca, the alias Carmilla used at the masquerade ball where they met. \textcolor{skipred}{Bertha suffered identical symptoms of needle-like pains and strangulation.} The General is resolved to destroy the monster responsible for his niece's death. With the help of Baron Vordenburg, an expert on vampirism, they locate the grave of Mircalla Karnstein, an ancestor of Carmilla. During a confrontation in the ruined chapel, the General attempts to strike Carmilla with an axe, but she vanishes. They proceed to open the grave and find the Countess's body fresh and breathing. Following the ancient rites, they drive a stake through her heart and behead her, causing a torrent of blood. The vampire is destroyed, and Carmilla disappears from the castle. Laura recovers fully from her illness once the vampire is killed. She and her father travel to Italy for the spring, though she remains haunted by memories of Carmilla, who oscillates in her memory between a playful girl and a writhing fiend. The Baron explains the lore of vampirism to the family, noting the connection between suicide and the undead, and the specific lineage of the Karnstein bloodline. The narrative concludes with Laura acknowledging the unspeakable horror of the events and the lingering terror that makes solitude insupportable.
+
+\subsubsection{Prompt: Text + Inst.}
+
+Laura, a young woman living in a solitary castle in Styria with her father, recounts a terrifying experience from her youth. As a child, she recalls being visited in her sleep by a beautiful woman who pricks her chest with sharp objects. Years later, a carriage accident brings a young lady named Carmilla and her mother to the castle. Carmilla’s mother, a mysterious figure, leaves her daughter in Laura’s care for three months to attend to a ``vital'' journey. Laura and Carmilla quickly form an intense bond, though Carmilla remains secretive about her past and refuses to participate in family prayers. Over time, Laura begins to suffer from severe illness characterized by lethargy, pallor, and nightmares featuring a figure attacking her throat. She notices needle-like puncture marks on her skin, mirroring the symptoms of her childhood encounter. Carmilla appears to recover quickly from similar ailments, though she exhibits a strange languor and fascination with Laura. The local doctor identifies Laura’s condition as vampirism. Simultaneously, General Spielsdorf arrives in distress. \textcolor{skipred}{He reveals that his niece Bertha died under identical circumstances after meeting a woman named Millarca, Carmilla’s former alias. He recounts how Millarca attended a ball where she befriended Bertha, leading to her rapid decline. He describes Millarca appearing to Bertha in dreams and attacking her in her sleep, just as Carmilla has done to Laura.} He connects the symptoms to the legend of vampires and the extinct House of Karnstein, stating his intent to unearth the bodies to extinguish the monsters. He explains that the Countess Mircalla Karnstein has returned to haunt the region, necessitating her destruction. Laura discovers a portrait of Countess Mircalla Karnstein, dated 1698, which bears an uncanny resemblance to Carmilla. \textcolor{skipred}{Realizing the danger, the General, Laura’s father, and the Baron Vordenburg, an expert on vampirism, travel to the ruins of Karnstein Castle.} There, the General confronts Carmilla, attempting to strike her with a hatchet, but she vanishes instantly with supernatural strength, gripping his wrist in a vice-like hold. They locate the hidden grave of Mircalla Karnstein using the Baron’s journals. In a formal proceeding, the coffin is opened to reveal the Countess’s body is still warm and breathing. A stake is driven through her heart, followed by decapitation and the burning of the remains, which are thrown into the river. Laura’s suffering ceases immediately after the execution of the vampire. The family flees Styria for Italy, but Laura remains haunted by the memory of Carmilla. The narrative concludes with Laura acknowledging that while the threat is gone, the image of the vampire persists in her mind, alternating between a beautiful friend and a monstrous fiend.
+
+\subsubsection{Prompt: Title}
+
+The story is narrated by Laura, a young woman who recounts a traumatic experience from her youth in Styria. Following the death of her mother, Laura and her father reside in an isolated castle. Their seclusion is broken by the arrival of Countess Mircalla Karnstein, known as Carmilla, and her elderly companion. Carmilla is invited to stay, and she and Laura form an intense, almost obsessive friendship that isolates Laura from her father and the local village. Soon after Carmilla’s arrival, Laura begins to suffer from a mysterious malady. She becomes pale, weak, and lethargic, plagued by vivid nightmares and sleepwalking episodes. She wakes with unexplained bite marks on her neck, though the wounds never seem to heal or bleed heavily. Carmilla claims to be the cause of her distress in her sleep, and her presence seems to both comfort and drain Laura. Her father and the local physician are baffled by her condition and dismiss their concerns. \textcolor{skipred}{The situation escalates when a young military officer named Theodor arrives and becomes infatuated with Carmilla, only to fall victim to the same mysterious illness.} Local legends begin to surface regarding the Karnstein family, suggesting a history of vampirism in the region. \textcolor{skipred}{Theodor survives an attack and reveals that Carmilla feeds on blood during the night.} Realizing the supernatural threat, the doctor and Theodor decide to investigate the castle further, uncovering evidence that Carmilla is a vampire who has been preying on the area's young women for decades. The climax arrives when the doctor, Theodor, and a group of men return to the castle to confront the vampire. They locate Carmilla in her chamber, where she is found sleeping. Despite her attempts to resist, they drive a heavy wooden stake through her heart, destroying her undead form. \textcolor{skipred}{This act breaks the curse, and Laura’s health begins to recover rapidly. However, the trauma of the event contributes to her father’s death shortly after the confrontation. In the conclusion, Laura reflects on the events decades later, explaining that she still bears a scar on her neck from the vampire’s bite.} She writes the manuscript to ensure the truth is not forgotten, warning readers of the seductive danger that lurks in the shadows. \textcolor{skipred}{The story ends with Laura acknowledging that while Carmilla is dead, the memory of the encounter remains a permanent and haunting part of her life.}
+
+\subsubsection{Prompt: Title + Inst.}
+
+A narrator recounts the events surrounding Laura, the daughter of a Baron in Styria. Laura resides in her father’s castle when a young woman named Carmilla arrives with her grandmother, the Countess Mircza. Carmilla and Laura quickly form an intense and intimate friendship, often sharing the same sleeping quarters. The grandmother remains protective and secretive throughout their stay, discouraging inquiries into the family's history or the castle's past. Over time, Laura becomes increasingly pale, lethargic, and weak. She suffers from mysterious puncture marks on her neck that heal quickly but leave visible scars. She also reports strange dreams involving a woman who preys on her. Carmilla appears to thrive while Laura fades, draining her vitality. The Baron and a physician are unable to diagnose the cause of Laura’s condition. \textcolor{skipred}{A local hunter, who possesses knowledge of local legends, suggests that Carmilla is a vampire. The grandmother refuses to leave the castle, maintaining a tense atmosphere as Laura’s health deteriorates further. The grandmother eventually dies in the castle. Shortly after her death, Carmilla vanishes without a trace. The narrator, acting as the primary investigator, discovers that the grandmother’s will prevents them from searching the crypt where Carmilla’s ancestor is buried.} The narrator and the Baron eventually gain access to the crypt, breaking the seal. \textcolor{skipred}{They find the body of a woman, who appears to be the vampire Carmilla. The body is incorrupt and emits a strange odor.} They burn the body to destroy it. \textcolor{skipred}{Despite the destruction of the vampire’s remains, Laura dies shortly after recovering from the immediate symptoms.} The narrator concludes the account with a history of the vampire lineage, explaining that Carmilla was a descendant of Countess Mircza who preys on women of noble blood. This historical context provides the explanation for the supernatural events that transpired at the castle. \textcolor{skipred}{The narrator preserves the manuscript as a warning for others.}
+
+
+\subsection{Gemini 3.1 Flash-Lite}
+
+\subsubsection{Prompt: Text}
+
+The narrator, a young woman living in a secluded Styrian castle with her father, describes the arrival of a mysterious, beautiful girl named Carmilla following a carriage accident. Despite initial reservations, the narrator forms an intense, complex bond with Carmilla, who displays inexplicable mood swings, intense affection, and a strange, persistent languor. As Carmilla settles into the household, a mysterious and fatal illness begins to plague the region, targeting young women with symptoms that mirror the narrator’s own experiences of exhaustion, strange dreams, and a sensation of being bitten or strangled at night. General Spielsdorf, an old family friend, arrives at the castle to visit, but he is distraught and vengeful, mourning the recent death of his niece, Bertha. He reveals to the narrator’s father a harrowing story of a masquerade ball where a beautiful young woman named Millarca charmed his niece, only for Bertha to subsequently fall ill and die under circumstances identical to those now affecting the narrator. The General realizes that the girl he left in the narrator's care, Carmilla, is the same entity—or a manifestation of the same—as the vampire who killed his niece. Following the General’s revelation, the narrator’s father and an expert on vampirism, Baron Vordenburg, investigate the ruins of the nearby Karnstein chapel. They locate the long-hidden tomb of Mircalla, Countess Karnstein, a vampire who has been terrorizing the region for over a century. The vampire's body is discovered in a state of unnatural, preserved life, confirming the Baron's suspicions. In a final, violent confrontation at the chapel, the vampire—who has been operating under the names Carmilla, Millarca, and Mircalla—is exposed. The vampire is formally executed by decapitation and the piercing of her heart, after which her remains are burned and the ashes scattered, finally ending the cycle of death. The narrator survives, but she is left permanently scarred by the experience, haunted by the memory of the beautiful, terrifying creature who had once been her intimate companion.
+
+\subsubsection{Prompt: Text + Inst.}
+
+Laura, a young woman living in a solitary Styrian castle with her aging father, leads a quiet life until a carriage accident brings a mysterious girl named Carmilla into their home. Laura and Carmilla soon discover that they share a strange, psychic connection, having both dreamed of one another when they were children. As Carmilla recovers, she becomes increasingly devoted to Laura, often exhibiting a disturbing mixture of languid affection and predatory intensity. During this time, a mysterious illness begins to plague the region, causing young women to suffer from bizarre dreams, feelings of strangulation, and small puncture wounds on their chests, ultimately leading to their deaths. Laura begins to suffer from similar symptoms, including exhaustion, melancholy, and nocturnal visitations from a spectral black beast and a shadowy figure. Her father eventually realizes she is being targeted by a supernatural force and summons a local physician. At the same time, General Spielsdorf, a family friend, arrives at the castle. He reveals that his own ward, Bertha, died under identical circumstances after befriending a masked girl named Millarca at a masquerade ball—a girl who possesses the same mysterious habits and appearance as Carmilla. The General and Laura’s father, guided by a researcher named Baron Vordenburg, discover that Carmilla is the manifestation of Mircalla, Countess Karnstein, a vampire who has been dead for over a century. They locate her long-forgotten grave in a ruined chapel near the family’s abandoned estate. \textcolor{skipred}{After the General witnesses Carmilla attempting to attack Laura, she vanishes.} The group subsequently opens Mircalla's tomb, where they find her body preserved in a state of suspended animation. Following the ancient protocols for dealing with a vampire, they stake the body through the heart, decapitate it, and burn the remains to ashes, finally ending the cycle of death in the region. \textcolor{skipred}{Laura eventually recovers, though the trauma of the experience leaves a lasting, haunting impression on her memory.}
+
+\subsubsection{Prompt: Title}
+
+Laura, a young Englishwoman living with her widowed father in a secluded castle in the Austrian region of Styria, recounts her experiences with a mysterious visitor. Her life is lonely until a carriage accident outside their estate results in a young woman named Carmilla being left in their care while her mother, a mysterious noblewoman, continues her urgent journey. Laura immediately feels a strange, magnetic attraction to the beautiful and melancholic Carmilla, despite the visitor's bouts of secretive behavior and occasional, disturbing displays of affection that oscillate between tenderness and physical aggression. As Carmilla recovers, a strange epidemic begins to plague the local village, characterized by a mysterious wasting disease that leads to the death of young women. Laura herself begins to suffer from terrifying nightly visitations, experiencing a sensation of being bitten on the chest by a dark, shadowy entity. Her health rapidly declines, and she is plagued by nightmares and a persistent lethargy. Her father, concerned by her deteriorating condition and the odd behavior of their guest, invites a specialist, Baron Vordenburg, to examine the situation. The Baron reveals that Carmilla is actually Mircalla, Countess Karnstein, a vampire who died centuries prior and has been returning periodically to prey on young women. Her pattern is to insinuate herself into the lives of vulnerable girls, drain their life force through nocturnal visits, and then move on after their deaths. The Baron, along with Laura’s father and a group of local men, tracks the vampire to the ruins of the Karnstein family chapel. Upon opening Carmilla's tomb, they find the vampire in a state of unnatural vitality, as if she were merely sleeping. They proceed to drive a stake through her heart, decapitate the body, and burn the remains to ash, which is then cast into a river. The story concludes with Laura, now physically recovered, still haunted by the memory of her strange companion, forever changed by the sinister encounter that nearly claimed her soul.
+
+\subsubsection{Prompt: Title + Inst.}
+
+Laura, a young English woman living with her father in a remote castle in Styria, recounts the arrival of a mysterious girl named Carmilla following a carriage accident near their home. Carmilla’s mother entrusts her to Laura’s father, claiming an urgent matter of great importance requires her absence. Carmilla and Laura feel an immediate, unsettling connection, as Laura recalls having a vivid, nightmarish vision of Carmilla visiting her in her bedroom when she was a small child. As Carmilla recovers, her behavior becomes increasingly erratic. She fluctuates between intense, claustrophobic affection for Laura and bouts of inexplicable melancholy and hostility. \textcolor{skipred}{During this time, the surrounding countryside is gripped by a wave of mysterious deaths among local young women, who suffer from a lingering, wasting illness characterized by strange chest punctures.} Laura herself begins to suffer from terrifying dreams and a progressive physical weakness, compounded by the sensation of a cat-like creature entering her room and biting her breast. \textcolor{skipred}{When the father of one of the deceased girls arrives seeking vengeance against a vampire, Laura’s father recognizes the description of the predator as Carmilla.} He consults with General Spielsdorf, an old friend whose niece recently died under identical circumstances. \textcolor{skipred}{The General reveals that his niece was seduced and drained by a woman named Millarca, whose name is an anagram of Carmilla’s.} The group tracks Carmilla to the ruined chapel of the Karnstein family, a long-dead noble line. With the help of the local authorities, they exhume Carmilla’s grave, finding her body preserved and supple as if in sleep. Following the traditional rites of vampire destruction, they decapitate the creature and burn the remains, scattering the ashes into the river. Despite the tragedy, Laura is haunted by her memories of Carmilla and the dark fascination she held over her long after the encounter.
+
+
+\subsection{Gemini 3.1 Pro}
+
+\subsubsection{Prompt: Text}
+
+In a remote schloss in Styria, a young English woman named Laura lives a solitary but comfortable life with her father and her governesses. When Laura is six years old, she experiences a terrifying nighttime encounter: she awakens to find a beautiful young woman in her room who comforts her before suddenly piercing her chest with two sharp needles. Despite Laura's subsequent terror, the household servants and a doctor find no physical marks, leaving the traumatic event to linger as a haunting childhood memory. Years later, when Laura is nineteen, she and her father receive a distraught letter from their friend, General Spielsdorf, announcing that his niece and ward, Bertha, has died under sudden and mysterious circumstances. That same evening, a carriage crashes just outside Laura’s estate. A commanding woman in black velvet emerges from the wreck and pleads with Laura’s father to care for her seemingly injured teenage daughter, Carmilla, while she continues an urgent journey, promising to return in three months. Upon meeting, Laura and Carmilla are stunned to recognize each other; Carmilla is the exact woman from Laura’s childhood vision, and Carmilla claims to have seen Laura in a similar dream. The two girls quickly become inseparable, though Carmilla exhibits an array of bizarre behaviors. She is extraordinarily languid, wakes late in the afternoon, strictly locks her bedroom door, and steadfastly refuses to discuss her past or her family. Furthermore, her affection for Laura is intense, romantic, and overwhelming, oscillating between tender declarations and predatory fascination. Around this time, a restored centuries-old painting of Mircalla, Countess Karnstein, is unveiled, revealing a flawless likeness to Carmilla. Shortly thereafter, Laura begins to suffer from terrifying nightmares of a giant, soot-black beast biting her throat, followed by an inexplicable and severe physical decline marked by extreme exhaustion and a strange, piercing sensation on her neck. Alarmed by Laura's deteriorating health and a baffling incident where Carmilla mysteriously disappears from her locked room only to turn up the next day, Laura's father calls for a physician. The doctor discovers a small blue puncture mark on Laura's neck and issues a secret warning to her father. Following this advice, the father immediately takes Laura away from the schloss toward the ruined village of Karnstein. En route, they encounter General Spielsdorf, who finally recounts the tragic death of his niece. \textcolor{skipred}{He explains that Bertha was befriended by a mysterious girl named Millarca—left in his care under identical circumstances by a wealthy mother—who slowly drained Bertha's life.} The General reveals that he caught Millarca in her vampiric beast form attacking Bertha, but she vanished completely when he struck her with his sword. Arriving at the ruined Karnstein chapel, the General's horrifying realization is confirmed when Carmilla casually approaches them. Recognizing her as Millarca, the General attacks her with an axe, but she disarms him with unnatural, vice-like strength and disappears into the shadows. Soon after, an eccentric vampire expert named Baron Vordenburg arrives. Using his ancestral notes, he helps the men locate the long-hidden tomb of Countess Mircalla Karnstein. Inside, they find Carmilla, untouched by decay, faintly breathing, and resting in a coffin immersed in blood. Under the authority of an Imperial Commission, the men perform the ancient rites to destroy the vampire: they drive a stake through her heart, decapitate her, and burn her remains to ashes, finally lifting the curse from the region. Baron Vordenburg explains that his own ancestor, who had loved Mircalla in life, initially hid her tomb to protect her from desecration, only to leave instructions for its discovery out of immense guilt. Though Laura recovers her health and spends a year traveling in Italy with her father to heal, she remains forever haunted by the ambiguous memory of the beautiful, languid girl she loved and the writhing, bloodthirsty fiend that was destroyed.
+
+\subsubsection{Prompt: Text + Inst.}
+
+The story begins with a framing narrative by a doctor, but centers on Laura, a young woman who lives with her English father and two governesses in an isolated castle in Styria. As a six-year-old, Laura was visited in the night by a beautiful young woman who climbed into her bed, soothed her to sleep, and seemingly punctured her breast, though no physical wound was found. Years later, nineteen-year-old Laura is disappointed to learn that a planned visit from family friend General Spielsdorf and his niece, Bertha, is canceled because Bertha has suddenly died under mysterious circumstances. Shortly after, a carriage crashes outside Laura's castle. Its passenger, an elegant noblewoman, claims she is on an urgent, secret mission and begs Laura's father to take in her weakened teenage daughter, Carmilla, for three months. He agrees. When Laura and Carmilla meet, they instantly recognize each other from the shared childhood encounter. The two become close friends, though Carmilla exhibits bizarre habits. She sleeps late into the afternoon, is physically languid, violently rejects religious hymns, and periodically makes intense, predatory romantic advances toward Laura. Simultaneously, an inexplicable illness begins killing young women in the neighboring village. When a batch of ancestral paintings is restored, Laura and her father discover that Carmilla is the exact likeness of Mircalla, Countess Karnstein, a local noblewoman who died over a century ago. Soon, Laura begins suffering from the same mysterious illness as the villagers. She experiences recurring nightmares of a monstrous, cat-like beast prowling her room and piercing her breast, followed by a sensation of strangulation. Her health rapidly declines. A physician examines Laura, discovers a small blue puncture mark near her throat, and privately issues a grave warning to her father. Without explaining the situation to Laura, her father immediately arranges an excursion to the ruined village of Karnstein. On the way, they encounter General Spielsdorf, who recounts the terrifying circumstances of his niece Bertha's death. He explains that at a masquerade ball, he was manipulated into taking in a beautiful young woman named Millarca. Bertha quickly grew ill, complaining of a piercing pain in her throat and sleep paralysis. The General hid in her room and witnessed a black beast on her bed; he attacked it with a sword, but it transformed into Millarca and escaped. Bertha died the next day. The General has deduced that Millarca is a vampire and is now tracking her. Upon arriving at the ruined Karnstein chapel, the group unexpectedly encounters Carmilla. The General instantly recognizes her as Millarca and attacks her with an axe. She effortlessly overpowers him and vanishes. An eccentric vampire expert, Baron Vordenburg, arrives and uses historical records to locate the hidden tomb of Countess Mircalla Karnstein—noting that ``Carmilla'' and ``Millarca'' are anagrams of Mircalla. Inside the tomb, they find Carmilla perfectly preserved, her coffin filled with fresh blood. Following traditional rites, the men drive a stake through her heart, strike off her head, and burn her remains to ashes. The vampire plague ends, and Laura gradually recovers her physical health, though she remains forever haunted by her dual memories of Carmilla as both a beautiful companion and a writhing fiend.
+
+\subsubsection{Prompt: Title}
+
+The story follows Laura, a young English woman living with her widowed father in an isolated castle in Styria. Her earliest memory is of waking in the night as a child to find a beautiful woman in her bed, who seemingly bit her chest before vanishing. Years later, a carriage accidentally crashes near their estate. Its occupant, a frantic noblewoman, begs Laura’s father to take in her seemingly injured teenage daughter, Carmilla, while she attends to an urgent matter. Upon meeting, Laura and Carmilla instantly recognize each other from the dream Laura had as a child, and Carmilla claims to have had the exact same dream. Carmilla and Laura quickly develop a close, intense friendship. Carmilla frequently expresses her affection for Laura through passionate, romantic, and somewhat predatory declarations, often accompanied by sudden, overwhelming embraces. Despite this bond, Carmilla exhibits several bizarre behaviors: she sleeps until the afternoon, refuses to participate in any religious activities, sleepwalks, and bears an uncanny resemblance to a 17th-century ancestor of the region, Mircalla, Countess Karnstein, whose restored portrait hangs in the castle. Simultaneously, a mysterious illness begins to plague the nearby village, claiming the lives of several young women. Soon after, Laura begins to experience horrific nightmares. She dreams of a monstrous, cat-like beast that enters her room, bites her on the chest, and then assumes the form of a female figure that slips out the door. As these nocturnal attacks continue, Laura’s health rapidly deteriorates, leaving her weak and languid. The mystery begins to unravel with the arrival of General Spielsdorf, a friend of Laura's father. The General reveals that his own niece, Bertha, recently died of a mysterious wasting illness. He explains that her decline began after a young woman named Millarca—an anagram for Mircalla—was left in their care under circumstances identical to Carmilla's arrival. While traveling with Laura and her father to the ruined Karnstein estates, the General spots Carmilla. Recognizing her as Millarca, he attacks her with an axe, but she effortlessly disarms him and vanishes. Realizing the truth, the men are joined by Baron Vordenburg, an expert on vampires, who helps them locate the hidden tomb of Countess Mircalla Karnstein. Inside, they find Carmilla perfectly preserved, floating in a layer of fresh blood, thus confirming that Carmilla, Millarca, and Mircalla are the same undead entity. The men execute the vampire by driving a stake through her heart, striking off her head, and burning her remains to ashes. Although Laura gradually regains her physical health, she is left deeply traumatized, forever haunted by the dual memory of Carmilla as both a terrifying monster and a beloved companion.
+
+\subsubsection{Prompt: Title + Inst.}
+
+Laura, a young woman of English descent, lives with her widowed father in a remote castle in Styria. Her earliest memory is of waking up at age six to find a beautiful young woman in her bed, who seemingly bit her on the chest and then vanished, leaving no physical wounds. Years later, a carriage crashes outside the castle, and its wealthy passenger leaves her teenage daughter, Carmilla, in the care of Laura and her father to recover. Laura instantly recognizes Carmilla as the woman from her childhood dream, and Carmilla claims to recognize Laura from a similar vision. The two young women become close friends, but Carmilla exhibits highly unusual behavior. She sleeps through most of the day, refuses to participate in religious activities, and sleepwalks at night. Furthermore, Carmilla makes intense, romantic advances toward Laura, whose feelings oscillate between fascination and repulsion. \textcolor{skipred}{Meanwhile, young women in the surrounding villages begin dying from a mysterious illness.} Laura soon falls victim to a similar decline in health. She experiences vivid nightly visions of a giant, cat-like beast entering her room and biting her on the chest, after which the beast transforms into a female figure and escapes through the door. Concerned by Laura's deteriorating condition, her father brings in a doctor who privately warns him never to leave Laura unsupervised. Shortly thereafter, the family meets their friend, General Spielsdorf. The General recounts the recent tragic death of his niece, Bertha, who succumbed to a sudden, fatal exhaustion after befriending a mysterious young woman named Millarca. \textcolor{skipred}{The General reveals that he has deduced Millarca is a vampire and has tracked her to the area. While the group explores the ruined local village of Karnstein, Carmilla suddenly approaches them.} The General immediately recognizes her as Millarca and attacks her with an axe, but she effortlessly disarms him and disappears. He explains that ``Carmilla'' and ``Millarca'' are both anagrams of Mircalla, the Countess of Karnstein, who supposedly died over a century earlier. With the help of Baron Vordenburg, an expert on vampires, the men locate Mircalla's hidden tomb within the Karnstein ruins. They open the grave to find her body perfectly preserved and resting in an inch of blood. Following traditional vampire-slaying methods, the men drive a wooden stake through her heart, behead her, and burn her remains to ashes. Laura’s physical health returns, but the trauma of the ordeal leaves her forever haunted by the memory of Carmilla.
+
+\subsection{GPT 5.4}
+
+\subsubsection{Prompt: Text}
+
+The story is presented as a manuscript accompanied by notes from Doctor Hesselius, who considers it evidence relating to mysterious aspects of human existence. The narrator is Laura, an English girl living with her widowed father in a remote Styrian schloss. She recalls a terrifying childhood incident: at about six years old, she awoke to find a beautiful young woman in her bed, who soothed her and then seemed to prick her breast with two needles before vanishing. The adults around her dismissed it as a dream, though their alarm suggested otherwise, and the experience haunted her for years. Years later, when Laura is nineteen, she and her father expect a visit from General Spielsdorf and his ward Bertha. Instead, a troubling letter arrives announcing Bertha’s death under strange circumstances and hinting at a monstrous cause. That same evening, a noblewoman’s carriage crashes near the schloss. The noblewoman, pressed by urgent business, leaves her daughter in Laura’s father’s care for three months. The girl, called Carmilla, is beautiful, refined, and strangely secretive. Her mother insists that neither she nor her daughter’s identity, origin, or destination be revealed. When Laura first visits Carmilla in her room, she is shocked to recognize her as the very woman she saw in childhood. Carmilla claims she too saw Laura years ago in a dream. The two quickly become intimate companions, though Laura feels a troubling mixture of attraction and revulsion toward her. Carmilla is affectionate to an unsettling degree, speaking in passionate, cryptic language about love, union, and death. She is also evasive about her background, revealing only her name, noble ancestry, and that her home lies to the west. Carmilla’s habits soon appear strange. She rises very late, is languid and physically weak, eats little, dislikes religious observances, reacts with anger to funeral hymns, and becomes agitated by mention of death and ghosts. Her temper briefly flares when a traveling hunchbacked peddler notices her sharp tooth and offers charms against vampires. Laura also sees a restored portrait from 1698 of a woman named Mircalla, Countess Karnstein, who looks exactly like Carmilla, and Carmilla admits descent from the Karnstein family. Laura then begins to suffer a mysterious illness. She dreams of a black, cat-like beast in her room and feels two needles pierce her chest. On waking, she sees a female figure near her bed. Thereafter she experiences increasing weakness, melancholy, strange dreams, sensations of kissing and pressure at her throat, and fits of suffocation ending in unconsciousness. Carmilla herself claims to have had similar terrifying dreams but treats the matter lightly, attributing it to natural causes and encouraging Laura to use the charm bought from the peddler. Laura’s health declines steadily, though she conceals the severity of her condition. One night Laura dreams that her dead mother warns her to beware of an assassin and sees Carmilla bathed in blood. She wakes in terror and, with servants and companions, forces open Carmilla’s locked room, only to find it empty. The next day Carmilla reappears without explanation, claiming she went to sleep in bed and woke elsewhere in her room. Laura’s father guesses she must have sleepwalked, though the mystery remains unresolved. A doctor examines Laura and discovers a small blue mark below her throat. Alarmed, he instructs that she never be left alone, but he and Laura’s father refuse to explain the danger. Soon after, on a drive to the ruined village and castle of Karnstein, they meet General Spielsdorf, whose appearance has changed drastically since Bertha’s death. He tells them the story of his ward’s destruction. At a masked ball, he and Bertha met a mysterious countess and her daughter Millarca. The countess urgently entrusted Millarca to his care under similar terms of secrecy. Millarca became Bertha’s intimate companion, but Bertha soon developed the same symptoms Laura now suffers: dreams, a spectral visitor, needle-like punctures, strangulation, and collapse. A learned physician eventually suggested to the General that Bertha was being visited by a vampire. Though skeptical, the General followed the doctor’s advice and kept watch in her room. He saw a dark creature on Bertha’s bed swell into a human form: Millarca. He attacked her with his sword, but she escaped unharmed, and Bertha died soon after. \textcolor{skipred}{The General has since devoted himself to hunting the monster.} As he speaks in the ruined chapel of Karnstein, Carmilla suddenly appears. The General recognizes her and attacks her with a woodman’s axe, but she evades the blow, grasps his wrist with supernatural strength, and vanishes. He reveals that Carmilla, Millarca, and Mircalla are the same being. At this point a strange scholar, Baron Vordenburg, arrives. Using old records and a plan of the chapel, he helps locate the hidden tomb of Mircalla, Countess Karnstein. The next day an official inquiry is held. The grave is opened, and the body inside is identified as Carmilla. Though buried for a century and a half, she appears full of life: warm, breathing faintly, with flexible limbs, blood in her coffin, and no odor of decay. These signs confirm vampirism. Following ancient custom, a stake is driven through her heart, she emits a piercing shriek, her head is cut off, and her body and head are burned. The ashes are cast into the river, ending the hauntings in the region. In conclusion, Laura says the disappearance and destruction of Carmilla immediately ended her nightly torment. She reflects that the evidence for vampires in that part of Europe is extensive and that no other explanation fits what she herself experienced. Baron Vordenburg later explains that his ancestor had once loved Mircalla and had concealed her tomb to spare her remains from desecration, but a later descendant corrected that mistake. Laura and her father eventually travel in Italy, yet the memory never leaves her. Even years later she still recalls Carmilla with fearful ambiguity: sometimes as a beautiful, languid girl, sometimes as the writhing fiend in the ruined chapel, and she often imagines hearing her step at the drawing room door.
+
+\subsubsection{Prompt: Text + Inst.}
+
+In a secluded schloss in Styria, Laura lives with her widowed English father and a small household. As a child, she is traumatized by a nighttime visitation from a beautiful young woman who lies beside her and seems to prick her breast before vanishing. The memory remains vivid for years. At nineteen, Laura leads a lonely life and looks forward to a visit from General Spielsdorf and his ward, Bertha Rheinfeldt, but the visit is canceled when Bertha suddenly dies under mysterious circumstances. The General’s distraught letter hints that Bertha was destroyed by a monstrous being he had unwisely welcomed into his home. Soon afterward, Laura and her household witness a carriage accident outside the schloss. A stately woman in black, pressed by urgent business, entrusts her apparently injured daughter to Laura’s father for three months. The girl, who calls herself Carmilla, quickly captivates Laura. When Laura first sees her closely, she realizes Carmilla is identical to the beautiful woman from her childhood vision. Carmilla claims she too saw Laura long ago in a dream. The two become intimate companions, though Laura feels both attraction and unease. Carmilla is beautiful, languid, affectionate, and secretive. She refuses to reveal her family history beyond saying she is noble and from the west. She often expresses intense, unsettling devotion toward Laura in language that sounds romantic and possessive. She also behaves strangely: she rises very late, eats almost nothing, dislikes religious observances and funeral hymns, and reacts with agitation to talk of death and spirits. Meanwhile, a wasting illness spreads among local peasants, who believe they are being attacked by an “oupire,” or vampire. A restored ancestral portrait arrives at the schloss and reveals a startling likeness to Carmilla. The picture is labeled “Mircalla, Countess Karnstein, 1698,” linking her to the ruined Karnstein estate nearby, from which Laura’s mother was descended. Not long after, Laura begins to suffer from terrifying nighttime experiences: dreams of a black beast or female figure entering her locked room, followed by sensations of piercing pain in her breast or throat, strangulation, weakness, and growing exhaustion. Although charms against vampires seem briefly reassuring, Laura steadily declines. She becomes pale, languid, and morbidly fascinated by her own decline, while Carmilla grows even more attached to her. One night Laura dreams of her dead mother warning her to beware of an assassin and sees Carmilla in a bloodstained nightdress. Awakened in terror, Laura and the household break into Carmilla’s locked room, only to find it empty. The next day Carmilla reappears as if nothing has happened, claiming she awoke elsewhere without explanation. Laura’s father privately consults a doctor, who finds a small blue mark on Laura’s chest and becomes gravely concerned. He orders that Laura must never be left alone. At this point General Spielsdorf arrives unexpectedly and joins Laura and her father on an excursion to the ruined village and chapel of Karnstein. There he recounts the full story of Bertha’s death. At a masquerade, he and Bertha had met a mysterious countess and her daughter, called Millarca, whom the countess persuaded him to take into his care. Millarca resembled Carmilla in appearance and habits. Bertha soon developed the same symptoms now afflicting Laura: nightmares, puncture-like pains, strangulation, and wasting weakness. A physician eventually suggested vampirism. Watching secretly at night, the General saw a dark shape crawl over Bertha’s bed and transform into Millarca. He attacked, but she escaped; Bertha died soon after. As the General finishes his story in the ruined chapel, Carmilla herself appears. Recognizing her, the General seizes a woodman’s axe and strikes at her, but she evades the blow and escapes after gripping his wrist with unnatural strength. An eccentric scholar, Baron Vordenburg, then arrives. Expert in vampiric lore, he helps identify Carmilla as Mircalla Karnstein, using variations of her name—Mircalla, Millarca, Carmilla—as clues. Guided by old documents and local knowledge, he and the others discover the hidden tomb of Countess Mircalla in the Karnstein chapel. That night Carmilla disappears for good, and Laura’s attacks cease. The next day an official exhumation is held. In Mircalla’s coffin, the assembled witnesses find the body fresh and lifelike despite being more than a century dead, with signs traditionally taken as proof of vampirism: open eyes, warm flesh, blood in the coffin, faint breathing, and a beating heart. Following established ritual, they drive a stake through her heart, decapitate her, and burn the remains, scattering the ashes in running water. The region is freed from further attacks. Laura survives, and the following spring her father takes her abroad for recovery. Yet the experience leaves her permanently haunted. Baron Vordenburg later explains that an ancestor of his had once loved Mircalla and had hidden her grave to spare her posthumous destruction, thereby allowing her depredations to continue. Even years later, Laura cannot forget Carmilla, remembering her sometimes as the charming, languid girl who seemed to love her, and sometimes as the predatory fiend who nearly drained her life.
+
+\subsubsection{Prompt: Title}
+
+``Carmilla'' is a Gothic novella narrated by Laura, a young Englishwoman living in seclusion with her widowed father in a remote Styrian castle. Laura recalls a strange childhood memory of a beautiful young girl who appeared in her bedroom at night and frightened her. Years later, Laura and her father are expecting a family friend, but instead they witness a carriage accident near their home. One of the passengers, a mysterious and elegant young woman named Carmilla, is left in their care while her supposed mother continues on an urgent journey. Carmilla quickly becomes Laura’s companion, and Laura is both drawn to and unsettled by her. As the two girls grow closer, Carmilla behaves in increasingly strange ways. She is affectionate to an intense and unsettling degree, speaking in romantic and possessive terms that confuse Laura. Carmilla is secretive about her past, gives contradictory information about her identity, sleeps late into the day, and often seems languid or ill. At the same time, Laura begins to suffer from terrifying dreams and a gradual physical decline marked by weakness and exhaustion. In the surrounding region, other young women fall mysteriously ill and die after similar symptoms, and rumors spread of a supernatural predator. A funeral procession for one of the dead girls brings the local fear into sharper focus. Laura’s father and their acquaintances begin to suspect that something unnatural is at work. A military officer, General Spielsdorf, arrives and tells a disturbing story about his ward, Bertha, who had become involved with a beautiful young woman named Millarca under circumstances very similar to Carmilla’s arrival. Bertha, like Laura, grew weaker after strange nocturnal visitations, and eventually died. The general reveals that he has traced the mysterious woman and believes she is a vampire. The truth begins to emerge through investigation and old records. Carmilla is linked to several aliases, including Millarca and Mircalla, all anagrams of the same name. She is discovered to be Mircalla, Countess Karnstein, a noblewoman from a ruined nearby family long associated with dark legends. Laura’s childhood memory of a nighttime visitor now takes on sinister significance, suggesting that Carmilla has preyed on her for years. Carmilla’s fascination with Laura is revealed to be both intimate and predatory, combining emotional seduction with supernatural attack. Laura’s father, General Spielsdorf, and a vampire-hunting authority named Baron Vordenburg follow the evidence to the ruined Karnstein chapel and locate Carmilla’s tomb. Inside, they find her body unnaturally preserved, lying as if asleep and showing signs that confirm her vampiric nature. Following traditional methods, they drive a stake through her heart, decapitate her, and burn her remains, ending her power. Though Carmilla is destroyed, the experience leaves a lasting effect on Laura. She survives, but the memory of Carmilla remains vivid and haunting. The novella ends not with complete relief, but with a lingering sense of fascination, grief, and unease, as Laura reflects on the beautiful and terrible being who entered her life and nearly consumed it.
+
+\subsubsection{Prompt: Title + Inst.}
+
+Laura, a young English woman living with her widowed father in a secluded Styrian castle, recalls a childhood encounter with a mysterious girl who appeared in her bedroom at night and vanished after seeming to wound her breast. Years later, while Laura and her father await a planned visit from General Spielsdorf and his niece Bertha, a carriage accident near their home leaves behind a beautiful, frail young woman named Carmilla. Her anxious mother claims urgent business prevents her from staying and begs Laura’s father to shelter Carmilla for several months. Laura, struck by Carmilla’s resemblance to the girl from her childhood vision, welcomes her as a companion. Carmilla and Laura quickly grow intimate, though Carmilla’s manner is unsettling. She alternates between languid affection and intense, possessive declarations of love, while refusing to explain her past or even basic facts about her family. She sleeps late, is rarely seen in daylight, and often wanders at night. Laura feels both drawn to and disturbed by her. Soon afterward, Laura begins to suffer weakness, vivid dreams, and a wasting illness marked by a sensation of something crouching on her bed and piercing her chest. At the same time, reports spread through the region of young women falling mysteriously ill and dying after similar symptoms. When General Spielsdorf finally arrives, he reveals that his niece Bertha died after befriending a charming young woman called Millarca, who appeared under circumstances nearly identical to Carmilla’s arrival. \textcolor{skipred}{The General recognized the girl’s portrait among old family paintings and became convinced she was linked to Bertha’s death.} During a masked ball, Bertha had met Millarca, who was welcomed into their household; Bertha then sickened and described nightly visitations from a catlike beast. The General, lying in wait, saw a monstrous black creature in his niece’s room, but it escaped, and Bertha soon died. Hearing this story and recognizing “Millarca” as an anagrammatic variation of “Carmilla,” Laura and her father begin to suspect their guest. A search of an old ruined chapel and family records uncovers the history of Mircalla, Countess Karnstein, a noblewoman long dead but rumored to prey upon the living. An expert on vampire lore, Baron Vordenburg, joins Laura’s father and the General, explaining that vampires preserve their beauty, insinuate themselves into families, and drain victims gradually through repeated nocturnal attacks. Evidence links Carmilla to Mircalla Karnstein, and the men trace her to a hidden tomb in the ruined Karnstein estate. They open the coffin and find Carmilla lying within, fresh and lifelike, with signs that confirm she is undead. Following the prescribed rites, they drive a stake through her heart, cut off her head, and burn the remains, ending the hauntings and the epidemic of deaths in the region. Laura physically recovers, but the experience leaves a lasting psychological scar. Even years later, she cannot fully forget Carmilla’s beauty, her strange fascination, or the terror of their intimacy.
+
+\end{document}

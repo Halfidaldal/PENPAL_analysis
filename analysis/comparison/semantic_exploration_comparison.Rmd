@@ -283,25 +283,59 @@ if (n_distinct(df_adjacent$condition) >= 2 && nrow(df_adjacent) >= 10) {
 }
 ```
 
-```{r adjacent-distance-plot, fig.width=9, fig.height=5}
-turn_level_semanticplots <- ggplot(df_adjacent, aes(x = condition, y = adjacent_distance, fill = condition)) +
-  geom_violin(alpha = 0.4, colour = NA) +
-  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
-  geom_jitter(width = 0.08, alpha = 0.19, size = 0.3) +
-  scale_fill_manual(values = condition_colors) +
-  labs(
-    title = "Adjacent turn-to-turn semantic distance by condition",
-    subtitle = "Each point is one adjacent pair in the reconstructed alternating dyadic sequence",
-    x = "Condition",
-    y = "Adjacent semantic distance"
-  ) +
-  theme(legend.position = "none")
+```{r adjacent-distance-plot, fig.width=9, fig.height=4.5}
+semantic_density_boxplot <- function(df, value_col, title, subtitle, x_label) {
+  plot_data <- df %>%
+    select(condition, value = all_of(value_col)) %>%
+    drop_na(value)
+
+  density_panel <- ggplot(plot_data, aes(x = value, fill = condition, color = condition)) +
+    geom_density(alpha = 0.28, linewidth = 0.9, na.rm = TRUE) +
+    scale_fill_manual(values = condition_colors, name = NULL) +
+    scale_color_manual(values = condition_colors, name = NULL) +
+    labs(
+      title = title,
+      subtitle = subtitle,
+      x = NULL,
+      y = "Density"
+    ) +
+    theme(
+      legend.position = "top",
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, size = 10),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      plot.margin = margin(4, 8, 0, 8)
+    )
+
+  box_panel <- ggplot(plot_data, aes(x = value, y = condition, fill = condition)) +
+    geom_boxplot(width = 0.45, outlier.alpha = 0.2, alpha = 0.9, na.rm = TRUE) +
+    scale_fill_manual(values = condition_colors, name = NULL) +
+    labs(x = x_label, y = NULL) +
+    theme(
+      legend.position = "none",
+      axis.text.y = element_text(size = 10),
+      plot.margin = margin(0, 8, 4, 8)
+    )
+
+  density_panel / box_panel + plot_layout(heights = c(2.6, 1))
+}
+
+turn_level_semanticplots <- semantic_density_boxplot(
+  df_adjacent,
+  "adjacent_distance",
+  "Adjacent turn-to-turn semantic distance by condition",
+  "Each density overlays one condition; boxplots summarize the same values below",
+  "Adjacent semantic distance"
+)
+
+print(turn_level_semanticplots)
 
 ggsave(
   file.path(GRAPHS_DIR, "semantic_distance_interactionlevel.png"),
   turn_level_semanticplots,
-  width = 12,
-  height = 8,
+  width = 9,
+  height = 4.5,
   dpi = 300
 )
 
@@ -351,25 +385,22 @@ if (n_distinct(df_adjacent_story$condition) >= 2 && nrow(df_adjacent_story) >= 1
 }
 ```
 
-```{r story-mean-adjacent-plot, fig.width=9, fig.height=5}
-semantic_distance_storylevel <- ggplot(df_adjacent_story, aes(x = condition, y = mean_adjacent_distance, fill = condition)) +
-  geom_violin(alpha = 0.4, colour = NA) +
-  geom_boxplot(width = 0.2, outlier.shape = NA, alpha = 0.9) +
-  geom_jitter(width = 0.08, alpha = 0.45, size = 1.2) +
-  scale_fill_manual(values = condition_colors) +
-  labs(
-    title = "Story-level mean adjacent semantic distance by condition",
-    subtitle = "One mean adjacent distance per story",
-    x = "Condition",
-    y = "Mean adjacent semantic distance"
-  ) +
-  theme(legend.position = "none")
+```{r story-mean-adjacent-plot, fig.width=9, fig.height=4.5}
+semantic_distance_storylevel <- semantic_density_boxplot(
+  df_adjacent_story,
+  "mean_adjacent_distance",
+  "Story-level mean adjacent semantic distance by condition",
+  "One mean adjacent distance per story",
+  "Mean adjacent semantic distance"
+)
+
+print(semantic_distance_storylevel)
 
 ggsave(
   file.path(GRAPHS_DIR, "semantic_distance_storylevel.png"),
   semantic_distance_storylevel,
-  width = 12,
-  height = 8,
+  width = 9,
+  height = 4.5,
   dpi = 300
 )
 ```

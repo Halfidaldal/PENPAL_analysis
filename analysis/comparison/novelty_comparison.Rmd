@@ -640,19 +640,46 @@ cat("\nCondition-specific novelty-to-resonance slopes:\n")
 print(emtrends(innovation_model, specs = "condition", var = "surprise"))
 ```
 
-```{r novelty-resonance-plot, fig.width=12, fig.height=5}
-p_novelty_resonance <- df_slots %>%
-  ggplot(aes(x = surprise, y = resonance, color = condition)) +
-  geom_point(alpha = 0.08, size = 0.6) +
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1.1) +
-  scale_color_manual(values = condition_colors) +
-  labs(
-    title = "Novelty vs Resonance by Condition",
-    subtitle = "One novelty-to-resonance slope per condition",
-    x = "Novelty / Surprise",
-    y = "Resonance"
+```{r novelty-resonance-plot, fig.width=8, fig.height=5}
+novelty_resonance_slopes <- confint(
+  emtrends(innovation_model, specs = "condition", var = "surprise")
+) %>%
+  as.data.frame() %>%
+  mutate(condition = factor(condition, levels = levels(df_slots$condition)))
+
+lower_ci_col <- names(novelty_resonance_slopes)[str_detect(names(novelty_resonance_slopes), "lower|LCL")][1]
+upper_ci_col <- names(novelty_resonance_slopes)[str_detect(names(novelty_resonance_slopes), "upper|UCL")][1]
+
+novelty_resonance_slopes <- novelty_resonance_slopes %>%
+  mutate(
+    lower_ci = .data[[lower_ci_col]],
+    upper_ci = .data[[upper_ci_col]]
+  )
+
+p_novelty_resonance <- novelty_resonance_slopes %>%
+  ggplot(aes(x = condition, y = surprise.trend, color = condition)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "grey55", linewidth = 0.5) +
+  geom_pointrange(
+    aes(ymin = lower_ci, ymax = upper_ci),
+    linewidth = 1.6,
+    fatten = 3.8
   ) +
-  theme(legend.position = "bottom")
+  geom_text(
+    aes(label = sprintf("%.2f", surprise.trend)),
+    nudge_x = 0.18,
+    fontface = "bold",
+    size = 4.2,
+    show.legend = FALSE
+  ) +
+  scale_color_manual(values = condition_colors) +
+  scale_y_continuous(expand = expansion(mult = c(0.12, 0.12))) +
+  labs(
+    title = "Novelty-to-Resonance Slopes by Condition",
+    subtitle = "Points show mixed-model slope estimates; intervals show 95% CIs",
+    x = NULL,
+    y = "Novelty-to-resonance slope"
+  ) +
+  theme(legend.position = "none")
 
 print(p_novelty_resonance)
 ggsave(
