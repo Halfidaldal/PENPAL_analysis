@@ -10,6 +10,11 @@ from tqdm import tqdm
 from pylatexenc.latex2text import LatexNodes2Text
 import nltk
 
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt', quiet=True)
+
 _MISSING_TEXT_VALUES = {"", "nan", "none", "null"}
 
 def build_dataset(filepath):
@@ -39,19 +44,6 @@ def load_and_parse_text(filepath):
     body_text = " ".join(paragraphs[:conclusion_para_idx])
     body = nltk.sent_tokenize(body_text)
     conclusion = paragraphs[conclusion_para_idx] #we only want the conclusion as a single string and not what comes 
-    return body, conclusion
-
-
-    sentences = nltk.sent_tokenize(plain_text)
-    body_end = None
-    for i, sentence in enumerate(sentences):
-        if "conclusion" in sentence.lower():
-            body_end = i
-            break
-    if body_end is None:
-        raise ValueError("Could not find conclusion in the text.")
-    body = sentences[:body_end]   #list of sentences
-    conclusion = " ".join(sentences[body_end:]) #we only want the conclusion as a single string and not what comes 
     return body, conclusion
 
 

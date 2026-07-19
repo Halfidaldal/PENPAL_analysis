@@ -1,0 +1,12 @@
+# Core data and math libraries
+numpy
+pandas
+pyyaml
+
+# Deep Learning and NLP libraries
+torch
+transformers
+accelerate
+tqdm
+nltk
+pylatexenc

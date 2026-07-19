@@ -16,7 +16,8 @@ def load_config():
 
 def main():
     config = load_config()
-    pilot_paper_path = config["data"]["pilot_paper"][0]
+    project_root = Path(__file__).parent.parent
+    pilot_paper_path = project_root / config["data"]["pilot_papers"][0]
     scorer_model_name = config["scorer"]["model_name"]
     
     tokenizer, model, device = load_language_model(scorer_model_name)
