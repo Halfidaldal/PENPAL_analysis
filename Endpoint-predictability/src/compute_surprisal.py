@@ -9,6 +9,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 from pylatexenc.latex2text import LatexNodes2Text
 import nltk
+import re
 
 try:
     nltk.data.find('tokenizers/punkt')
@@ -32,9 +33,6 @@ def build_dataset(filepath):
 def load_and_parse_text(filepath):
     with open(filepath, 'r') as f:
         latex_content = f.read()
-    
-    # Preprocess to strip \href{url} prefixes, leaving {text} to prevent pylatexenc parser crashes
-    import re
     latex_content = re.sub(r'\\href\s*\{[^{}]*\}', '', latex_content)
 
     plain_text = LatexNodes2Text().latex_to_text(latex_content)
